@@ -91,6 +91,7 @@ async function buildMovieResponse(movieData, language, config) {
   const imdbRating = imdbRatingValue || movieData.vote_average?.toFixed(1) || "N/A";
   const fallbackPosterUrl = `https://image.tmdb.org/t/p/w500${poster_path}`;
   const posterProxyUrl = `${host}/poster/movie/tmdb:${movieData.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.rpdbkey}`;
+  console.log(Utils.parseCast(credits, castCount));
   return {
     id: `tmdb:${tmdbId}`,
     type: 'movie',
@@ -163,6 +164,7 @@ async function buildSeriesResponseFromTvdb(tvdbShow, tvdbEpisodes, language, con
       released: episode.aired ? new Date(episode.aired) : null,
       available: episode.aired ? new Date(episode.aired) < new Date() : false,
   })); 
+  //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
   const meta = {
     id: tmdbId ? `tmdb:${tmdbId}` : `tvdb:${tvdbId}`,
     type: 'series',
@@ -186,7 +188,7 @@ async function buildSeriesResponseFromTvdb(tvdbShow, tvdbEpisodes, language, con
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
     app_extras: { cast: Utils.parseCast(tmdbLikeCredits, castCount) }
   };
-
+  //console.log(Utils.parseCast(tmdbLikeCredits, castCount));
   return meta;
 }
 
