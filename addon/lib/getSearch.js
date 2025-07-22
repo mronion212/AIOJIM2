@@ -36,7 +36,7 @@ async function parseTvdbSearchResult(extendedRecord, language, config) {
     id: `tvdb:${extendedRecord.id}`,
     type: 'series',
     name: translatedName, 
-    poster: await Utils.parsePoster('series', { tmdbId, tvdbId }, fallbackImage, language, config.rpdbkey),
+    poster: extendedRecord.image === null ? fallbackImage : await Utils.parsePoster('series', { tmdbId, tvdbId }, fallbackImage, language, config.rpdbkey),
     year: extendedRecord.year,
     description: overview
   };
@@ -66,7 +66,7 @@ async function performMovieSearch(query, language, config, genreList) {
         const parsed = Utils.parseMedia(media, 'movie', genreList);
         console.log("parsed media: " +media.poster_path);
         const tmdbPosterFullUrl = media.poster_path === null ? `https://artworks.thetvdb.com/banners/images/missing/series.jpg` : `https://image.tmdb.org/t/p/w500${media.poster_path}`;
-        parsed.poster = await Utils.parsePoster('movie', { tmdbId: media.id }, tmdbPosterFullUrl, language, config.rpdbkey);
+        parsed.poster = media.poster_path === null ? tmdbPosterFullUrl : await Utils.parsePoster('movie', { tmdbId: media.id }, tmdbPosterFullUrl, language, config.rpdbkey);
         return parsed;
     });
 
