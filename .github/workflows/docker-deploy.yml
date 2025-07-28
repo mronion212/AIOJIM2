@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - dev
-
+      
 jobs:
   docker:
     runs-on: ubuntu-latest
@@ -28,8 +28,8 @@ jobs:
       - name: Build and push Docker image to GHCR
         uses: docker/build-push-action@v6
         with:
-          context: .                 # Explicit build context (root directory)
-          file: ./Dockerfile         # Explicit Dockerfile path
+          context: .                 
+          file: ./Dockerfile         
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/tmdb-addon:mal
