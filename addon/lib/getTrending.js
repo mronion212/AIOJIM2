@@ -1,6 +1,8 @@
 require("dotenv").config();
 const { MovieDb } = require("moviedb-promise");
 const { getMeta } = require("./getMeta");
+const { isAnime } = require("../utils/isAnime");
+const { getGenreList } = require('./getGenreList');
 
 const moviedb = new MovieDb(process.env.TMDB_API);
 
@@ -10,11 +12,11 @@ async function getTrending(type, language, page, genre, config, catalogChoices) 
     const time_window = genre && ['day', 'week'].includes(genre.toLowerCase()) ? genre.toLowerCase() : "day";
     
     const parameters = { media_type, time_window, language, page };
-
+    const genreList = await getGenreList(language, type);
     const res = await moviedb.trending(parameters);
 
     const metaPromises = res.results.map(item => 
-      getMeta(type, language, `tmdb:${item.id}`, config, catalogChoices)
+      getMeta(type, language, `tmdb:${item.id}`, config, catalogChoices, false)
         .then(result => result.meta)
         .catch(err => {
           console.error(`Error fetching metadata for tmdb:${item.id}:`, err.message);

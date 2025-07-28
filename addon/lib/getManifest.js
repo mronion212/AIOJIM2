@@ -5,6 +5,7 @@ const { getGenresFromMDBList } = require("../utils/mdbList");
 const packageJson = require("../../package.json");
 const catalogsTranslations = require("../static/translations.json");
 const CATALOG_TYPES = require("../static/catalog-types.json");
+const jikan = require('./mal');
 const DEFAULT_LANGUAGE = "en-US";
 
 const host = process.env.HOST_NAME.startsWith('http')
@@ -181,13 +182,48 @@ async function getManifest(config) {
     };
 
     const searchCatalogSeries = {
-      id: "tmdb.search",
+      id: "tvdb.search",
       type: "series",
       name: `${tmdbPrefix ? "TVDB - " : ""}${translatedCatalogs.search}`,
       extra: [{ name: "search", isRequired: true, options: [] }]
     };
+  
+    const searchCatalogAnime = {
+        id: "mal.search",
+        type: "anime",
+        name: "Anime Search (MAL)",
+        extra: [{ name: "search", isRequired: true, options: [] }]
+    };
 
-    catalogs = [...catalogs, searchCatalogMovie, searchCatalogSeries];
+    const searchVAAnime = {
+      id: "mal.va_search",
+      type: "anime",
+      name: "Voice Actor Roles",
+      extra: [{ name: "va_id", isRequired: true }]
+    };
+
+    const searchGenreAnime = {
+      id: "mal.genre_search", 
+      type: "anime",
+      name: "Anime Genre", 
+      extra: [{ name: "genre_id", isRequired: true }]
+    }
+    
+    const animeGenres = await jikan.getAnimeGenres();
+    const animeGenreNames = animeGenres.map(genre => genre.name).sort();
+
+    const animeGenreCatalog = {
+      id: 'mal.genres', 
+      name: 'MAL Genres',
+      type: 'anime', 
+      extra: [{
+        name: 'genre',
+        options: animeGenreNames,
+        isRequired: true, 
+      }]
+    };
+
+    catalogs = [...catalogs, searchCatalogMovie, searchCatalogSeries, searchCatalogAnime, searchVAAnime, searchGenreAnime, animeGenreCatalog];
   }
 
   if (config.geminikey) {
@@ -228,8 +264,8 @@ async function getManifest(config) {
     name: "The Movie Database Addon",
     description: "A powerful hybrid metadata addon for Stremio. It uses TMDB for movies and discovery, and TVDB for superior TV show metadata, ensuring the most accurate and up-to-date information.",
     resources: ["catalog", "meta"],
-    types: ["movie", "series"],
-    idPrefixes: ["tmdb:", "tt", "tvdb:"],
+    types: ["movie", "series", "anime"],
+    idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:"],
     stremioAddonsConfig,
     behaviorHints: {
       configurable: true,

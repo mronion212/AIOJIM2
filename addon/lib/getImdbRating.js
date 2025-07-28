@@ -12,8 +12,7 @@ async function getImdbRating(imdbId, type) {
     return undefined;
   }
 
-  const url = `https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`;
-
+  const url = `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`;
   try {
     const response = await axios.get(url);
     const rating = response.data?.meta?.imdbRating;

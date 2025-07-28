@@ -9,16 +9,15 @@ const { getManifest, DEFAULT_LANGUAGE } = require("./lib/getManifest");
 const { getMeta } = require("./lib/getMeta");
 const { cacheWrapMeta, cacheWrapCatalog } = require("./lib/getCache");
 const { getTrending } = require("./lib/getTrending");
-const { parseConfig, getRpdbPoster, checkIfExists } = require("./utils/parseProps");
+const { parseConfig, getRpdbPoster, checkIfExists, parseAnimeCatalogMeta } = require("./utils/parseProps");
 const { getRequestToken, getSessionId } = require("./lib/getSession");
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { blurImage } = require('./utils/imageProcessor');
 const axios = require('axios');
+const jikan = require('./lib/mal');
 
 addon.use(analytics.middleware);
-addon.use(favicon(path.join(__dirname, '../public/favicon.png')));
-addon.use(express.static(path.join(__dirname, '../public')));
-addon.use(express.static(path.join(__dirname, '../dist')));
+
 
 const getCacheHeaders = function (opts) {
   opts = opts || {};
@@ -51,8 +50,6 @@ const respond = function (res, data, opts) {
 addon.get("/", function (_, res) { res.redirect("/configure"); });
 addon.get("/request_token", async function (req, res) { const r = await getRequestToken(); respond(res, r); });
 addon.get("/session_id", async function (req, res) { const s = await getSessionId(req.query.request_token); respond(res, s); });
-addon.use('/configure', express.static(path.join(__dirname, '../dist')));
-addon.get('/:catalogChoices?/configure', function (req, res) { res.sendFile(path.join(__dirname, '../dist/index.html')); });
 
 // --- Manifest Route (with caching) ---
 addon.get("/:catalogChoices?/manifest.json", async function (req, res) {
@@ -68,30 +65,58 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
   const { catalogChoices, type, id, extra } = req.params;
   const config = parseConfig(catalogChoices) || {};
   const language = config.language || DEFAULT_LANGUAGE;
-  const sessionId = config.sessionId;
-  let search = null;
-  if (extra && extra.startsWith('search=')) {
-      search = decodeURIComponent(extra.substring('search='.length));
-  }
-  const { genre, skip } = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
-  const page = skip ? Math.ceil(parseInt(skip) / 20 + 1) : 1;
   
   try {
     let metas;
-    const args = [type, language, page];
-    if (search) {
-      metas = await getSearch(id, type, language, search, config);
+    if (id.includes('search')) {
+      const extraArgs = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
+      
+      metas = await getSearch(id, type, language, extraArgs, config);
+
     } else {
+      const { genre: genreName, skip } = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
+      const page = skip ? Math.ceil(parseInt(skip) / 20 + 1) : 1;
+      const args = [type, language, page];
+
       switch (id) {
-        case "tmdb.trending": metas = await getTrending(...args, genre, config, catalogChoices); break;
-        case "tmdb.favorites": metas = await getFavorites(...args, genre, sessionId); break;
-        case "tmdb.watchlist": metas = await getWatchList(...args, genre, sessionId); break;
-        default: metas = await getCatalog(...args, id, genre, config, catalogChoices); break;
+        case "tmdb.trending":
+          metas = (await getTrending(...args, genreName, config, catalogChoices)).metas;
+          break;
+        case "tmdb.favorites":
+          metas = (await getFavorites(...args, genreName, config.sessionId)).metas;
+          break;
+        case "tmdb.watchlist":
+          metas = (await getWatchList(...args, genreName, config.sessionId)).metas;
+          break;
+
+        case 'mal.genres': {
+          const mediaType = 'series';
+
+          if (genreName) {
+            const allAnimeGenres = await jikan.getAnimeGenres();
+            const selectedGenre = allAnimeGenres.find(g => g.name === genreName);
+
+            if (selectedGenre) {
+              const genreId = selectedGenre.mal_id;
+              const animeResults = await jikan.getAnimeByGenre(genreId, mediaType, 50, config);
+              metas = animeResults.map(anime => 
+                parseAnimeCatalogMeta(anime, config, language)
+              ).filter(Boolean);
+            }
+          }
+          break;
+        }
+
+        default:
+          metas = (await getCatalog(...args, id, genreName, config, catalogChoices)).metas;
+          break;
       }
     }
     
-    const cacheOpts = { cacheMaxAge: 1 * 60 * 60, staleRevalidate: 24 * 60 * 60 };
-    respond(res, metas, cacheOpts);
+    const responseData = metas.metas ? metas : { metas };
+    
+    const cacheOpts = { cacheMaxAge: 1 * 60 * 60 };
+    respond(res, responseData, cacheOpts);
 
   } catch (e) {
     console.error(e);
@@ -183,5 +208,14 @@ addon.get("/api/image/blur", async function (req, res) {
     res.status(500).send('Error processing image');
   }
 });
+
+addon.use(favicon(path.join(__dirname, '../public/favicon.png')));
+addon.use('/configure', express.static(path.join(__dirname, '../dist')));
+addon.get('/:catalogChoices?/configure', function (req, res) {
+    res.sendFile(path.join(__dirname, '../dist/index.html'));
+});
+
+addon.use(express.static(path.join(__dirname, '../public')));
+addon.use(express.static(path.join(__dirname, '../dist')));
 
 module.exports = addon;

@@ -4,9 +4,9 @@ const { getGenreList } = require("./getGenreList");
 const Utils = require("../utils/parseProps");
 const tvdb = require("./tvdb");
 const { to3LetterCode } = require("./language-map"); 
-
+const jikan = require('./mal');
 const moviedb = new MovieDb(process.env.TMDB_API);
-
+const { isAnime } = require("../utils/isAnime");
 function sanitizeQuery(query) {
   if (!query) return '';
   return query.replace(/[\[\]()!?]/g, ' ').replace(/[:.-]/g, ' ').trim().replace(/\s\s+/g, ' ');
@@ -41,8 +41,22 @@ async function parseTvdbSearchResult(extendedRecord, language, config) {
     name: translatedName, 
     poster: config.rpdbkey ? posterProxyUrl : fallbackImage,
     year: extendedRecord.year,
-    description: overview
+    description: overview,
+    isAnime: isAnime(extendedRecord)
   };
+}
+
+async function performAnimeSearch(query, language, config) {
+  const searchResults = await jikan.searchAnime(query, 25, config);
+  const desiredTypes = new Set(['tv', 'movie', 'ova', 'ona']);
+  
+  const metas = searchResults.filter(item => {
+    return typeof item?.type === 'string' && desiredTypes.has(item.type.toLowerCase());
+  }).map(anime => 
+    Utils.parseAnimeCatalogMeta(anime, config, language)
+  ).filter(Boolean);
+  console.log(metas); 
+  return metas;
 }
 
 async function performMovieSearch(query, language, config, genreList) {
@@ -67,10 +81,11 @@ async function performMovieSearch(query, language, config, genreList) {
 
     const hydrationPromises = Array.from(rawResults.values()).map(async (media) => {
         const parsed = Utils.parseMedia(media, 'movie', genreList);
-        console.log("parsed media: " +media.poster_path);
         const tmdbPosterFullUrl = media.poster_path === null ? `https://artworks.thetvdb.com/banners/images/missing/series.jpg` : `https://image.tmdb.org/t/p/w500${media.poster_path}`;
         const posterProxyUrl = `${host}/poster/movie/tmdb:${media.id}?fallback=${encodeURIComponent(tmdbPosterFullUrl)}&lang=${language}&key=${config.rpdbkey}`;
         parsed.poster = config.rpdbkey ? posterProxyUrl : tmdbPosterFullUrl;
+        parsed.isAnime = isAnime(media, genreList);
+        parsed.popularity = media.popularity;
         return parsed;
     });
 
@@ -79,7 +94,8 @@ async function performMovieSearch(query, language, config, genreList) {
         if(parsed && !searchResults.has(parsed.id)) searchResults.set(parsed.id, parsed);
     });
     
-    return Array.from(searchResults.values());
+    const finalResults = Array.from(searchResults.values());
+    return Utils.sortSearchResults(finalResults, query); 
 }
 
 async function performSeriesSearch(query, language, config) {
@@ -118,28 +134,73 @@ async function performSeriesSearch(query, language, config) {
   const detailedResults = await Promise.all(detailPromises);
   
   const parsePromises = detailedResults.map(record => parseTvdbSearchResult(record, language, config));
-  return (await Promise.all(parsePromises)).filter(Boolean);
+  const finalResults = (await Promise.all(parsePromises)).filter(Boolean);
+  return Utils.sortSearchResults(finalResults, query);
 }
 
-
-
-async function getSearch(id, type, language, query, config) {
+async function getSearch(id, type, language, extra, config) {
   try {
-    let metas = [];
-    if (type === 'movie') {
-      const genreList = await getGenreList(language, type);
-      // sanitize movie search query as well for consistency
-      const sanitizedQuery = sanitizeQuery(query);
-      metas = await performMovieSearch(sanitizedQuery, language, config, genreList);
-      //console.log(metas);
-    } else {
-      metas = await performSeriesSearch(query, language, config);
+    if (!extra) {
+      console.warn(`Search request for id '${id}' received with no 'extra' argument.`);
+      return { metas: [] };
     }
+
+    const extraArgs = (typeof extra === 'string') ? { search: extra } : extra;
+    console.log(extraArgs);
+    let metas = [];
+
+
+    if (id === 'mal.genre_search' && type === 'anime') {
+      const genreId = extraArgs.genre_id; 
+      const typeFilter = extraArgs.type_filter;
+      const results = await jikan.getAnimeByGenre(genreId, typeFilter, 25, config);
+      metas = results.map(item => ({
+        id: `mal:${item.mal_id}`,
+        type: 'anime',
+        name: item.title,
+        poster: item.images?.jpg?.large_image_url || item.images?.jpg?.image_url,
+        year: item.year,
+        description: item.synopsis
+      }));
+
+    } else if (id === 'mal.va_search' && type === 'anime') {
+      const personId = extraArgs.va_id; 
+      const roles = await jikan.getAnimeByVoiceActor(personId);
+      metas = roles.map(role => ({
+        id: `mal:${role.anime.mal_id}`,
+        type: 'anime',
+        name: role.anime.title,
+        poster: role.anime.images?.jpg?.large_image_url || role.anime.images?.jpg?.image_url,
+        description: `Role: ${role.character.name}`,
+      }));
+
+    } else {
+      const query = extraArgs.search;
+      if (!query) {
+        console.warn(`Standard search request for id '${id}' received with no query text.`);
+        return { metas: [] };
+      }
+      
+      switch (type) {
+        case 'movie':
+          const genreList = await getGenreList(language, type);
+          metas = await performMovieSearch(query, language, config, genreList);
+          break;
+        case 'series':
+          metas = await performSeriesSearch(query, language, config);
+          break;
+        case 'anime':
+          metas = await performAnimeSearch(query, language, config);
+          break;
+      }
+    }
+
     return { metas };
   } catch (error) {
-    console.error(`Error during search for query "${query}":`, error);
+    console.error(`Error during search for id "${id}":`, error);
     return { metas: [] };
   }
 }
+
 
 module.exports = { getSearch };
