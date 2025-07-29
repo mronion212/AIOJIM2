@@ -256,31 +256,47 @@ function parseAnimeCreditsLink(characterData, type, configString, castCount) {
 function parseRunTime(runtime) {
   if (!runtime) return "";
 
-  let minutesAsNumber;
+  let totalMinutes;
 
-  if (typeof runtime === 'string') {
-    minutesAsNumber = parseInt(runtime, 10);
+  if (typeof runtime === 'number') {
+    totalMinutes = runtime;
   } 
-  else if (typeof runtime === 'number') {
-    minutesAsNumber = runtime;
-  } 
-  else {
+  else if (typeof runtime === 'string') {
+    let hours = 0;
+    let minutes = 0;
+
+    const hourMatch = runtime.match(/(\d+)\s*hr?/);
+    if (hourMatch) {
+      hours = parseInt(hourMatch[1], 10);
+    }
+
+    const minuteMatch = runtime.match(/(\d+)\s*min?/);
+    if (minuteMatch) {
+      minutes = parseInt(minuteMatch[1], 10);
+    }
+    if (hours === 0 && minutes === 0) {
+      totalMinutes = parseInt(runtime, 10);
+    } else {
+      totalMinutes = (hours * 60) + minutes;
+    }
+
+  } else {
+    return ""; 
+  }
+
+  if (isNaN(totalMinutes) || totalMinutes <= 0) {
     return "";
   }
 
-  if (isNaN(minutesAsNumber)) {
-    return "";
-  }
+  const finalHours = Math.floor(totalMinutes / 60);
+  const finalMinutes = totalMinutes % 60;
 
-  const hours = Math.floor(minutesAsNumber / 60);
-  const minutes = minutesAsNumber % 60;
-
-  if (minutesAsNumber >= 60) {
-    const hourString = `${hours}h`;
-    const minuteString = minutes > 0 ? `${minutes}min` : '';
+  if (finalHours > 0) {
+    const hourString = `${finalHours}h`;
+    const minuteString = finalMinutes > 0 ? `${finalMinutes}min` : '';
     return `${hourString}${minuteString}`;
   } else {
-    return `${minutesAsNumber}min`;
+    return `${finalMinutes}min`;
   }
 }
 
@@ -379,12 +395,13 @@ function parseAnimeCatalogMeta(anime, config, language) {
   const malId = anime.mal_id;
   const stremioType = anime.type?.toLowerCase() === 'movie' ? 'movie' : 'series';
 
-
+  const mapping = idMapper.getMappingByMalId(malId);
   const malPosterUrl = anime.images?.jpg?.large_image_url;
   let finalPosterUrl = malPosterUrl;
-
+  const kitsuId = mapping.kitsu_id;
+  const imdbId = mapping?.imdb_id;
+  const metaType = (kitsuId || imdbId) ? stremioType : 'anime';
   if (config.rpdbkey) {
-    const mapping = idMapper.getMappingByMalId(malId);
     
     if (mapping) {
       const tvdbId = mapping.thetvdb_id;

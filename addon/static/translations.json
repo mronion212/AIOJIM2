@@ -7,6 +7,14 @@
     "favorites": "Favorites",
     "watchlist": "Watchlist",
     "search": "Search",
+    "airing": "MAL Airing Now",
+    "upcoming": "MAL Upcoming Season",
+    "genres": "MAL Genres",
+    "decade80s": "MAL Best of the 80s",
+    "decade90s": "MAL Best of the 90s",
+    "decade00s": "MAL Best of the 2000s",
+    "decade10s": "MAL Best of the 2010s",
+    "decade20s": "MAL Best of the 2020s",
     "nfx": "Netflix",
     "nfk": "Netflix Kids",
     "hbm": "HBO Max",
@@ -44,6 +52,14 @@
     "trending": "Tendências",
     "favorites": "Favoritos",
     "watchlist": "Interesses",
+    "airing": "MAL Em Exibição",
+    "upcoming": "MAL Próxima Temporada",
+    "genres": "MAL Gêneros de Anime",
+    "decade80s": "MAL Melhor dos Anos 80",
+    "decade90s": "MAL Melhor dos Anos 90",
+    "decade00s": "MAL Melhor dos Anos 2000",
+    "decade10s": "MAL Melhor dos Anos 2010",
+    "decade20s": "MAL Melhor dos Anos 2020",
     "added_date": "Data de Adição",
     "popularity": "Popularidade",
     "release_date": "Data de Lançamento",
@@ -57,7 +73,15 @@
     "language": "Idioma",
     "trending": "Tendencias",
     "favorites": "Favoritos",
-    "watchlist": "Intereses"
+    "watchlist": "Intereses",
+    "airing": "MAL En Emisión",
+    "upcoming": "MAL Próxima Temporada",
+    "genres": "MAL Géneros de Anime",
+    "decade80s": "MAL Lo Mejor de los 80",
+    "decade90s": "MAL Lo Mejor de los 90",
+    "decade00s": "MAL Lo Mejor de los 2000",
+    "decade10s": "MAL Lo Mejor de los 2010",
+    "decade20s": "MAL Lo Mejor de los 2020"
   },
   "fr-FR": {
     "popular": "Populaire",
@@ -65,7 +89,15 @@
     "language": "Langue",
     "trending": "Tendances",
     "favorites": "Favoris",
-    "watchlist": "Intérêts"
+    "watchlist": "Intérêts",
+    "airing": "MAL En Cours de Diffusion",
+    "upcoming": "MAL Saison à Venir",
+    "genres": "MAL Genres d'Anime",
+    "decade80s": "MAL Le Meilleur des Années 80",
+    "decade90s": "MAL Le Meilleur des Années 90",
+    "decade00s": "MAL Le Meilleur des Années 2000",
+    "decade10s": "MAL Le Meilleur des Années 2010",
+    "decade20s": "MAL Le Meilleur des Années 2020"
   },
   "de-DE": {
     "popular": "Beliebt",
@@ -73,7 +105,15 @@
     "language": "Sprache",
     "trending": "Im Trend",
     "favorites": "Favoriten",
-    "watchlist": "Interessen"
+    "watchlist": "Interessen",
+    "airing": "MAL Aktuell im TV",
+    "upcoming": "MAL Kommende Staffel",
+    "genres": "MAL Anime-Genres",
+    "decade80s": "MAL Das Beste der 80er",
+    "decade90s": "MAL Das Beste der 90er",
+    "decade00s": "MAL Das Beste der 2000er",
+    "decade10s": "MAL Das Beste der 2010er",
+    "decade20s": "MAL Das Beste der 2020er"
   },
   "it-IT": {
     "popular": "Popolare",
@@ -81,15 +121,31 @@
     "language": "Lingua",
     "trending": "Di tendenza",
     "favorites": "Preferiti",
-    "watchlist": "Interessi"
+    "watchlist": "Interessi",
+    "airing": "MAL In Onda",
+    "upcoming": "MAL Prossima Stagione",
+    "genres": "MAL Generi Anime",
+    "decade80s": "MAL Il Meglio degli Anni '80",
+    "decade90s": "MAL Il Meglio degli Anni '90",
+    "decade00s": "MAL Il Meglio degli Anni 2000",
+    "decade10s": "MAL Il Meglio degli Anni 2010",
+    "decade20s": "MAL Il Meglio degli Anni 2020"
   },
   "ru-RU": {
     "popular": "Популярное",
     "year": "Год",
     "language": "Язык",
-    "trending": "Тренды",
+    "trending": "В тренде",
     "favorites": "Избранное",
-    "watchlist": "Интересы"
+    "watchlist": "Интересы",
+    "airing": "MAL Сейчас в эфире",
+    "upcoming": "MAL Следующий сезон",
+    "genres": "MAL Жанры аниме",
+    "decade80s": "MAL Лучшее 80-х",
+    "decade90s": "MAL Лучшее 90-х",
+    "decade00s": "MAL Лучшее 2000-х",
+    "decade10s": "MAL Лучшее 2010-х",
+    "decade20s": "MAL Лучшее 2020-х"
   },
   "ja-JP": {
     "popular": "人気",
@@ -97,7 +153,15 @@
     "language": "言語",
     "trending": "トレンド",
     "favorites": "お気に入り",
-    "watchlist": "興味"
+    "watchlist": "興味",
+    "airing": "MAL 放送中",
+    "upcoming": "MAL 次のシーズン",
+    "genres": "MAL アニメのジャンル",
+    "decade80s": "MAL 80年代のベスト",
+    "decade90s": "MAL 90年代のベスト",
+    "decade00s": "MAL 2000年代のベスト",
+    "decade10s": "MAL 2010年代のベスト",
+    "decade20s": "MAL 2020年代のベスト"
   },
   "zh-CN": {
     "popular": "热门",
@@ -105,7 +169,15 @@
     "language": "语言",
     "trending": "趋势",
     "favorites": "收藏",
-    "watchlist": "兴趣"
+    "watchlist": "兴趣",
+    "airing": "MAL 正在播出",
+    "upcoming": "MAL 即将推出",
+    "genres": "MAL 动漫类型",
+    "decade80s": "MAL 80年代精选",
+    "decade90s": "MAL 90年代精选",
+    "decade00s": "MAL 2000年代精选",
+    "decade10s": "MAL 2010年代精选",
+    "decade20s": "MAL 2020年代精选"
   },
   "ko-KR": {
     "popular": "인기",
@@ -113,7 +185,15 @@
     "language": "언어",
     "trending": "트렌드",
     "favorites": "즐겨찾기",
-    "watchlist": "관심사"
+    "watchlist": "관심사",
+    "airing": "MAL 현재 방영중",
+    "upcoming": "MAL 다음 시즌",
+    "genres": "MAL 애니메이션 장르",
+    "decade80s": "MAL 80년대 최고작",
+    "decade90s": "MAL 90년대 최고작",
+    "decade00s": "MAL 2000년대 최고작",
+    "decade10s": "MAL 2010년대 최고작",
+    "decade20s": "MAL 2020년대 최고작"
   },
   "hi-IN": {
     "popular": "लोकप्रिय",
@@ -121,7 +201,15 @@
     "language": "भाषा",
     "trending": "प्रवृत्ति",
     "favorites": "पसंदीदा",
-    "watchlist": "रुचियाँ"
+    "watchlist": "रुचियाँ",
+    "airing": "MAL अभी प्रसारित हो रहा है",
+    "upcoming": "MAL आगामी सीजन",
+    "genres": "MAL एनिमे शैलियों",
+    "decade80s": "MAL 80 के दशक के सर्वश्रेष्ठ",
+    "decade90s": "MAL 90 के दशक के सर्वश्रेष्ठ",
+    "decade00s": "MAL 2000 के दशक के सर्वश्रेष्ठ",
+    "decade10s": "MAL 2010 के दशक के सर्वश्रेष्ठ",
+    "decade20s": "MAL 2020 के दशक के सर्वश्रेष्ठ"
   },
   "ar-SA": {
     "popular": "شائع",
@@ -129,7 +217,15 @@
     "language": "اللغة",
     "trending": "الشائع",
     "favorites": "المفضلة",
-    "watchlist": "الاهتمامات"
+    "watchlist": "الاهتمامات",
+    "airing": "MAL يُعرض حالياً",
+    "upcoming": "MAL الموسم القادم",
+    "genres": "MAL أنواع الأنمي",
+    "decade80s": "MAL أفضل أعمال الثمانينات",
+    "decade90s": "MAL أفضل أعمال التسعينات",
+    "decade00s": "MAL أفضل أعمال الألفينات",
+    "decade10s": "MAL أفضل أعمال 2010",
+    "decade20s": "MAL أفضل أعمال 2020"
   },
   "sr-RS": {
     "popular": "Популарно",
@@ -137,7 +233,15 @@
     "language": "Језик",
     "trending": "У тренду",
     "favorites": "Омиљени",
-    "watchlist": "Листа за гледање"
+    "watchlist": "Листа за гледање",
+    "airing": "MAL Емитује се",
+    "upcoming": "MAL Предстојећа сезона",
+    "genres": "MAL Аниме жанрови",
+    "decade80s": "MAL Најбоље из 80-их",
+    "decade90s": "MAL Најбоље из 90-их",
+    "decade00s": "MAL Најбоље из 2000-их",
+    "decade10s": "MAL Најбоље из 2010-их",
+    "decade20s": "MAL Најбоље из 2020-их"
   },
   "pl-PL": {
     "popular": "Popularne",
@@ -145,7 +249,15 @@
     "language": "Język",
     "trending": "Trendy",
     "favorites": "Ulubione",
-    "watchlist": "Do obejrzenia"
+    "watchlist": "Do obejrzenia",
+    "airing": "MAL Teraz w Emisji",
+    "upcoming": "MAL Nadchodzący Sezon",
+    "genres": "MAL Gatunki Anime",
+    "decade80s": "MAL Najlepsze z lat 80.",
+    "decade90s": "MAL Najlepsze z lat 90.",
+    "decade00s": "MAL Najlepsze z lat 2000.",
+    "decade10s": "MAL Najlepsze z lat 2010.",
+    "decade20s": "MAL Najlepsze z lat 2020."
   },
   "he-IL": {
     "popular": "פופולרי",
@@ -155,6 +267,14 @@
     "favorites": "מועדפים",
     "watchlist": "רשימת צפייה",
     "search": "חיפוש",
+    "airing": "MAL משודר עכשיו",
+    "upcoming": "MAL עונה קרובה",
+    "genres": "MAL ז'אנרים של אנימה",
+    "decade80s": "MAL הטובים של שנות ה-80",
+    "decade90s": "MAL הטובים של שנות ה-90",
+    "decade00s": "MAL הטובים של שנות ה-2000",
+    "decade10s": "MAL הטובים של שנות ה-2010",
+    "decade20s": "MAL הטובים של שנות ה-2020",
     "nfx": "נטפליקס",
     "nfk": "נטפליקס ילדים",
     "dnp": "דיסני פלוס",

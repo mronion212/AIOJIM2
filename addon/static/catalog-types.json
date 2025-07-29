@@ -18,6 +18,25 @@
       "defaultOptions": ["Day", "Week"]
     }
   },
+  "mal": {
+    "airing": {
+      "nameKey": "airing",
+      "extraSupported": ["skip"]
+    },
+    "upcoming": {
+      "nameKey": "upcoming",
+      "extraSupported": ["skip"]
+    },
+    "genres": {
+      "nameKey": "genres",
+      "extraSupported": ["genre", "skip"]
+    },
+    "decade80s": { "nameKey": "decade80s", "extraSupported": ["skip"] },
+    "decade90s": { "nameKey": "decade90s", "extraSupported": ["skip"] },
+    "decade00s": { "nameKey": "decade00s", "extraSupported": ["skip"] },
+    "decade10s": { "nameKey": "decade10s", "extraSupported": ["skip"] },
+    "decade20s": { "nameKey": "decade20s", "extraSupported": ["skip"] }
+  },
   "auth": {
     "favorites": {
       "nameKey": "favorites",

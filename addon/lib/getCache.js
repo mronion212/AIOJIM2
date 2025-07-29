@@ -6,6 +6,8 @@ const NO_CACHE = process.env.NO_CACHE === 'true';
 const META_TTL = 7 * 24 * 60 * 60;     // 7 days in seconds
 const CATALOG_TTL = 1 * 24 * 60 * 60;  // 1 day in seconds
 const TVDB_API_TTL = 12 * 60 * 60;   // 12 hours in seconds for API data
+const JIKAN_API_TTL = 7 * 24 * 60 * 60;
+const STATIC_CATALOG_TTL = 30 * 24 * 60 * 60;
 
 const redis = NO_CACHE ? null : new Redis(REDIS_URL, {
   maxRetriesPerRequest: 3,
@@ -83,8 +85,19 @@ function cacheWrapTvdbApi(key, method) {
   return cacheWrap(`tvdb-api:${key}`, method, TVDB_API_TTL);
 }
 
+function cacheWrapJikanApi(key, method) {
+  return cacheWrap(`jikan-api:${key}`, method, JIKAN_API_TTL);
+}
+
+function cacheWrapStaticCatalog(id, method) {
+  return cacheWrap(`catalog:${id}`, method, STATIC_CATALOG_TTL);
+}
+
 module.exports = {
+  redis,
   cacheWrapCatalog,
   cacheWrapMeta,
-  cacheWrapTvdbApi
+  cacheWrapTvdbApi,
+  cacheWrapJikanApi,
+  cacheWrapStaticCatalog,
 };

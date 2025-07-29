@@ -7,7 +7,7 @@ const { getCatalog } = require("./lib/getCatalog");
 const { getSearch } = require("./lib/getSearch");
 const { getManifest, DEFAULT_LANGUAGE } = require("./lib/getManifest");
 const { getMeta } = require("./lib/getMeta");
-const { cacheWrapMeta, cacheWrapCatalog } = require("./lib/getCache");
+const { cacheWrapMeta, cacheWrapCatalog, cacheWrapJikanApi, cacheWrapStaticCatalog } = require("./lib/getCache");
 const { getTrending } = require("./lib/getTrending");
 const { parseConfig, getRpdbPoster, checkIfExists, parseAnimeCatalogMeta } = require("./utils/parseProps");
 const { getRequestToken, getSessionId } = require("./lib/getSession");
@@ -65,62 +65,95 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
   const { catalogChoices, type, id, extra } = req.params;
   const config = parseConfig(catalogChoices) || {};
   const language = config.language || DEFAULT_LANGUAGE;
-  
+  const sessionId = config.sessionId;
+
+  const isStaticCatalog = ['mal.decade80s', 'mal.decade90s', 'mal.decade00s', 'mal.decade10s'].includes(id);
+  const cacheWrapper = isStaticCatalog ? cacheWrapStaticCatalog : cacheWrapCatalog;
+
+  const cacheKey = `${id}:${type}:${JSON.stringify(extra || {})}:${JSON.stringify(config.ageRating || 'any')}`;
+
   try {
-    let metas;
-    if (id.includes('search')) {
-      const extraArgs = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
+    const responseData = await cacheWrapper(cacheKey, async () => {
+      let metas = []; 
       
-      metas = await getSearch(id, type, language, extraArgs, config);
-
-    } else {
-      const { genre: genreName, skip } = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
-      const page = skip ? Math.ceil(parseInt(skip) / 20 + 1) : 1;
-      const args = [type, language, page];
-
-      switch (id) {
-        case "tmdb.trending":
-          metas = (await getTrending(...args, genreName, config, catalogChoices)).metas;
-          break;
-        case "tmdb.favorites":
-          metas = (await getFavorites(...args, genreName, config.sessionId)).metas;
-          break;
-        case "tmdb.watchlist":
-          metas = (await getWatchList(...args, genreName, config.sessionId)).metas;
-          break;
-
-        case 'mal.genres': {
-          const mediaType = 'series';
-
-          if (genreName) {
-            const allAnimeGenres = await jikan.getAnimeGenres();
-            const selectedGenre = allAnimeGenres.find(g => g.name === genreName);
-
-            if (selectedGenre) {
-              const genreId = selectedGenre.mal_id;
-              const animeResults = await jikan.getAnimeByGenre(genreId, mediaType, 50, config);
-              metas = animeResults.map(anime => 
-                parseAnimeCatalogMeta(anime, config, language)
-              ).filter(Boolean);
-            }
+      if (id.includes('search')) {
+        const extraArgs = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
+        const searchResult = await getSearch(id, type, language, extraArgs, config);
+        metas = searchResult.metas || [];
+      } else {
+        const { genre: genreName, skip } = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
+        const page = skip ? Math.ceil(parseInt(skip) / 20 + 1) : 1;
+        const args = [type, language, page];
+        switch (id) {
+          // --- Dynamic Catalogs (will use 1-hour cache) ---
+          case "tmdb.trending":
+            metas = (await getTrending(...args, genreName, config, catalogChoices)).metas;
+            break;
+          case "tmdb.favorites":
+            metas = (await getFavorites(...args, genreName, sessionId)).metas;
+            break;
+          case "tmdb.watchlist":
+            metas = (await getWatchList(...args, genreName, sessionId)).metas;
+            break;
+          case 'mal.airing':
+          case 'mal.upcoming':
+          case 'mal.decade20s': {
+            const pageSize = 50;
+            const animeResults = id === 'mal.airing'
+              ? await jikan.getAiringNow(pageSize, config)
+              : id === 'mal.upcoming'
+                ? await jikan.getUpcoming(pageSize, config)
+                : await jikan.getTopAnimeByDateRange('2020-01-01', '2029-12-31', pageSize, config);
+            metas = animeResults.map(anime => parseAnimeCatalogMeta(anime, config, language)).filter(Boolean);
+            break;
           }
-          break;
-        }
+          case 'mal.genres': {
+            const mediaType = 'series';
+            if (genreName) {
+               const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
+                console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
+                return await jikan.getAnimeGenres();
+               });
+              const selectedGenre = allAnimeGenres.find(g => g.name === genreName);
+              if (selectedGenre) {
+                const genreId = selectedGenre.mal_id;
+                const animeResults = await jikan.getAnimeByGenre(genreId, mediaType, 50, config);
+                metas = animeResults.map(anime => parseAnimeCatalogMeta(anime, config, language)).filter(Boolean);
+              }
+            }
+            break;
+          }
 
-        default:
-          metas = (await getCatalog(...args, id, genreName, config, catalogChoices)).metas;
-          break;
+          case 'mal.decade80s':
+          case 'mal.decade90s':
+          case 'mal.decade00s':
+          case 'mal.decade10s':
+            const decadeMap = {
+              'mal.decade80s': ['1980-01-01', '1989-12-31'],
+              'mal.decade90s': ['1990-01-01', '1999-12-31'],
+              'mal.decade00s': ['2000-01-01', '2009-12-31'],
+              'mal.decade10s': ['2010-01-01', '2019-12-31'],
+            };
+            const [startDate, endDate] = decadeMap[id];
+            const animeResults = await jikan.getTopAnimeByDateRange(startDate, endDate, 50, config);
+            metas = animeResults.map(anime => parseAnimeCatalogMeta(anime, config, language)).filter(Boolean);
+            break;
+          
+          default:
+            metas = (await getCatalog(type, language, page, id, genreName, config, catalogChoices)).metas;
+            break;
+        }
       }
-    }
-    
-    const responseData = metas.metas ? metas : { metas };
-    
-    const cacheOpts = { cacheMaxAge: 1 * 60 * 60 };
-    respond(res, responseData, cacheOpts);
+      return { metas: metas || [] };
+    });
+    const httpCacheOpts = isStaticCatalog 
+        ? { cacheMaxAge: 24 * 60 * 60 }
+        : { cacheMaxAge: 1 * 60 * 60 }; 
+    respond(res, responseData, httpCacheOpts);
 
   } catch (e) {
-    console.error(e);
-    return res.status(404).send((e || {}).message || "Not found");
+    console.error(`Error in catalog route for id "${id}" and type "${type}":`, e);
+    return res.status(500).send("Internal Server Error");
   }
 });
 

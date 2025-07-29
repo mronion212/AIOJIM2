@@ -289,7 +289,7 @@ async function buildAnimeResponse(malData, language, characterData, episodeData,
       }
     }
     const seriesId = `mal:${malData.mal_id}`;
-    if (stremioType === 'series' && episodeData && episodeData.length > 0) {
+    if (stremioType === 'series' && malData.status !== 'Not yet aired' && episodeData && episodeData.length > 0) {
       videos = (episodeData || []).map(ep => {
         let episodeId;
         if (kitsuId) {
@@ -364,7 +364,7 @@ async function buildAnimeResponse(malData, language, characterData, episodeData,
       background: bestBackgroundUrl,
       links: links.filter(Boolean),
       behaviorHints: {
-        defaultVideoId: stremioType === 'movie' ? `mal:${malData.mal_id}` : null,
+        defaultVideoId: stremioType === 'movie' ? ((kitsuId ? `kitsu:${kitsuId}` : null) || imdbId || seriesIdMAL) : null,
         hasScheduledVideos: stremioType === 'series',
       },
       videos: videos,

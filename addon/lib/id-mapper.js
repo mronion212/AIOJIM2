@@ -1,78 +1,87 @@
 const fs = require('fs').promises;
 const path = require('path');
 const axios = require('axios');
+const { redis } = require('./getCache'); 
 
 // from  https://github.com/Fribb/anime-lists
 const REMOTE_MAPPING_URL = 'https://raw.githubusercontent.com/Fribb/anime-lists/refs/heads/master/anime-list-full.json';
-
 const LOCAL_CACHE_PATH = path.join(__dirname, '..', 'data', 'anime-list-full.json.cache');
-
+const REDIS_ETAG_KEY = 'anime-list-etag'; 
 
 let animeIdMap = new Map();
 let isInitialized = false;
 
-
 function processAndIndexData(jsonData) {
   const animeList = JSON.parse(jsonData);
-  
   animeIdMap.clear();
-  
   for (const item of animeList) {
     if (item.mal_id) {
       animeIdMap.set(item.mal_id, item);
     }
   }
-  
   isInitialized = true;
   console.log(`[ID Mapper] Successfully loaded and indexed ${animeIdMap.size} anime mappings.`);
 }
 
 /**
  * Loads the anime mapping file into memory on addon startup.
- * Tries to fetch the latest version from GitHub, caches it locally,
- * and falls back to the local cache if the fetch fails.
+ * It uses Redis and ETags to check if the remote file has changed,
+ * avoiding a full download if the local cache is up-to-date.
  */
 async function initializeMapper() {
-  if (isInitialized) {
-    return;
-  }
+  if (isInitialized) return;
 
-  let jsonData;
-  let source;
+  const useRedisCache = redis; 
 
   try {
-    console.log(`[ID Mapper] Attempting to fetch latest mapping list from: ${REMOTE_MAPPING_URL}`);
-    const response = await axios.get(REMOTE_MAPPING_URL, { timeout: 15000 });
-    jsonData = JSON.stringify(response.data);
-    source = 'Remote URL';
+    if (useRedisCache) {
+      const savedEtag = await redis.get(REDIS_ETAG_KEY);
+      const headers = (await axios.head(REMOTE_MAPPING_URL, { timeout: 10000 })).headers;
+      const remoteEtag = headers.etag;
 
-    try {
-      await fs.mkdir(path.dirname(LOCAL_CACHE_PATH), { recursive: true });
-      await fs.writeFile(LOCAL_CACHE_PATH, jsonData, 'utf-8');
-      console.log(`[ID Mapper] Successfully saved latest mapping list to local cache.`);
-    } catch (writeError) {
-      console.error('[ID Mapper] Warning: Failed to write to local cache file.', writeError);
+      console.log(`[ID Mapper] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
+
+      if (savedEtag && remoteEtag && savedEtag === remoteEtag) {
+        try {
+          console.log('[ID Mapper] No changes detected. Loading from local disk cache...');
+          const fileContent = await fs.readFile(LOCAL_CACHE_PATH, 'utf-8');
+          processAndIndexData(fileContent);
+          return;
+        } catch (e) {
+          console.warn('[ID Mapper] ETag matched, but local cache was unreadable. Forcing re-download.');
+        }
+      }
+    } else {
+      console.log('[ID Mapper] Redis cache is disabled. Proceeding to download.');
     }
 
-  } catch (fetchError) {
-    console.warn(`[ID Mapper] Warning: Could not fetch latest mapping list from GitHub. Error: ${fetchError.message}`);
-    console.log('[ID Mapper] Attempting to fall back to local cache file...');
+    console.log('[ID Mapper] Downloading full list...');
+    const response = await axios.get(REMOTE_MAPPING_URL, { timeout: 45000 });
+    const jsonData = JSON.stringify(response.data);
 
-    try {
-      jsonData = await fs.readFile(LOCAL_CACHE_PATH, 'utf-8');
-      source = 'Local Cache';
-    } catch (readError) {
-      console.error('[ID Mapper] CRITICAL: Failed to fetch from URL and also failed to read from local cache file. The mapper will be empty.', readError);
-      return; 
+    
+    await fs.mkdir(path.dirname(LOCAL_CACHE_PATH), { recursive: true });
+    await fs.writeFile(LOCAL_CACHE_PATH, jsonData, 'utf-8');
+    
+    if (useRedisCache) {
+      await redis.set(REDIS_ETAG_KEY, response.headers.etag);
     }
-  }
-
-  if (jsonData) {
-    console.log(`[ID Mapper] Processing data from: ${source}`);
+    
     processAndIndexData(jsonData);
+
+  } catch (error) {
+    console.error(`[ID Mapper] An error occurred during remote initialization: ${error.message}`);
+    console.log('[ID Mapper] Attempting to fall back to local disk cache...');
+    
+    try {
+      const fileContent = await fs.readFile(LOCAL_CACHE_PATH, 'utf-8');
+      console.log('[ID Mapper] Successfully loaded data from local cache on fallback.');
+      processAndIndexData(fileContent);
+    } catch (fallbackError) {
+      console.error('[ID Mapper] CRITICAL: Fallback to local cache also failed. Mapper will be empty.');
+    }
   }
 }
-
 
 function getMappingByMalId(malId) {
   if (!isInitialized) {

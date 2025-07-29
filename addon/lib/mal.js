@@ -158,14 +158,58 @@ async function getAnimeByVoiceActor(personId) {
     });
 }
 
-async function _getAnimeByGenrePage(genreId, typeFilter = null, page = 1, config = {}) {
-  let url = `${JIKAN_API_BASE}/anime?genres=${genreId}&page=${page}&order_by=members&sort=desc&limit=25`;
-  typeFilter = genreId === 12 ? 'ova' : typeFilter;
-  if (typeFilter) {
-    let jikanType = typeFilter.toLowerCase();
-    if (jikanType === 'series') { jikanType = 'tv'; }
-    url += `&type=${jikanType}`;
+/**
+ * A generic paginator for any Jikan API endpoint that supports pagination.
+ * It fetches multiple pages and combines the results.
+ *
+ * @param {string} endpoint - The Jikan endpoint path (e.g., '/seasons/now', '/genres/anime').
+ * @param {number} totalItemsToFetch - The total number of items you want to get.
+ * @param {object} [queryParams={}] - Any additional query parameters for the URL (like 'q', 'genres', 'rating').
+ * @returns {Promise<Array>} - A promise that resolves to a flat array of all fetched items.
+ */
+async function jikanPaginator(endpoint, totalItemsToFetch, queryParams = {}) {
+  const JIKAN_PAGE_LIMIT = 25;
+  const desiredPages = Math.ceil(totalItemsToFetch / JIKAN_PAGE_LIMIT);
+  let allItems = [];
+
+  async function _fetchPage(page) {
+    const params = new URLSearchParams({
+      page: page,
+      limit: JIKAN_PAGE_LIMIT,
+      ...queryParams
+    });
+    const url = `${JIKAN_API_BASE}${endpoint}?${params.toString()}`;
+    return enqueueRequest(() => _makeJikanRequest(url), url)
+      .then(response => response.data || { data: [], pagination: {} })
+      .catch(e => {
+        console.error(`Could not fetch page ${page} for endpoint ${endpoint}:`, e.message);
+        return { data: [], pagination: {} };
+      });
   }
+
+  const firstPageResponse = await _fetchPage(1);
+  if (!firstPageResponse.data || firstPageResponse.data.length === 0) {
+    return [];
+  }
+
+  allItems.push(...firstPageResponse.data);
+  const lastVisiblePage = firstPageResponse.pagination?.last_visible_page || 1;
+  const actualTotalPagesToFetch = Math.min(desiredPages, lastVisiblePage);
+
+  if (actualTotalPagesToFetch > 1) {
+    const pagePromises = [];
+    for (let page = 2; page <= actualTotalPagesToFetch; page++) {
+      pagePromises.push(_fetchPage(page).then(result => result?.data || []));
+    }
+    const resultsByPage = await Promise.all(pagePromises);
+    allItems = allItems.concat(resultsByPage.flat());
+  }
+
+  return allItems.slice(0, totalItemsToFetch);
+}
+
+async function getAiringNow(totalItemsToFetch = 50, config = {}) {
+  const queryParams = {};
   if (config.ageRating) {
     let jikanRating;
     switch (config.ageRating) {
@@ -174,43 +218,59 @@ async function _getAnimeByGenrePage(genreId, typeFilter = null, page = 1, config
       case "PG-13": jikanRating = 'pg13'; break;
       case "R": jikanRating = 'r17'; break;
     }
-    if (jikanRating) { url += `&rating=${jikanRating}`; }
+    if (jikanRating) {
+      queryParams.rating = jikanRating;
+    }
   }
-  return enqueueRequest(() => _makeJikanRequest(url), url)
-    .then(response => response.data || { data: [], pagination: {} }) 
-    .catch(e => {
-      console.error(`Could not fetch anime for genre ID ${genreId} with type filter "${typeFilter}"`, e.message);
-      return { data: [], pagination: {} };
-    });
+  return jikanPaginator('/seasons/now', totalItemsToFetch, queryParams);
 }
 
-async function getPaginatedAnimeByGenre(genreId, typeFilter = null, totalItemsToFetch = 50, config = {}) {
-  const JIKAN_PAGE_LIMIT = 25;
-  const desiredPages = Math.ceil(totalItemsToFetch / JIKAN_PAGE_LIMIT);
-
-  const firstPageResponse = await _getAnimeByGenrePage(genreId, typeFilter, 1, config);
-  if (!firstPageResponse || !firstPageResponse.data || firstPageResponse.data.length === 0) {
-    console.log(`[Paginator] No results found on page 1 for genre ${genreId}.`);
-    return [];
-  }
-  let allAnime = firstPageResponse.data;
-  const lastVisiblePage = firstPageResponse.pagination?.last_visible_page || 1;
-
-  const totalPagesToFetch = Math.min(desiredPages, lastVisiblePage);
-
-  if (totalPagesToFetch > 1) {
-    const pagePromises = [];
-    for (let page = 2; page <= totalPagesToFetch; page++) {
-      pagePromises.push(
-        _getAnimeByGenrePage(genreId, typeFilter, page, config)
-          .then(result => result?.data || [])
-      );
+async function getUpcoming(totalItemsToFetch = 50, config = {}) {
+  const queryParams = {};
+  if (config.ageRating) {
+    // ... (same ageRating switch logic as above)
+    let jikanRating;
+    switch (config.ageRating) {
+      case "G": jikanRating = 'g'; break;
+      case "PG": jikanRating = 'pg'; break;
+      case "PG-13": jikanRating = 'pg13'; break;
+      case "R": jikanRating = 'r17'; break;
     }
-    const resultsByPage = await Promise.all(pagePromises);
-    const subsequentAnime = resultsByPage.flat();
-    allAnime = allAnime.concat(subsequentAnime);
+    if (jikanRating) {
+      queryParams.rating = jikanRating;
+    }
   }
-  return allAnime.slice(0, totalItemsToFetch);
+  return jikanPaginator('/seasons/upcoming', totalItemsToFetch, queryParams);
+}
+
+async function getAnimeByGenre(genreId, typeFilter = null, totalItemsToFetch = 50, config = {}) {
+  const queryParams = {
+    genres: genreId,
+    order_by: 'members',
+    sort: 'desc',
+  };
+
+  if (typeFilter) {
+    let jikanType = typeFilter.toLowerCase();
+    if (jikanType === 'series') {
+        jikanType = 'tv';
+    }
+    queryParams.type = jikanType;
+  }
+
+  if (config.ageRating) {
+    let jikanRating;
+    switch (config.ageRating) {
+      case "G": jikanRating = 'g'; break;
+      case "PG": jikanRating = 'pg'; break;
+      case "PG-13": jikanRating = 'pg13'; break;
+      case "R": jikanRating = 'r17'; break;
+    }
+    if (jikanRating) {
+      queryParams.rating = jikanRating;
+    }
+  }
+  return jikanPaginator('/anime', totalItemsToFetch, queryParams);
 }
 
 
@@ -224,12 +284,50 @@ async function getAnimeGenres() {
     });
 }
 
+
+/**
+ * A generic paginator for fetching top anime within a specific date range.
+ *
+ * @param {string} startDate - The start date in YYYY-MM-DD format.
+ * @param {string} endDate - The end date in YYYY-MM-DD format.
+ * @param {number} totalItemsToFetch - The total number of items you want to get.
+ * @param {object} [config={}] - The user's configuration for age rating.
+ * @returns {Promise<Array>} - A promise that resolves to a flat array of all fetched anime.
+ */
+async function getTopAnimeByDateRange(startDate, endDate, totalItemsToFetch = 50, config = {}) {
+  const queryParams = {
+    start_date: startDate,
+    end_date: endDate,
+    order_by: 'members', 
+    sort: 'desc',
+  };
+
+  if (config.ageRating) {
+    let jikanRating;
+    switch (config.ageRating) {
+      case "G": jikanRating = 'g'; break;
+      case "PG": jikanRating = 'pg'; break;
+      case "PG-13": jikanRating = 'pg13'; break;
+      case "R": jikanRating = 'r17'; break;
+    }
+    if (jikanRating) {
+      queryParams.rating = jikanRating;
+    }
+  }
+
+  return jikanPaginator('/anime', totalItemsToFetch, queryParams);
+}
+
+
 module.exports = {
   searchAnime,
   getAnimeDetails,
   getAnimeEpisodes,
   getAnimeCharacters,
   getAnimeByVoiceActor,
-  getAnimeByGenre: getPaginatedAnimeByGenre,
+  getAnimeByGenre,
   getAnimeGenres,
+  getAiringNow,
+  getUpcoming,
+  getTopAnimeByDateRange
 };

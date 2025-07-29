@@ -42,7 +42,7 @@ async function parseTvdbSearchResult(extendedRecord, language, config) {
     poster: config.rpdbkey ? posterProxyUrl : fallbackImage,
     year: extendedRecord.year,
     description: overview,
-    isAnime: isAnime(extendedRecord)
+    //isAnime: isAnime(extendedRecord)
   };
 }
 
@@ -55,7 +55,7 @@ async function performAnimeSearch(query, language, config) {
   }).map(anime => 
     Utils.parseAnimeCatalogMeta(anime, config, language)
   ).filter(Boolean);
-  console.log(metas); 
+  //console.log(metas); 
   return metas;
 }
 
@@ -84,7 +84,7 @@ async function performMovieSearch(query, language, config, genreList) {
         const tmdbPosterFullUrl = media.poster_path === null ? `https://artworks.thetvdb.com/banners/images/missing/series.jpg` : `https://image.tmdb.org/t/p/w500${media.poster_path}`;
         const posterProxyUrl = `${host}/poster/movie/tmdb:${media.id}?fallback=${encodeURIComponent(tmdbPosterFullUrl)}&lang=${language}&key=${config.rpdbkey}`;
         parsed.poster = config.rpdbkey ? posterProxyUrl : tmdbPosterFullUrl;
-        parsed.isAnime = isAnime(media, genreList);
+        //parsed.isAnime = isAnime(media, genreList);
         parsed.popularity = media.popularity;
         return parsed;
     });
@@ -144,7 +144,8 @@ async function getSearch(id, type, language, extra, config) {
       console.warn(`Search request for id '${id}' received with no 'extra' argument.`);
       return { metas: [] };
     }
-
+    const timerLabel = `Search for "${extra}" (type: ${id})`;
+    console.time(timerLabel);
     const extraArgs = (typeof extra === 'string') ? { search: extra } : extra;
     console.log(extraArgs);
     let metas = [];
@@ -194,9 +195,10 @@ async function getSearch(id, type, language, extra, config) {
           break;
       }
     }
-
+    console.timeEnd(timerLabel);
     return { metas };
   } catch (error) {
+    console.timeEnd(timerLabel);
     console.error(`Error during search for id "${id}":`, error);
     return { metas: [] };
   }

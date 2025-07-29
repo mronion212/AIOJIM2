@@ -7,6 +7,7 @@ const catalogsTranslations = require("../static/translations.json");
 const CATALOG_TYPES = require("../static/catalog-types.json");
 const jikan = require('./mal');
 const DEFAULT_LANGUAGE = "en-US";
+const { cacheWrapJikanApi } = require('./getCache');
 
 const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
@@ -125,7 +126,7 @@ async function getManifest(config) {
   const tmdbPrefix = config.tmdbPrefix === "true";
   const provideImdbId = config.provideImdbId === "true";
   const sessionId = config.sessionId;
-  const userCatalogs = config.catalogs || getDefaultCatalogs();
+  const userCatalogs = getDefaultCatalogs();
   const translatedCatalogs = loadTranslations(language);
 
   const stremioAddonsConfig = {
@@ -155,23 +156,35 @@ async function getManifest(config) {
       if (catalogDef.requiresAuth && !sessionId) return false;
       return true;
     })
-    .map(userCatalog => {
+    .map(async (userCatalog) => {
       if (isMDBList(userCatalog.id)) {
-        return createMDBListCatalog(userCatalog, config.mdblistkey);
+          return createMDBListCatalog(userCatalog, config.mdblistkey);
       }
       const catalogDef = getCatalogDefinition(userCatalog.id);
-      const catalogOptions = getOptionsForCatalog(catalogDef, userCatalog.type, userCatalog.showInHome, options);
+      let catalogOptions = [];
+
+      if (userCatalog.id === 'mal.genres') {
+          const animeGenres = await cacheWrapJikanApi('anime-genres', async () => {
+            console.log('[Cache Miss] Fetching fresh anime genre list in manifest from Jikan...');
+            return await jikan.getAnimeGenres();
+          });
+          catalogOptions = animeGenres.map(genre => genre.name).sort();
+      } else {
+          catalogOptions = getOptionsForCatalog(catalogDef, userCatalog.type, userCatalog.showInHome, options);
+      }
 
       return createCatalog(
-        userCatalog.id,
-        userCatalog.type,
-        catalogDef,
-        catalogOptions,
-        tmdbPrefix,
-        translatedCatalogs,
-        userCatalog.showInHome
-      );
+          userCatalog.id,
+          userCatalog.type,
+          catalogDef,
+          catalogOptions,
+          tmdbPrefix,
+          translatedCatalogs,
+          userCatalog.showInHome
+      );   
     }));
+  
+  catalogs = catalogs.filter(Boolean);
 
   if (config.searchEnabled !== "false") {
     const searchCatalogMovie = {
@@ -208,22 +221,8 @@ async function getManifest(config) {
       name: "Anime Genre", 
       extra: [{ name: "genre_id", isRequired: true }]
     }
-    
-    const animeGenres = await jikan.getAnimeGenres();
-    const animeGenreNames = animeGenres.map(genre => genre.name).sort();
 
-    const animeGenreCatalog = {
-      id: 'mal.genres', 
-      name: 'MAL Genres',
-      type: 'anime', 
-      extra: [{
-        name: 'genre',
-        options: animeGenreNames,
-        isRequired: true, 
-      }]
-    };
-
-    catalogs = [...catalogs, searchCatalogMovie, searchCatalogSeries, searchCatalogAnime, searchVAAnime, searchGenreAnime, animeGenreCatalog];
+    catalogs = [...catalogs, searchCatalogMovie, searchCatalogSeries, searchCatalogAnime, searchVAAnime, searchGenreAnime];
   }
 
   if (config.geminikey) {
@@ -277,15 +276,41 @@ async function getManifest(config) {
 
 function getDefaultCatalogs() {
   const defaultTypes = ['movie', 'series'];
-  const defaultCatalogs = Object.keys(CATALOG_TYPES.default);
+  const defaultTmdbCatalogs = Object.keys(CATALOG_TYPES.default);
 
-  return defaultCatalogs.flatMap(id =>
+  const tmdbCatalogs = defaultTmdbCatalogs.flatMap(id =>
     defaultTypes.map(type => ({
       id: `tmdb.${id}`,
       type,
-      showInHome: true
+      showInHome: true 
     }))
   );
+
+  const animeCatalogs = [
+    {
+      id: 'mal.airing',
+      type: 'anime',
+      showInHome: true 
+    },
+    {
+      id: 'mal.upcoming',
+      type: 'anime',
+      showInHome: true 
+    },
+    {
+      id: 'mal.genres',
+      name: 'MAL Genres',
+      type: 'anime',
+      showInHome: false 
+    },
+    { id: 'mal.decade80s', type: 'anime', showInHome: true },
+    { id: 'mal.decade90s', type: 'anime', showInHome: true },
+    { id: 'mal.decade00s', type: 'anime', showInHome: true },
+    { id: 'mal.decade10s', type: 'anime', showInHome: true },
+    { id: 'mal.decade20s', type: 'anime', showInHome: true },
+  ];
+
+  return [...tmdbCatalogs, ...animeCatalogs];
 }
 
 module.exports = { getManifest, DEFAULT_LANGUAGE };
