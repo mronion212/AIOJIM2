@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.0.1-dev.0](https://github.com/mrcanelas/tmdb-addon/compare/v5.0.0...v5.0.1-dev.0) (2025-07-30)
+
 ## 5.0.0 (2025-07-30)
 
 
