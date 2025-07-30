@@ -98,43 +98,17 @@ async function getAnimeDetails(malId) {
 
 
 async function getAnimeEpisodes(malId) {
-  console.log(`Fetching all episode data sequentially for MAL ID: ${malId}`);
-  let allEpisodes = []; 
+  console.log(`Fetching all episode data for MAL ID: ${malId}`);
+  const results = await jikanGetAllPages(`/anime/${malId}/episodes`);
+  console.log(`Finished fetching. Total episodes collected for MAL ID ${malId}: ${results.length}`);
+  return results;
+}
 
-  try {
-    const firstPageUrl = `${JIKAN_API_BASE}/anime/${malId}/episodes?page=1`;
-    const firstPageResponse = await enqueueRequest(() => _makeJikanRequest(firstPageUrl), firstPageUrl);
-
-    if (!firstPageResponse?.data?.data) {
-      console.warn(`No valid episode data on first page for MAL ID ${malId}.`);
-      return [];
-    }
-
-    allEpisodes.push(...firstPageResponse.data.data);
-    const lastPage = firstPageResponse.data.pagination?.last_visible_page || 1;
-
-    if (lastPage > 1) {
-      for (let page = 2; page <= lastPage; page++) {
-        const pageUrl = `${JIKAN_API_BASE}/anime/${malId}/episodes?page=${page}`;
-       
-        try {
-          const pageResponse = await enqueueRequest(() => _makeJikanRequest(pageUrl), pageUrl);
-          if (pageResponse?.data?.data) {
-            allEpisodes.push(...pageResponse.data.data);
-          }
-        } catch (pageError) {
-          console.error(`Failed to fetch episode page ${page} for MAL ID ${malId} after all retries. Skipping page.`);
-        }
-      }
-    }
-
-    console.log(`Finished fetching. Total episodes collected for MAL ID ${malId}: ${allEpisodes.length}`);
-    return allEpisodes;
-
-  } catch (error) {
-    console.error(`A critical error occurred on the first page fetch for episodes of MAL ID ${malId}`, error.message);
-    return [];
-  }
+async function getAnimeEpisodeVideos(malId) {
+  console.log(`Fetching all episode thumbnail data for MAL ID: ${malId}`);
+  const results = await jikanGetAllPages(`/anime/${malId}/videos/episodes`);
+  console.log(`Finished fetching. Total episode videos collected for MAL ID ${malId}: ${results.length}`);
+  return results;
 }
 
 async function getAnimeCharacters(malId) {
@@ -206,6 +180,39 @@ async function jikanPaginator(endpoint, totalItemsToFetch, queryParams = {}) {
   }
 
   return allItems.slice(0, totalItemsToFetch);
+}
+
+
+/**
+ * A generic paginator for fetching all entries from a given Jikan endpoint.
+ * This is used for endpoints that don't need complex query parameters.
+ * @param {string} endpoint - The full Jikan endpoint path (e.g., `/anime/21/episodes`).
+ * @returns {Promise<Array>} - A promise that resolves to a flat array of all fetched items.
+ */
+async function jikanGetAllPages(endpoint) {
+  let allItems = [];
+  let page = 1;
+  let hasNextPage = true;
+
+  while (hasNextPage) {
+    const url = `${JIKAN_API_BASE}${endpoint}?page=${page}`;
+    try {
+      const response = await enqueueRequest(() => _makeJikanRequest(url), url);
+      const data = response.data;
+      
+      if (data?.data && data.data.length > 0) {
+        allItems.push(...data.data);
+        hasNextPage = data.pagination?.has_next_page || false;
+      } else {
+        hasNextPage = false;
+      }
+    } catch (error) {
+      console.error(`Failed to fetch page ${page} for endpoint ${endpoint}:`, error.message);
+      hasNextPage = false; 
+    }
+    page++;
+  }
+  return allItems;
 }
 
 async function getAiringNow(totalItemsToFetch = 50, config = {}) {
@@ -323,6 +330,7 @@ module.exports = {
   searchAnime,
   getAnimeDetails,
   getAnimeEpisodes,
+  getAnimeEpisodeVideos,
   getAnimeCharacters,
   getAnimeByVoiceActor,
   getAnimeByGenre,

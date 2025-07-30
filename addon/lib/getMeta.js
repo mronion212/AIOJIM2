@@ -95,7 +95,8 @@ async function getAnimeMeta(stremioId, language, config, catalogChoices) {
   const results = await Promise.allSettled([
     jikan.getAnimeDetails(malId),
     jikan.getAnimeCharacters(malId),
-    jikan.getAnimeEpisodes(malId)
+    jikan.getAnimeEpisodes(malId),
+    jikan.getAnimeEpisodeVideos(malId)
   ]);
 
   const malDataResult = results[0];
@@ -112,11 +113,13 @@ async function getAnimeMeta(stremioId, language, config, catalogChoices) {
   const malData = malDataResult.value;
   const characterData = characterDataResult.status === 'fulfilled' ? characterDataResult.value : [];
   const episodeData = episodeDataResult.status === 'fulfilled' ? episodeDataResult.value : [];
+  const episodeVideoData = results[3].status === 'fulfilled' ? results[3].value : [];
 
   console.log(`[getAnimeMeta] Data collected for MAL ID ${malId}:`);
   console.log(`  - Details: ${malData ? 'Success' : 'Failed'}`);
   console.log(`  - Characters: ${characterData.length} found.`);
   console.log(`  - Episodes: ${episodeData.length} found.`);
+  console.log(`  - Videos: ${episodeVideoData.length} found.`);
   
   const mapping = idMapper.getMappingByMalId(malId);
 
@@ -127,7 +130,7 @@ async function getAnimeMeta(stremioId, language, config, catalogChoices) {
     mediaType: malData.type?.toLowerCase() === 'movie' ? 'movie' : 'series'
   });
   
-  return buildAnimeResponse(malData, language, characterData, episodeData, config, catalogChoices, {
+  return buildAnimeResponse(malData, language, characterData, episodeData, episodeVideoData, config, catalogChoices, {
     mapping,
     bestBackgroundUrl
   });
@@ -211,16 +214,24 @@ async function buildSeriesResponseFromTvdb(tvdbShow, tvdbEpisodes, language, con
   };
 
   const videos = (tvdbEpisodes.episodes || [])
-    .map(episode => ({
-      id: `${imdbId || `tvdb${tvdbId}`}:${episode.seasonNumber}:${episode.number}`,
-      title: episode.name || `Episode ${episode.number}`,
-      season: episode.seasonNumber,
-      episode: episode.number,
-      thumbnail: episode.image ? `${TVDB_IMAGE_BASE}${episode.image}` : null,
-      overview: episode.overview,
-      released: episode.aired ? new Date(episode.aired) : null,
-      available: episode.aired ? new Date(episode.aired) < new Date() : false,
-  })); 
+    .map(episode => {
+        const thumbnailUrl = episode.image ? `${TVDB_IMAGE_BASE}${episode.image}` : null;
+        const finalThumbnail = config.hideEpisodeThumbnails && thumbnailUrl
+            ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
+            : thumbnailUrl;
+
+        return {
+            id: `${imdbId || `tvdb${tvdbId}`}:${episode.seasonNumber}:${episode.number}`,
+            title: episode.name || `Episode ${episode.number}`,
+            season: episode.seasonNumber,
+            episode: episode.number,
+            thumbnail: finalThumbnail, 
+            overview: episode.overview,
+            released: episode.aired ? new Date(episode.aired) : null,
+            available: episode.aired ? new Date(episode.aired) < new Date() : false,
+        };
+    });
+ 
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
   const meta = {
     id: tmdbId ? `tmdb:${tmdbId}` : `tvdb:${tvdbId}`,
@@ -238,7 +249,7 @@ async function buildSeriesResponseFromTvdb(tvdbShow, tvdbEpisodes, language, con
     country: tvdbShow.originalCountry,
     imdbRating,
     poster: config.rpdbkey ? posterProxyUrl : fallbackPosterUrl,
-    background: tvdbShow.artworks?.find(a => a.type === 2)?.image, 
+    background: tvdbShow.artworks?.find(a => a.type === 3)?.image, 
     logo: processLogo(logoUrl),
     videos: videos,
     links: Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tmdbLikeCredits, language, castCount, catalogChoices),
@@ -250,7 +261,7 @@ async function buildSeriesResponseFromTvdb(tvdbShow, tvdbEpisodes, language, con
 }
 
 
-async function buildAnimeResponse(malData, language, characterData, episodeData, config, catalogChoices, enrichmentData = {}) {
+async function buildAnimeResponse(malData, language, characterData, episodeData, episodeVideoData, config, catalogChoices, enrichmentData = {}) {
   try {
     const { mapping, bestBackgroundUrl } = enrichmentData;
     const stremioType = malData.type.toLowerCase() === 'movie' ? 'movie' : 'series';
@@ -289,6 +300,15 @@ async function buildAnimeResponse(malData, language, characterData, episodeData,
       }
     }
     const seriesId = `mal:${malData.mal_id}`;
+    const thumbnailMap = new Map();
+    if (episodeVideoData && episodeVideoData.length > 0) {
+      episodeVideoData.forEach(video => {
+        if (video.mal_id) {
+          thumbnailMap.set(video.mal_id, video.images?.jpg?.image_url || null);
+        }
+      });
+    }
+    
     if (stremioType === 'series' && malData.status !== 'Not yet aired' && episodeData && episodeData.length > 0) {
       videos = (episodeData || []).map(ep => {
         let episodeId;
@@ -302,13 +322,14 @@ async function buildAnimeResponse(malData, language, characterData, episodeData,
         else {
           episodeId = `${seriesIdMAL}:${ep.mal_id}`;
         }
+        const thumbnailUrl = thumbnailMap.get(ep.mal_id) || posterUrl;
         return {
           id:  episodeId,
           title: ep.title,
           season: 1,
           episode: ep.mal_id,
           released: ep.aired? new Date(ep.aired) : null,
-          thumbnail: config.hideEpisodeThumbnails? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(posterUrl)}` : posterUrl,
+          thumbnail: config.hideEpisodeThumbnails? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
           available: ep.aired ? new Date(ep.aired) < new Date() : false
         };
       });

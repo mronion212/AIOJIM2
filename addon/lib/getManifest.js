@@ -227,20 +227,27 @@ async function getManifest(config) {
 
   if (config.geminikey) {
     const aiSearchCatalogMovie = {
-      id: "tmdb.aisearch",
+      id: "gemini.search", // Use a unique prefix like 'gemini'
       type: "movie",
-      name: `${tmdbPrefix ? "TMDB - " : ""}AI Search`,
-      extra: [{ name: "search", isRequired: true, options: [] }]
+      name: "AI Search", // You can customize the name
+      extra: [{ name: "search", isRequired: true }]
     };
 
     const aiSearchCatalogSeries = {
-      id: "tmdb.aisearch",
+      id: "gemini.search",
       type: "series",
-      name: `${tmdbPrefix ? "TMDB - " : ""}AI Search`,
-      extra: [{ name: "search", isRequired: true, options: [] }]
+      name: "AI Search",
+      extra: [{ name: "search", isRequired: true }]
+    };
+    
+    const aiSearchCatalogAnime = {
+      id: "gemini.search",
+      type: "anime",
+      name: "AI Search",
+      extra: [{ name: "search", isRequired: true }]
     };
 
-    catalogs = [...catalogs, aiSearchCatalogMovie, aiSearchCatalogSeries];
+    catalogs = [...catalogs, aiSearchCatalogMovie, aiSearchCatalogSeries, aiSearchCatalogAnime];
   }
 
   const activeConfigs = [

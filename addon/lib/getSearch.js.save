@@ -7,9 +7,6 @@ const { to3LetterCode } = require("./language-map");
 const jikan = require('./mal');
 const moviedb = new MovieDb(process.env.TMDB_API);
 const { isAnime } = require("../utils/isAnime");
-const { performGeminiSearch } = require('../utils/gemini-service');
-
-
 function sanitizeQuery(query) {
   if (!query) return '';
   return query.replace(/[\[\]()!?]/g, ' ').replace(/[:.-]/g, ' ').trim().replace(/\s\s+/g, ' ');
@@ -62,7 +59,52 @@ async function performAnimeSearch(query, language, config) {
   return metas;
 }
 
-async function performMovieSearch(query, language, config, genreList, searchPersons = true) {
+
+async function performAiSearch(type, query, language, config) {
+  const aiResults = await geminiService.search(query, type);
+  if (!aiResults || aiResults.length === 0) {
+    return [];
+  }
+
+  const finalMetas = [];
+  const seenIds = new Set();
+
+  const processingPromises = aiResults.map(async (itemInfo) => {
+    if (type === 'anime') {
+      if (!itemInfo.mal_id) return null;
+      const animeDetails = await jikan.getAnimeDetails(itemInfo.mal_id);
+      return animeDetails ? Utils.parseAnimeCatalogMeta(animeDetails, config, language) : null;
+    } 
+    else if (type === 'series') {
+      if (!itemInfo.title) return null;
+      const searchResults = await tvdb.searchSeries(itemInfo.title);
+      const topMatchId = searchResults?.[0]?.tvdb_id;
+      if (!topMatchId) return null;
+      const extendedRecord = await tvdb.getSeriesExtended(topMatchId);
+      return extendedRecord ? parseTvdbSearchResult(extendedRecord, language, config) : null;
+    } 
+    else if (type === 'movie') {
+      if (!itemInfo.title) return null;
+      const searchResults = await performMovieSearch(itemInfo.title, language, config, []);
+      return searchResults?.[0] || null;
+    }
+    return null;
+  });
+
+  const processedResults = await Promise.all(processingPromises);
+
+  processedResults.forEach(parsed => {
+    if (parsed && !seenIds.has(parsed.id)) {
+      finalMetas.push(parsed);
+      seenIds.add(parsed.id);
+    }
+  });
+
+  return finalMetas;
+}
+
+
+async function performMovieSearch(query, language, config, genreList) {
     const searchResults = new Map();
     const rawResults = new Map();
 
@@ -74,14 +116,12 @@ async function performMovieSearch(query, language, config, genreList, searchPers
 
     const movieRes = await moviedb.searchMovie({ query, language, include_adult: config.includeAdult });
     movieRes.results.forEach(addRawResult);
-    
-    if (searchPersons){
-      const personRes = await moviedb.searchPerson({ query, language });
-      if (personRes.results?.[0]) {
-          const credits = await moviedb.personMovieCredits({ id: personRes.results[0].id, language });
-          credits.cast.forEach(addRawResult);
-          credits.crew.forEach(media => { if (media.job === "Director" || media.job === "Writer") addRawResult(media); });
-      }
+
+    const personRes = await moviedb.searchPerson({ query, language });
+    if (personRes.results?.[0]) {
+        const credits = await moviedb.personMovieCredits({ id: personRes.results[0].id, language });
+        credits.cast.forEach(addRawResult);
+        credits.crew.forEach(media => { if (media.job === "Director" || media.job === "Writer") addRawResult(media); });
     }
 
     const hydrationPromises = Array.from(rawResults.values()).map(async (media) => {
@@ -102,75 +142,6 @@ async function performMovieSearch(query, language, config, genreList, searchPers
     const finalResults = Array.from(searchResults.values());
     return Utils.sortSearchResults(finalResults, query); 
 }
-
-
-// This is the full, corrected function for lib/getSearch.js
-
-async function performAiSearch(type, query, language, config) {
-  const aiSuggestions = await performGeminiSearch(config.geminikey, query, type, language);
-  if (!aiSuggestions || aiSuggestions.length === 0) {
-    console.log('[AI Search] Gemini returned no suggestions.');
-    return [];
-  }
-  console.log('[AI Search] Gemini suggested:', JSON.stringify(aiSuggestions, null, 2));
-
-  const finalMetas = [];
-  const seenIds = new Set();
-
-  // 2. Use a simple for...of loop to process suggestions one by one.
-  // This is much cleaner and avoids complex promise nesting.
-  for (const suggestion of aiSuggestions) {
-    try {
-      let parsedResult = null;
-
-      if (type === 'anime') {
-        const malId = suggestion.mal_id;
-        if (malId) {
-          const jikanData = await jikan.getAnimeDetails(malId);
-          if (jikanData) {
-            parsedResult = Utils.parseAnimeCatalogMeta(jikanData, config, language);
-          }
-        }
-      } 
-      else if (type === 'series') {
-        const searchTitle = suggestion.title;
-        if (searchTitle) {
-          const searchResults = await tvdb.searchSeries(searchTitle);
-          const topMatchId = searchResults?.[0]?.tvdb_id;
-          if (topMatchId) {
-            const extendedRecord = await tvdb.getSeriesExtended(topMatchId);
-            // Use your existing async TVDB parser
-            parsedResult = await parseTvdbSearchResult(extendedRecord, language, config);
-          }
-        }
-      } 
-      else if (type === 'movie') {
-        const searchTitle = suggestion.title;
-        if (searchTitle) {
-          // Use your existing performMovieSearch, which returns a fully parsed list
-          const results = await performMovieSearch(searchTitle, language, config, [], false);
-          // Return only the top match from the search
-          parsedResult = results?.[0] || null;
-        }
-      }
-
-      // 3. Add the valid, unique result to our final list.
-      if (parsedResult && !seenIds.has(parsedResult.id)) {
-        finalMetas.push(parsedResult);
-        seenIds.add(parsedResult.id);
-      }
-
-    } catch (error) {
-      // If processing a single suggestion fails, log it and continue to the next one.
-      const title = suggestion.title || suggestion.english_title || 'Unknown';
-      console.error(`[AI Search] Failed to process suggestion "${title}":`, error.message);
-      continue; // Move to the next iteration of the loop
-    }
-  }
-
-  return finalMetas;
-}
-
 
 async function performSeriesSearch(query, language, config) {
   const sanitizedQuery = sanitizeQuery(query);
@@ -213,12 +184,12 @@ async function performSeriesSearch(query, language, config) {
 }
 
 async function getSearch(id, type, language, extra, config) {
-  const timerLabel = `Search for "${extra}" (type: ${id})`;
   try {
     if (!extra) {
       console.warn(`Search request for id '${id}' received with no 'extra' argument.`);
       return { metas: [] };
     }
+    const timerLabel = `Search for "${extra}" (type: ${id})`;
     console.time(timerLabel);
     const extraArgs = (typeof extra === 'string') ? { search: extra } : extra;
     console.log(extraArgs);
@@ -255,21 +226,18 @@ async function getSearch(id, type, language, extra, config) {
         console.warn(`Standard search request for id '${id}' received with no query text.`);
         return { metas: [] };
       }
-      if (id === 'gemini.search') {
-          metas = await performAiSearch(type, query, language, config);
-      } else {
-          switch (type) {
-            case 'movie':
-              const genreList = await getGenreList(language, type);
-              metas = await performMovieSearch(query, language, config, genreList);
-              break;
-            case 'series':
-              metas = await performSeriesSearch(query, language, config);
-              break;
-            case 'anime':
-              metas = await performAnimeSearch(query, language, config);
-              break;
-          }
+      
+      switch (type) {
+        case 'movie':
+          const genreList = await getGenreList(language, type);
+          metas = await performMovieSearch(query, language, config, genreList);
+          break;
+        case 'series':
+          metas = await performSeriesSearch(query, language, config);
+          break;
+        case 'anime':
+          metas = await performAnimeSearch(query, language, config);
+          break;
       }
     }
     console.timeEnd(timerLabel);

@@ -1,6 +1,7 @@
 const addon = require('./index.js')
 const PORT = process.env.PORT || 1337;
 const { initializeMapper } = require('./lib/id-mapper');
+const geminiService = require('./utils/gemini-service'); 
 
 async function startServer() {
   console.log('--- Addon Starting Up ---');
