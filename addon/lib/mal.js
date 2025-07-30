@@ -235,7 +235,6 @@ async function getAiringNow(totalItemsToFetch = 50, config = {}) {
 async function getUpcoming(totalItemsToFetch = 50, config = {}) {
   const queryParams = {};
   if (config.ageRating) {
-    // ... (same ageRating switch logic as above)
     let jikanRating;
     switch (config.ageRating) {
       case "G": jikanRating = 'g'; break;

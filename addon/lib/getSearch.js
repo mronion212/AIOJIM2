@@ -104,8 +104,6 @@ async function performMovieSearch(query, language, config, genreList, searchPers
 }
 
 
-// This is the full, corrected function for lib/getSearch.js
-
 async function performAiSearch(type, query, language, config) {
   const aiSuggestions = await performGeminiSearch(config.geminikey, query, type, language);
   if (!aiSuggestions || aiSuggestions.length === 0) {
@@ -117,8 +115,6 @@ async function performAiSearch(type, query, language, config) {
   const finalMetas = [];
   const seenIds = new Set();
 
-  // 2. Use a simple for...of loop to process suggestions one by one.
-  // This is much cleaner and avoids complex promise nesting.
   for (const suggestion of aiSuggestions) {
     try {
       let parsedResult = null;
@@ -139,7 +135,6 @@ async function performAiSearch(type, query, language, config) {
           const topMatchId = searchResults?.[0]?.tvdb_id;
           if (topMatchId) {
             const extendedRecord = await tvdb.getSeriesExtended(topMatchId);
-            // Use your existing async TVDB parser
             parsedResult = await parseTvdbSearchResult(extendedRecord, language, config);
           }
         }
@@ -147,24 +142,20 @@ async function performAiSearch(type, query, language, config) {
       else if (type === 'movie') {
         const searchTitle = suggestion.title;
         if (searchTitle) {
-          // Use your existing performMovieSearch, which returns a fully parsed list
           const results = await performMovieSearch(searchTitle, language, config, [], false);
-          // Return only the top match from the search
           parsedResult = results?.[0] || null;
         }
       }
 
-      // 3. Add the valid, unique result to our final list.
       if (parsedResult && !seenIds.has(parsedResult.id)) {
         finalMetas.push(parsedResult);
         seenIds.add(parsedResult.id);
       }
 
     } catch (error) {
-      // If processing a single suggestion fails, log it and continue to the next one.
       const title = suggestion.title || suggestion.english_title || 'Unknown';
       console.error(`[AI Search] Failed to process suggestion "${title}":`, error.message);
-      continue; // Move to the next iteration of the loop
+      continue; 
     }
   }
 

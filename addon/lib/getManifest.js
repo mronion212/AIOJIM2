@@ -227,9 +227,9 @@ async function getManifest(config) {
 
   if (config.geminikey) {
     const aiSearchCatalogMovie = {
-      id: "gemini.search", // Use a unique prefix like 'gemini'
+      id: "gemini.search", 
       type: "movie",
-      name: "AI Search", // You can customize the name
+      name: "AI Search",
       extra: [{ name: "search", isRequired: true }]
     };
 
