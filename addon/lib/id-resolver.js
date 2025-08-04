@@ -1,71 +1,69 @@
-require('dotenv').config();
-const { MovieDb } = require('moviedb-promise');
-const fetch = require('node-fetch');
+const idMapper = require('./id-mapper');
+const tvdb = require('./tvdb'); 
+const moviedb = require("./getTmdb");
 
-const moviedb = new MovieDb(process.env.TMDB_API);
+async function resolveAllIds(stremioId, type, config) {
+  console.log(`[ID Resolver] Resolving ${stremioId} (type: ${type})`);
 
+  const allIds = { tmdbId: null, tvdbId: null, imdbId: null, malId: null, kitsuId: null };
+  const [prefix, sourceId] = stremioId.split(':');
 
-const TVMAZE_API_URL = 'https://api.tvmaze.com';
+  if (prefix === 'tmdb') allIds.tmdbId = sourceId;
+  if (prefix === 'tvdb') allIds.tvdbId = sourceId;
+  if (prefix === 'mal') allIds.malId = sourceId;
+  if (prefix === 'tt') allIds.imdbId = stremioId;
 
-/**
- * Finds the TMDB ID for a given IMDB ID.
- * This is kept for movies.
- * @param {'movie'|'series'} type - The type of content.
- * @param {string} imdbId - The IMDB ID (e.g., 'tt0133093').
- * @returns {Promise<number|null>} The TMDB ID or null if not found.
- */
-async function getTmdbId(type, imdbId) {
   try {
-    const resultsKey = type === 'movie' ? 'movie_results' : 'tv_results';
-    const res = await moviedb.find({ id: imdbId, external_source: 'imdb_id' });
-    
-    return res[resultsKey] && res[resultsKey][0] ? res[resultsKey][0].id : null;
-  } catch (error) {
-    console.error(`Error finding TMDB ID for ${imdbId}:`, error.message);
-    return null;
-  }
-}
-
-/**
- * Finds the TVmaze ID for a given IMDB ID.
- * This is our new function for series.
- * @param {string} imdbId - The IMDB ID (e.g., 'tt0903747').
- * @returns {Promise<number|null>} The TVmaze ID or null if not found.
- */
-async function getTvmazeId(imdbId) {
-  const url = `${TVMAZE_API_URL}/lookup/shows?imdb=${imdbId}`;
-  try {
-    const response = await fetch(url);
-    if (response.status === 404) {
-      return null;
+    if (type === 'anime' && allIds.malId) {
+      const mapping = idMapper.getMappingByMalId(allIds.malId);
+      if (mapping) {
+        console.log(JSON.stringify(mapping));
+        allIds.tmdbId = allIds.tmdbId || mapping.themoviedb_id;
+        allIds.tvdbId = allIds.tvdbId || mapping.thetvdb_id;
+        allIds.imdbId = allIds.imdbId || mapping.imdb_id;
+        allIds.kitsuId = allIds.kitsuId || mapping.kitsu_id;
+      }
     }
-    const data = await response.json();
-    return data ? data.id : null;
+
+    if (allIds.tmdbId) {
+      const details = type === 'movie'
+        ? await moviedb.movieInfo({ id: allIds.tmdbId, append_to_response: 'external_ids' }, config)
+        : await moviedb.tvInfo({ id: allIds.tmdbId, append_to_response: 'external_ids' }, config);
+      
+      allIds.imdbId = allIds.imdbId || details.external_ids?.imdb_id;
+      allIds.tvdbId = allIds.tvdbId || details.external_ids?.tvdb_id;
+    }
+
+    if (allIds.imdbId && (!allIds.tmdbId || !allIds.tvdbId)) {
+      
+      if (!allIds.tmdbId) {
+        const findResults = await moviedb.find({ id: allIds.imdbId, external_source: 'imdb_id' }, config);
+        const match = findResults.movie_results?.[0] || findResults.tv_results?.[0];
+        if (match) allIds.tmdbId = match.id;
+      }
+      
+      if (!allIds.tvdbId) {
+        const tvdbMatch = await tvdb.findByImdbId(allIds.imdbId, config);
+        //console.log(tvdbMatch);
+        if (tvdbMatch) allIds.tvdbId = type === 'movie' ? tvdbMatch.movie.id : tvdbMatch.series.id;
+      }
+    }
+    
+    if (allIds.tvdbId && (!allIds.imdbId || !allIds.tmdbId)) {
+        const tvdbDetails = type === 'movie' 
+            ? await tvdb.getMovieExtended(allIds.tvdbId, config) 
+            : await tvdb.getSeriesExtended(allIds.tvdbId, config);
+        
+        allIds.imdbId = allIds.imdbId || tvdbDetails.remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
+        allIds.tmdbId = allIds.tmdbId || tvdbDetails.remoteIds?.find(id => id.sourceName === 'TheMovieDB.com')?.id;
+    }
+
   } catch (error) {
-    console.error(`Error finding TVmaze ID for ${imdbId}:`, error.message);
-    return null;
+    console.warn(`[ID Resolver] API bridging failed for ${stremioId}: ${error.message}`);
   }
+
+  console.log(`[ID Resolver] Final IDs:`, allIds);
+  return allIds;
 }
 
-
-/**
- * The main resolver function. It decides which service to query
- * based on the content type.
- * @param {'movie'|'series'} type - The content type.
- * @param {string} imdbId - The IMDB ID.
- * @returns {Promise<number|null>} The service-specific ID (TMDB for movie, TVmaze for series).
- */
-async function resolveId(type, imdbId) {
-  if (type === 'movie') {
-    return await getTmdbId('movie', imdbId);
-  }
-  
-  if (type === 'series') {
-    return await getTvmazeId(imdbId);
-  }
-  
-  
-  return null;
-}
-
-module.exports = { resolveId };
+module.exports = { resolveAllIds };

@@ -1,10 +1,9 @@
 require("dotenv").config();
-const { MovieDb } = require("moviedb-promise");
+const moviedb = require("./getTmdb");
 const { getGenreList } = require("./getGenreList");
 const { parseMedia } = require("../utils/parseProps");
 const translations = require("../static/translations.json");
 
-const moviedb = new MovieDb(process.env.TMDB_API);
 
 function getAllTranslations(key) {
     return Object.values(translations).map(lang => lang[key]).filter(Boolean);
@@ -123,7 +122,7 @@ function shuffleArray(array) {
  * @param {'favorite'|'watchlist'} listType - The type of list to fetch.
  * @returns {Promise<{metas: Array}>} A Stremio catalog object.
  */
-async function getPersonalList(type, language, page, genre, sessionId, listType) {
+async function getPersonalList(type, language, page, genre, sessionId, listType, config) {
   if (!sessionId) {
     console.warn(`Attempted to fetch personal ${listType} without a session ID.`);
     return { metas: [] };
@@ -135,20 +134,20 @@ async function getPersonalList(type, language, page, genre, sessionId, listType)
     let parameters = { language, page };
     parameters = configureSortingParameters(parameters, genre);
 
-    const genreList = await getGenreList(language, type);
+    const genreList = await getGenreList(language, type, config);
 
     let fetchFunction;
     if (listType === 'favorite') {
-      fetchFunction = type === 'movie' 
-        ? moviedb.accountFavoriteMovies.bind(moviedb) 
-        : moviedb.accountFavoriteTv.bind(moviedb);
+      fetchFunction =  type === "movie" 
+      ? () => moviedb.accountFavoriteMovies(parameters, config) 
+      : () => moviedb.accountFavoriteTv(parameters, config);
     } else { 
-      fetchFunction = type === 'movie' 
-        ? moviedb.accountMovieWatchlist.bind(moviedb) 
-        : moviedb.accountTvWatchlist.bind(moviedb);
+      fetchFunction = type === "movie" 
+      ? () => moviedb.accountMovieWatchlist(parameters, config) 
+      : () => moviedb.accountTvWatchlist(parameters, config);
     }
 
-    const res = await fetchFunction(parameters);
+    const res = await fetchFunction();
 
     const sortedResults = sortResults(res.results, genre);
     const metas = sortedResults.map(el => parseMedia(el, type, genreList));
@@ -163,12 +162,12 @@ async function getPersonalList(type, language, page, genre, sessionId, listType)
 
 
 
-async function getFavorites(type, language, page, genre, sessionId) {
-  return getPersonalList(type, language, page, genre, sessionId, 'favorite');
+async function getFavorites(type, language, page, genre, sessionId, config) {
+  return getPersonalList(type, language, page, genre, sessionId, 'favorite', config);
 }
 
-async function getWatchList(type, language, page, genre, sessionId) {
-  return getPersonalList(type, language, page, genre, sessionId, 'watchlist');
+async function getWatchList(type, language, page, genre, sessionId, config) {
+  return getPersonalList(type, language, page, genre, sessionId, 'watchlist', config);
 }
 
 

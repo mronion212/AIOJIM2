@@ -87,8 +87,7 @@ function parseWriter(credits) {
 function parseSlug(type, title, imdbId, uniqueIdFallback = null) {
   const safeTitle = (title || '')
     .toLowerCase()
-    .replace(/\s+/g, '-') 
-    .replace(/[^\w\-]+/g, '');
+    .replace(/ /g, "-");
 
   let identifier = '';
   if (imdbId) {
@@ -372,12 +371,13 @@ async function parsePoster(type, ids, fallbackFullUrl, language, rpdbkey) {
   return fallbackFullUrl;
 }
 
-async function getAnimeBg({ tvdbId, tmdbId, malPosterUrl, mediaType = 'series' }) {
+async function getAnimeBg({ tvdbId, tmdbId, malPosterUrl, mediaType = 'series' }, config) {
   let fanartUrl = null;
+  console.log(`[getAnimeBg] Fetching background for ${mediaType} with TVDB ID: ${tvdbId}, TMDB ID: ${tmdbId}`);
   if (mediaType === 'series' && tvdbId) {
-    fanartUrl = await fanart.getBestSeriesBackground(tvdbId);
+    fanartUrl = await fanart.getBestSeriesBackground(tvdbId, config);
   } else if (mediaType === 'movie' && tmdbId) {
-    fanartUrl = await fanart.getBestMovieBackground(tmdbId);
+    fanartUrl = await fanart.getBestMovieBackground(tmdbId, config);
   }
 
   if (fanartUrl) {
@@ -394,13 +394,28 @@ function parseAnimeCatalogMeta(anime, config, language) {
 
   const malId = anime.mal_id;
   const stremioType = anime.type?.toLowerCase() === 'movie' ? 'movie' : 'series';
-
+  const preferredProvider = config.providers?.anime || 'mal';
+    
   const mapping = idMapper.getMappingByMalId(malId);
+  let id = `mal:${malId}`;
+  if (preferredProvider === 'tvdb') {
+    if (mapping && mapping.thetvdb_id) {
+      id= `tvdb:${mapping.thetvdb_id}`;
+    }
+  } else if (preferredProvider === 'tmdb') {
+    if (mapping && mapping.themoviedb_id) {
+      id = `tmdb:${mapping.themoviedb_id}`;
+    }
+  } else if (preferredProvider === 'imdb') {
+    if (mapping && mapping.imdb_id) {
+      id= `${mapping.imdb_id}`;
+    }
+  }
   const malPosterUrl = anime.images?.jpg?.large_image_url;
   let finalPosterUrl = malPosterUrl;
-  const kitsuId = mapping.kitsu_id;
-  const imdbId = mapping?.imdb_id;
-  const metaType = (kitsuId || imdbId) ? stremioType : 'anime';
+  //const kitsuId = mapping?.kitsu_id;
+  //const imdbId = mapping?.imdb_id;
+  //const metaType = (kitsuId || imdbId) ? stremioType : 'anime';
   if (config.rpdbkey) {
     
     if (mapping) {
@@ -423,7 +438,7 @@ function parseAnimeCatalogMeta(anime, config, language) {
 
 
   return {
-    id: `mal:${malId}`,
+    id: id,
     type: 'anime',
     name: anime.title_english || anime.title,
     poster: finalPosterUrl,
@@ -432,6 +447,68 @@ function parseAnimeCatalogMeta(anime, config, language) {
     isAnime: true
   };
 }
+
+/**
+ * Parses a YouTube URL and extracts the video ID (the 'v' parameter).
+ * @param {string} url - The full YouTube URL.
+ * @returns {string|null} The YouTube video ID, or null if not found.
+ */
+function getYouTubeIdFromUrl(url) {
+  if (!url) return null;
+  try {
+    const urlObject = new URL(url);
+    // Standard YouTube URLs have the ID in the 'v' query parameter.
+    if (urlObject.hostname === 'www.youtube.com' || urlObject.hostname === 'youtube.com') {
+      return urlObject.searchParams.get('v');
+    }
+    // Handle youtu.be short links
+    if (urlObject.hostname === 'youtu.be') {
+      return urlObject.pathname.slice(1); // Remove the leading '/'
+    }
+  } catch (error) {
+    console.warn(`[Parser] Could not parse invalid URL for YouTube ID: ${url}`);
+  }
+  return null;
+}
+
+/**
+ * Parses the trailers array from the TVDB API into Stremio-compatible formats.
+ * @param {Array} tvdbTrailers - The `trailers` array from the TVDB API response.
+ * @param {string} defaultTitle - A fallback title to use for the trailer.
+ * @returns {{trailers: Array, trailerStreams: Array}} An object containing both formats.
+ */
+function parseTvdbTrailers(tvdbTrailers, defaultTitle = 'Official Trailer') {
+  const trailers = [];
+  const trailerStreams = [];
+
+  if (!Array.isArray(tvdbTrailers)) {
+    return { trailers, trailerStreams };
+  }
+
+  for (const trailer of tvdbTrailers) {
+    if (trailer.url && trailer.url.includes('youtube.com') || trailer.url.includes('youtu.be')) {
+      const ytId = getYouTubeIdFromUrl(trailer.url);
+      
+      if (ytId) {
+        const title = trailer.name || defaultTitle;
+
+        trailers.push({
+          source: ytId,
+          type: 'Trailer',
+          name: defaultTitle
+        });
+
+        trailerStreams.push({
+          ytId: ytId,
+          title: title
+        });
+      }
+    }
+  }
+
+  return { trailers, trailerStreams };
+}
+
 
 module.exports = {
   parseMedia, 
@@ -458,5 +535,6 @@ module.exports = {
   sortSearchResults,
   parseAnimeCreditsLink,
   getAnimeBg,
-  parseAnimeCatalogMeta
+  parseAnimeCatalogMeta,
+  parseTvdbTrailers
 };

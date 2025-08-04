@@ -1,15 +1,18 @@
 const Redis = require('ioredis');
+const packageJson = require('../../package.json');
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
-const NO_CACHE = process.env.NO_CACHE === 'true';
+const GLOBAL_NO_CACHE = process.env.NO_CACHE === 'true';
+const ADDON_VERSION = packageJson.version;
 
-const META_TTL = 7 * 24 * 60 * 60;     // 7 days in seconds
-const CATALOG_TTL = 1 * 24 * 60 * 60;  // 1 day in seconds
+// --- Time To Live (TTL) constants in seconds ---
+const META_TTL = process.env.META_TTL ||  7 * 24 * 60 * 60;     // 7 days
+const CATALOG_TTL = process.env.CATALOG_TTL ||  1 * 24 * 60 * 60;  // 1 day
+const JIKAN_API_TTL = 7 * 24 * 60 * 60;   // 7 days for stable Jikan data
+const STATIC_CATALOG_TTL = 30 * 24 * 60 * 60; // 30 days for historical catalogs
 const TVDB_API_TTL = 12 * 60 * 60;   // 12 hours in seconds for API data
-const JIKAN_API_TTL = 7 * 24 * 60 * 60;
-const STATIC_CATALOG_TTL = 30 * 24 * 60 * 60;
 
-const redis = NO_CACHE ? null : new Redis(REDIS_URL, {
+const redis = GLOBAL_NO_CACHE ? null : new Redis(REDIS_URL, {
   maxRetriesPerRequest: 3,
   enableReadyCheck: true,
 });
@@ -22,82 +25,100 @@ if (redis) {
 const inFlightRequests = new Map();
 
 /**
- * A robust, production-grade cache wrapper.
- * - Fetches from Redis cache first.
+ * - Automatically versions keys with the addon version for cache busting on releases.
+ * -  `bypassCache` flag for easy development and testing via a URL param.
  * - Prevents "cache stampede" by tracking in-flight requests.
- * @param {string} key The unique cache key.
+ *
+ * @param {string} key The unique, un-versioned cache key (e.g., 'meta:tt12345').
  * @param {Function} method The async function to execute on a cache miss.
  * @param {number} ttl The Time To Live for the cache entry in seconds.
+ * @param {boolean} [bypassCache=false] If true, ignores the cache read for this one request.
  * @returns The result of the method, from cache or a fresh call.
  */
-async function cacheWrap(key, method, ttl) {
-  if (NO_CACHE || !redis) return method();
-  try {
-    const cached = await redis.get(key);
-    if (cached) {
-      try {
-        return JSON.parse(cached);
-      } catch (err) {
-        console.warn(`Failed to parse cached JSON for key ${key}:`, err);
-      }
-    }
-  } catch (err) {
-    console.warn(`Failed to read from Redis for key ${key}:`, err);
+async function cacheWrap(key, method, ttl, bypassCache = false) {
+  // If the global switch is on, or if Redis is unavailable, always fetch fresh data.
+  if (GLOBAL_NO_CACHE || !redis) {
+    return method();
   }
 
-  if (inFlightRequests.has(key)) {
-    return inFlightRequests.get(key);
+  // Prepend the addon version to the key to automatically invalidate old caches on update.
+  const versionedKey = `v${ADDON_VERSION}:${key}`;
+
+  if (!bypassCache) {
+    try {
+      const cached = await redis.get(versionedKey);
+      if (cached) {
+        try {
+          // If found, parse and return the cached data.
+          return JSON.parse(cached);
+        } catch (err) {
+          console.warn(`[Cache] Failed to parse cached JSON for key ${versionedKey}:`, err);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Cache] Failed to read from Redis for key ${versionedKey}:`, err);
+    }
+  } else {
+    console.log(`[Cache] BYPASS triggered for key: ${versionedKey}`);
+  }
+
+  if (inFlightRequests.has(versionedKey)) {
+    return inFlightRequests.get(versionedKey);
   }
 
   const promise = method();
-
-  inFlightRequests.set(key, promise);
+  inFlightRequests.set(versionedKey, promise);
 
   try {
     const result = await promise;
 
-    // Only cache valid results to allow for retries on temporary API failures
     if (result !== null && result !== undefined) {
       try {
-        await redis.set(key, JSON.stringify(result), 'EX', ttl);
+        await redis.set(versionedKey, JSON.stringify(result), 'EX', ttl);
       } catch (err) {
-        console.warn(`Failed to write to Redis for key ${key}:`, err);
+        console.warn(`[Cache] Failed to write to Redis for key ${versionedKey}:`, err);
       }
     }
     return result;
   } catch (error) {
-    console.error(`Method failed for cache key ${key}:`, error);
-    throw error;
+    console.error(`[Cache] Method failed for cache key ${versionedKey}:`, error);
+    throw error; 
   } finally {
-    inFlightRequests.delete(key);
+    inFlightRequests.delete(versionedKey);
   }
 }
 
-function cacheWrapCatalog(id, method) {
-  return cacheWrap(`catalog:${id}`, method, CATALOG_TTL);
+
+function cacheWrapCatalog(configString, catalogKey, method, bypassCache = false) {
+  const key = `catalog:${configString}:${catalogKey}`;
+  return cacheWrap(key, method, CATALOG_TTL, bypassCache);
 }
 
-function cacheWrapMeta(id, method) {
-  return cacheWrap(`meta:${id}`, method, META_TTL);
+function cacheWrapMeta(configString, metaId, method, bypassCache = false) {
+   const key = `meta:${configString}:${metaId}`;
+   return cacheWrap(key, method, META_TTL, bypassCache);
 }
 
-function cacheWrapTvdbApi(key, method) {
-  return cacheWrap(`tvdb-api:${key}`, method, TVDB_API_TTL);
+function cacheWrapJikanApi(key, method, bypassCache = false) {
+  const subkey = key.replace(/\s/g, '-');
+  return cacheWrap(`jikan-api:${subkey}`, method, JIKAN_API_TTL, bypassCache);
 }
 
-function cacheWrapJikanApi(key, method) {
-  return cacheWrap(`jikan-api:${key}`, method, JIKAN_API_TTL);
+function cacheWrapStaticCatalog(configString, catalogKey, method, bypassCache = false) {
+  const fullKey = `catalog:${configString}:${catalogKey}`;
+  return cacheWrap(fullKey, method, STATIC_CATALOG_TTL, bypassCache);
 }
 
-function cacheWrapStaticCatalog(id, method) {
-  return cacheWrap(`catalog:${id}`, method, STATIC_CATALOG_TTL);
+function cacheWrapTvdbApi(key, method, bypassCache = false) {
+  return cacheWrap(`tvdb-api:${key}`, method, TVDB_API_TTL, bypassCache);
 }
 
 module.exports = {
   redis,
   cacheWrapCatalog,
   cacheWrapMeta,
-  cacheWrapTvdbApi,
   cacheWrapJikanApi,
   cacheWrapStaticCatalog,
+  cacheWrapTvdbApi,
+  cacheWrap
 };

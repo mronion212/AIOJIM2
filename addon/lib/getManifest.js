@@ -126,29 +126,30 @@ async function getManifest(config) {
   const tmdbPrefix = config.tmdbPrefix === "true";
   const provideImdbId = config.provideImdbId === "true";
   const sessionId = config.sessionId;
-  const userCatalogs = getDefaultCatalogs();
+  const userCatalogs = config.catalogs || getDefaultCatalogs();
   const translatedCatalogs = loadTranslations(language);
 
-  const stremioAddonsConfig = {
+  /*const stremioAddonsConfig = {
     issuer: "https://stremio-addons.net",
     signature: "eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..DTiTHmYyIbuTMPJB35cqsw.S2C6xuCL9OoHJbtX97v-2w3IM4iFqr2Qy4xRRlvyzIY2fZAcwmm6JUMdsc2LSTigIPQeGPomaqX53ECt23cJKuH-IKs4hHLH4sLYRZNL_VC0YefQNrWjMRZ75Yz-bVx3.DJZBtIb1bOCq6Z62AMUGvw"
-  }
+  }*/
 
+  const enabledCatalogs = userCatalogs.filter(c => c.enabled);
   const years = generateArrayOfYears(20);
-  const genres_movie = await getGenreList(language, "movie").then(genres => {
+  const genres_movie = await getGenreList(language, "movie", config).then(genres => {
     return genres.map(el => el.name).sort();
   });
 
-  const genres_series = await getGenreList(language, "series").then(genres => {
+  const genres_series = await getGenreList(language, "series", config).then(genres => {
     return genres.map(el => el.name).sort();
   });
 
-  const languagesArray = await getLanguages();
+  const languagesArray = await getLanguages(config);
   const filterLanguages = setOrderLanguage(language, languagesArray);
   const isMDBList = (id) => id.startsWith("mdblist.");
   const options = { years, genres_movie, genres_series, filterLanguages };
 
-  let catalogs = await Promise.all(userCatalogs
+  let catalogs = await Promise.all(enabledCatalogs
     .filter(userCatalog => {
       const catalogDef = getCatalogDefinition(userCatalog.id);
       if (isMDBList(userCatalog.id)) return true;
@@ -169,6 +170,8 @@ async function getManifest(config) {
             return await jikan.getAnimeGenres();
           });
           catalogOptions = animeGenres.map(genre => genre.name).sort();
+      } else if (userCatalog.id === 'mal.schedule') {
+        catalogOptions = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
       } else {
           catalogOptions = getOptionsForCatalog(catalogDef, userCatalog.type, userCatalog.showInHome, options);
       }
@@ -186,43 +189,35 @@ async function getManifest(config) {
   
   catalogs = catalogs.filter(Boolean);
 
-  if (config.searchEnabled !== "false") {
-    const searchCatalogMovie = {
-      id: "tmdb.search",
-      type: "movie",
-      name: `${tmdbPrefix ? "TMDB - " : ""}${translatedCatalogs.search}`,
-      extra: [{ name: "search", isRequired: true, options: [] }]
-    };
+  const isSearchEnabled = config.search?.enabled ?? true;
 
-    const searchCatalogSeries = {
-      id: "tvdb.search",
-      type: "series",
-      name: `${tmdbPrefix ? "TVDB - " : ""}${translatedCatalogs.search}`,
-      extra: [{ name: "search", isRequired: true, options: [] }]
-    };
-  
-    const searchCatalogAnime = {
-        id: "mal.search",
+  if (isSearchEnabled) {
+    catalogs.push({ id: 'search', type: 'movie', name: 'Search', extra: [{ name: 'search', isRequired: true }] });
+    catalogs.push({ id: 'search', type: 'series', name: 'Search', extra: [{ name: 'search', isRequired: true }] });
+    catalogs.push({ id: 'search', type: 'anime', name: 'Search', extra: [{ name: 'search', isRequired: true }] });
+    
+    const providers = config.search?.providers || { movie: '', series: '', anime: 'mal.search' };
+    const isMalSearchInUse = Object.values(providers).includes('mal.search');
+
+    if (isMalSearchInUse) {
+      console.log('[Manifest] MAL search is in use for at least one content type. Adding VA and Genre search catalogs.');
+      
+      const searchVAAnime = {
+        id: "mal.va_search",
         type: "anime",
-        name: "Anime Search (MAL)",
-        extra: [{ name: "search", isRequired: true, options: [] }]
-    };
+        name: "Voice Actor Roles",
+        extra: [{ name: "va_id", isRequired: true }]
+      };
 
-    const searchVAAnime = {
-      id: "mal.va_search",
-      type: "anime",
-      name: "Voice Actor Roles",
-      extra: [{ name: "va_id", isRequired: true }]
-    };
-
-    const searchGenreAnime = {
-      id: "mal.genre_search", 
-      type: "anime",
-      name: "Anime Genre", 
-      extra: [{ name: "genre_id", isRequired: true }]
+      const searchGenreAnime = {
+        id: "mal.genre_search",
+        type: "anime",
+        name: "Anime Genre",
+        extra: [{ name: "genre_id", isRequired: true }]
+      };
+      
+      catalogs.push(searchVAAnime, searchGenreAnime);
     }
-
-    catalogs = [...catalogs, searchCatalogMovie, searchCatalogSeries, searchCatalogAnime, searchVAAnime, searchGenreAnime];
   }
 
   if (config.geminikey) {
@@ -267,12 +262,12 @@ async function getManifest(config) {
     favicon: `${host}/favicon.png`,
     logo: `${host}/logo.png`,
     background: `${host}/background.png`,
-    name: "The Movie Database Addon",
-    description: "A powerful hybrid metadata addon for Stremio. It uses TMDB for movies and discovery, and TVDB for superior TV show metadata, ensuring the most accurate and up-to-date information.",
+    name: "AIOMetadata",
+    description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source. Also includes an optional AI search powered by Gemini.",
     resources: ["catalog", "meta"],
     types: ["movie", "series", "anime"],
     idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:"],
-    stremioAddonsConfig,
+    //stremioAddonsConfig,
     behaviorHints: {
       configurable: true,
       configurationRequired: false,
@@ -289,7 +284,8 @@ function getDefaultCatalogs() {
     defaultTypes.map(type => ({
       id: `tmdb.${id}`,
       type,
-      showInHome: true 
+      showInHome: true,
+      enabled: true 
     }))
   );
 
@@ -297,24 +293,28 @@ function getDefaultCatalogs() {
     {
       id: 'mal.airing',
       type: 'anime',
-      showInHome: true 
+      showInHome: true,
+      enabled: true, 
     },
     {
       id: 'mal.upcoming',
       type: 'anime',
-      showInHome: true 
+      showInHome: true,
+      enabled: true, 
     },
     {
       id: 'mal.genres',
       name: 'MAL Genres',
       type: 'anime',
-      showInHome: false 
+      showInHome: false,
+      enabled: true, 
     },
-    { id: 'mal.decade80s', type: 'anime', showInHome: true },
-    { id: 'mal.decade90s', type: 'anime', showInHome: true },
-    { id: 'mal.decade00s', type: 'anime', showInHome: true },
-    { id: 'mal.decade10s', type: 'anime', showInHome: true },
-    { id: 'mal.decade20s', type: 'anime', showInHome: true },
+    { id: 'mal.schedule', name: 'MAL Airing Schedule', type: 'anime', enabled: true, showInHome: false },
+    { id: 'mal.decade80s', type: 'anime', showInHome: true, enabled: true },
+    { id: 'mal.decade90s', type: 'anime', showInHome: true, enabled: true, },
+    { id: 'mal.decade00s', type: 'anime', showInHome: true, enabled: true, },
+    { id: 'mal.decade10s', type: 'anime', showInHome: true, enabled: true, },
+    { id: 'mal.decade20s', type: 'anime', showInHome: true, enabled: true, },
   ];
 
   return [...tmdbCatalogs, ...animeCatalogs];

@@ -1,13 +1,15 @@
+const fs = require('fs');
 const express = require("express");
 const favicon = require('serve-favicon');
 const path = require("path");
+const crypto = require('crypto');
 const addon = express();
 const analytics = require('./utils/analytics');
 const { getCatalog } = require("./lib/getCatalog");
 const { getSearch } = require("./lib/getSearch");
 const { getManifest, DEFAULT_LANGUAGE } = require("./lib/getManifest");
 const { getMeta } = require("./lib/getMeta");
-const { cacheWrapMeta, cacheWrapCatalog, cacheWrapJikanApi, cacheWrapStaticCatalog } = require("./lib/getCache");
+const { cacheWrap, cacheWrapMeta, cacheWrapCatalog, cacheWrapJikanApi, cacheWrapStaticCatalog } = require("./lib/getCache");
 const { getTrending } = require("./lib/getTrending");
 const { parseConfig, getRpdbPoster, checkIfExists, parseAnimeCatalogMeta } = require("./utils/parseProps");
 const { getRequestToken, getSessionId } = require("./lib/getSession");
@@ -15,8 +17,12 @@ const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { blurImage } = require('./utils/imageProcessor');
 const axios = require('axios');
 const jikan = require('./lib/mal');
+const packageJson = require('../package.json');
+const ADDON_VERSION = packageJson.version;
 
 addon.use(analytics.middleware);
+const NO_CACHE = process.env.NO_CACHE === 'true';
+
 
 
 const getCacheHeaders = function (opts) {
@@ -37,9 +43,34 @@ const getCacheHeaders = function (opts) {
     .join(", ");
 };
 
-const respond = function (res, data, opts) {
-  const cacheControl = getCacheHeaders(opts);
-  if (cacheControl) res.setHeader("Cache-Control", `${cacheControl}, public`);
+const respond = function (req, res, data, opts) {
+
+  if (NO_CACHE) {
+    console.log('[Cache] Bypassing browser cache for this request.');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  } else {
+    const configString = req.params.catalogChoices || '';
+    const etagHash = crypto.createHash('md5')
+                           .update(ADDON_VERSION + JSON.stringify(data) + configString)
+                           .digest('hex');
+    const etag = `W/"${etagHash}"`;
+
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public'); // It's public, but must be validated
+
+    if (req.headers['if-none-match'] === etag) {
+      res.status(304).end(); // The browser's cache is fresh.
+      return;
+    }
+
+    const cacheControl = getCacheHeaders(opts);
+    if (cacheControl) {
+      res.setHeader("Cache-Control", `${cacheControl}, public`);
+    }
+  }
+  
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
   res.setHeader("Content-Type", "application/json");
@@ -47,17 +78,29 @@ const respond = function (res, data, opts) {
 };
 
 // --- Static, Auth, and Configuration Routes ---
-addon.get("/", function (_, res) { res.redirect("/configure"); });
-addon.get("/request_token", async function (req, res) { const r = await getRequestToken(); respond(res, r); });
-addon.get("/session_id", async function (req, res) { const s = await getSessionId(req.query.request_token); respond(res, s); });
+addon.get("/", function (_, res) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0'); 
+    res.redirect("/configure"); 
+});
+addon.get("/request_token", async function (req, res) { const r = await getRequestToken(); respond(req, res, r); });
+addon.get("/session_id", async function (req, res) { const s = await getSessionId(req.query.request_token); respond(req, res, s); });
 
 // --- Manifest Route (with caching) ---
 addon.get("/:catalogChoices?/manifest.json", async function (req, res) {
     const { catalogChoices } = req.params;
-    const config = parseConfig(catalogChoices) || {};
-    const manifest = await getManifest(config);
-    const cacheOpts = { cacheMaxAge: 12 * 60 * 60, staleRevalidate: 14 * 24 * 60 * 60, staleError: 30 * 24 * 60 * 60 };
-    respond(res, manifest, cacheOpts);
+    const manifest = await cacheWrap(`manifest:${catalogChoices}`, async () => {
+      console.log(`[Manifest] Cache miss for config: ${catalogChoices}. Building fresh manifest.`);
+      const config = parseConfig(catalogChoices) || {};
+      return await getManifest(config);
+    }, 12 * 60 * 60, NO_CACHE); // 12-hour Redis cache
+
+    if (!manifest) {
+        return res.status(500).send({ err: "Failed to build manifest." });
+    }
+    const cacheOpts = { cacheMaxAge: 1 * 60 * 60 }; // 1 hour cache for manifest
+    respond(req, res, manifest, cacheOpts);
 });
 
 // --- Catalog & Search Route (with caching) ---
@@ -70,10 +113,9 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
   const isStaticCatalog = ['mal.decade80s', 'mal.decade90s', 'mal.decade00s', 'mal.decade10s'].includes(id);
   const cacheWrapper = isStaticCatalog ? cacheWrapStaticCatalog : cacheWrapCatalog;
 
-  const cacheKey = `${id}:${type}:${JSON.stringify(extra || {})}:${JSON.stringify(config.ageRating || 'any')}`;
-
+  const catalogKey = `${id}:${type}:${JSON.stringify(extra || {})}`;
   try {
-    const responseData = await cacheWrapper(cacheKey, async () => {
+    const responseData = await cacheWrapper(catalogChoices, catalogKey, async () => {
       let metas = []; 
       
       if (id.includes('search')) {
@@ -90,10 +132,10 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
             metas = (await getTrending(...args, genreName, config, catalogChoices)).metas;
             break;
           case "tmdb.favorites":
-            metas = (await getFavorites(...args, genreName, sessionId)).metas;
+            metas = (await getFavorites(...args, genreName, sessionId, config)).metas;
             break;
           case "tmdb.watchlist":
-            metas = (await getWatchList(...args, genreName, sessionId)).metas;
+            metas = (await getWatchList(...args, genreName, sessionId, config)).metas;
             break;
           case 'mal.airing':
           case 'mal.upcoming':
@@ -124,6 +166,17 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
             break;
           }
 
+          case 'mal.schedule': {
+            
+            const dayOfWeek = genreName || 'Monday'; 
+            const animeResults = await jikan.getAiringSchedule(dayOfWeek, config);
+            metas = animeResults.map(anime => 
+              parseAnimeCatalogMeta(anime, config, language)
+            ).filter(Boolean);
+            break;
+          }
+
+
           case 'mal.decade80s':
           case 'mal.decade90s':
           case 'mal.decade00s':
@@ -149,7 +202,7 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
     const httpCacheOpts = isStaticCatalog 
         ? { cacheMaxAge: 24 * 60 * 60 }
         : { cacheMaxAge: 1 * 60 * 60 }; 
-    respond(res, responseData, httpCacheOpts);
+    respond(req, res, responseData, httpCacheOpts);
 
   } catch (e) {
     console.error(`Error in catalog route for id "${id}" and type "${type}":`, e);
@@ -162,15 +215,14 @@ addon.get("/:catalogChoices?/meta/:type/:id.json", async function (req, res) {
   const { catalogChoices, type, id: stremioId } = req.params;
   const config = parseConfig(catalogChoices) || {};
   const language = config.language || DEFAULT_LANGUAGE;
-  const fullConfig = { ...config, rpdbkey: config.rpdbkey, hideEpisodeThumbnails: config.hideEpisodeThumbnails === "true" };
-
+  const fullConfig = config; 
   try {
-    const result = await cacheWrapMeta(stremioId, async () => {
+    const result = await cacheWrapMeta(catalogChoices, stremioId, async () => {
       return await getMeta(type, language, stremioId, fullConfig, catalogChoices);
     });
 
     if (!result || !result.meta) {
-      return respond(res, { meta: null });
+      return respond(req, res, { meta: null });
     }
     
     const cacheOpts = { staleRevalidate: 20 * 24 * 60 * 60, staleError: 30 * 24 * 60 * 60 };
@@ -181,7 +233,7 @@ addon.get("/:catalogChoices?/meta/:type/:id.json", async function (req, res) {
       cacheOpts.cacheMaxAge = (hasEnded ? 7 : 1) * 24 * 60 * 60; // 7 days for ended, 1 day for running
     }
     
-    respond(res, result, cacheOpts);
+    respond(req, res, result, cacheOpts);
     
   } catch (error) {
     console.error(`CRITICAL ERROR in meta route for ${stremioId}:`, error);
@@ -242,12 +294,32 @@ addon.get("/api/image/blur", async function (req, res) {
   }
 });
 
+addon.get('/:catalogChoices?/configure', function (req, res) {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  const publicEnv = {
+    TMDB_API_KEY: process.env.TMDB_API || "",
+    TVDB_API_KEY: process.env.TVDB_API_KEY || "",
+    FANART_API_KEY: process.env.FANART_API_KEY || ""
+  };
+
+  const htmlPath = path.join(__dirname, '../dist/index.html');
+  fs.readFile(htmlPath, 'utf8', (err, htmlData) => {
+      if (err) {
+          console.error("Error reading index.html for injection:", err);
+          return res.status(500).send("Error loading configuration page.");
+      }
+
+      const injectedHtml = htmlData.replace(
+          '__INJECTED_ENV__',
+          JSON.stringify(publicEnv)
+      );
+
+      res.setHeader('Content-Type', 'text/html');
+      res.send(injectedHtml);
+  });
+});
 addon.use(favicon(path.join(__dirname, '../public/favicon.png')));
 addon.use('/configure', express.static(path.join(__dirname, '../dist')));
-addon.get('/:catalogChoices?/configure', function (req, res) {
-    res.sendFile(path.join(__dirname, '../dist/index.html'));
-});
-
 addon.use(express.static(path.join(__dirname, '../public')));
 addon.use(express.static(path.join(__dirname, '../dist')));
 

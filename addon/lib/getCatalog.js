@@ -1,12 +1,11 @@
 require("dotenv").config();
-const { MovieDb } = require("moviedb-promise");
 const { getGenreList } = require("./getGenreList");
 const { getLanguages } = require("./getLanguages");
 const { fetchMDBListItems, parseMDBListItems } = require("../utils/mdbList");
 const CATALOG_TYPES = require("../static/catalog-types.json");
 const { getMeta } = require("./getMeta");
 const { isAnime } = require("../utils/isAnime");
-const moviedb = new MovieDb(process.env.TMDB_API);
+const moviedb = require("./getTmdb");
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
 async function getCatalog(type, language, page, id, genre, config, catalogChoices) {
@@ -17,23 +16,34 @@ async function getCatalog(type, language, page, id, genre, config, catalogChoice
       return await parseMDBListItems(results, type, genre, language, config);
     }
 
-    const genreList = await getGenreList(language, type);
+    const genreList = await getGenreList(language, type, config);
     const parameters = await buildParameters(type, language, page, id, genre, genreList, config);
 
     const fetchFunction = type === "movie" 
-      ? moviedb.discoverMovie.bind(moviedb) 
-      : moviedb.discoverTv.bind(moviedb);
+      ? () => moviedb.discoverMovie(parameters, config) 
+      : () => moviedb.discoverTv(parameters, config);
 
-    const res = await fetchFunction(parameters);
+    const res = await fetchFunction();
 
-    const metaPromises = res.results.map(item => 
-      getMeta(type, language, `tmdb:${item.id}`, config, catalogChoices, false)
-        .then(result => result.meta)
-        .catch(err => {
-          console.error(`Error fetching metadata for tmdb:${item.id}:`, err.message);
-          return null;
-        })
-    );
+    const metaPromises = res.results.map(async (item) => {
+      try {
+        const fullItem = type === "movie"
+          ? await moviedb.movieInfo({ id: item.id, append_to_response: 'external_ids' }, config)
+          : await moviedb.tvInfo({ id: item.id, append_to_response: 'external_ids' }, config);
+
+        const preFetchedData = {
+          tmdbData: fullItem,
+          imdbId: fullItem.external_ids?.imdb_id,
+          tvdbId: fullItem.external_ids?.tvdb_id
+        };
+
+        const result = await getMeta(type, language, `tmdb:${item.id}`, config, catalogChoices, preFetchedData);
+        return result.meta;
+      } catch (err) {
+        console.error(`Error processing metadata for tmdb:${item.id}:`, err.message);
+        return null;
+      }
+    });
 
     const metas = (await Promise.all(metaPromises)).filter(Boolean);
     return { metas };
@@ -45,8 +55,22 @@ async function getCatalog(type, language, page, id, genre, config, catalogChoice
 }
 
 async function buildParameters(type, language, page, id, genre, genreList, config) {
-  const languages = await getLanguages();
+  const languages = await getLanguages(config);
   const parameters = { language, page, 'vote_count.gte': 10 };
+
+  if (id === 'tmdb.top' && type === 'series') {
+    console.log('[TMDB Filter] Applying genre exclusion for popular series catalog.');
+
+    const excludedGenreIds = [
+      '10767', // Talk
+      '10763', // News
+      '10768', // War & Politics
+    ];
+    
+    parameters.without_genres = excludedGenreIds.join(',');
+    
+    console.log(`[TMDB Filter] Excluding genre IDs: ${parameters.without_genres}`);
+  }
 
   if (config.ageRating) {
     switch (config.ageRating) {

@@ -1,20 +1,18 @@
 require("dotenv").config();
-const { MovieDb } = require("moviedb-promise");
-const moviedb = new MovieDb(process.env.TMDB_API);
+const moviedb = require("./getTmdb");
 
 let languageData = null; // We will cache the data here
 
 /**
  * Fetches and caches the full language data from TMDB.
- * This is the single source of truth for all language info.
  */
-async function loadLanguageData() {
+async function loadLanguageData(config) {
   if (languageData) return languageData;
 
   try {
     const [primaryTranslations, allLanguages] = await Promise.all([
-      moviedb.primaryTranslations(),
-      moviedb.languages(),
+      moviedb.primaryTranslations(config),
+      moviedb.languages(config),
     ]);
 
     // Create a fast lookup map: 'en' -> { english_name: 'English', iso_639_2: 'eng' }
@@ -47,8 +45,8 @@ async function loadLanguageData() {
 /**
  * Returns the list of languages for the addon configuration page.
  */
-async function getLanguageListForConfig() {
-  const data = await loadLanguageData();
+async function getLanguageListForConfig(config) {
+  const data = await loadLanguageData(config);
   return data.availableLanguages;
 }
 
@@ -57,8 +55,8 @@ async function getLanguageListForConfig() {
  * @param {string} langCode2 The 2-letter code (e.g., 'pt').
  * @returns {string} The 3-letter code, defaulting to 'eng'.
  */
-async function to3LetterCode(langCode2) {
-  const data = await loadLanguageData();
+async function to3LetterCode(langCode2, config) {
+  const data = await loadLanguageData(config);
   const details = data.languageMap.get(langCode2);
   return details?.code3 || 'eng'; // Default to English if not found
 }

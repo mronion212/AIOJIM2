@@ -1,13 +1,12 @@
 require("dotenv").config();
-const { MovieDb } = require("moviedb-promise");
-const moviedb = new MovieDb(process.env.TMDB_API);
+const moviedb = require("./getTmdb");
 
-async function getLanguages() {
+async function getLanguages(config) {
   try {
     
     const [primaryTranslations, languages] = await Promise.all([
-      moviedb.primaryTranslations(),
-      moviedb.languages(),
+      moviedb.primaryTranslations(config),
+      moviedb.languages(config),
     ]);
 
     const languageMap = new Map(

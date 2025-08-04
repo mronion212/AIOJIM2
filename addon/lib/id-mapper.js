@@ -10,13 +10,24 @@ const REDIS_ETAG_KEY = 'anime-list-etag';
 
 let animeIdMap = new Map();
 let isInitialized = false;
+let tmdbIdMap = new Map();
+let tvdbIdMap = new Map();
 
 function processAndIndexData(jsonData) {
   const animeList = JSON.parse(jsonData);
   animeIdMap.clear();
+  tmdbIdMap.clear();
+  tvdbIdMap.clear();
   for (const item of animeList) {
     if (item.mal_id) {
       animeIdMap.set(item.mal_id, item);
+    }
+    if (item.themoviedb_id && item.type) {
+      const key = `${item.type.toLowerCase()}:${item.themoviedb_id}`;
+      tmdbIdMap.set(key, item);
+    }
+    if (item.thetvdb_id) {
+      tvdbIdMap.set(item.thetvdb_id, item);
     }
   }
   isInitialized = true;
@@ -91,7 +102,26 @@ function getMappingByMalId(malId) {
   return animeIdMap.get(parseInt(malId, 10)) || null;
 }
 
+function getMappingByTmdbId(tmdbId, type) {
+  if (!isInitialized) return null;
+  const lookupType = type.toLowerCase() === 'tv' ? 'series' : type.toLowerCase();
+  const key = `${lookupType}:${parseInt(tmdbId, 10)}`;
+  return tmdbIdMap.get(key) || null;
+}
+
+/**
+ * Finds the mapping entry for a given TVDB ID.
+ * @param {number|string} tvdbId - The TVDB ID.
+ * @returns {object|null} - The full mapping object, or null if not found.
+ */
+function getMappingByTvdbId(tvdbId) {
+  if (!isInitialized) return null;
+  return tvdbIdMap.get(parseInt(tvdbId, 10)) || null;
+}
+
 module.exports = {
   initializeMapper,
   getMappingByMalId,
+  getMappingByTmdbId,
+  getMappingByTvdbId,
 };

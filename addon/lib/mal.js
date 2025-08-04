@@ -63,7 +63,7 @@ async function _makeJikanRequest(url) {
   return axios.get(url, { timeout: 15000 });
 }
 
-async function searchAnime(query, limit = 20, config = {}) {
+async function searchAnime(type, query, limit = 20, config = {}) {
   const url = `${JIKAN_API_BASE}/anime?q=${encodeURIComponent(query)}&limit=${limit}&order_by=popularity&sort=asc`;
   if (config.ageRating) {
     let jikanRating;
@@ -77,6 +77,15 @@ async function searchAnime(query, limit = 20, config = {}) {
     if (jikanRating) {
       url += `&rating=${jikanRating}`;
     }
+  }
+  let queryType;
+  switch (type) {
+    case "movie": queryType = 'movie'; break;
+    case "tv": queryType = 'tv'; break;
+    case "anime": queryType= null; break;
+  }
+  if (queryType) {
+    url += `&type=${queryType}`;
   }
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then(response => response.data?.data || [])
@@ -189,13 +198,17 @@ async function jikanPaginator(endpoint, totalItemsToFetch, queryParams = {}) {
  * @param {string} endpoint - The full Jikan endpoint path (e.g., `/anime/21/episodes`).
  * @returns {Promise<Array>} - A promise that resolves to a flat array of all fetched items.
  */
-async function jikanGetAllPages(endpoint) {
+async function jikanGetAllPages(endpoint, initialParams = {}) {
   let allItems = [];
   let page = 1;
   let hasNextPage = true;
 
   while (hasNextPage) {
-    const url = `${JIKAN_API_BASE}${endpoint}?page=${page}`;
+    const params = new URLSearchParams({
+      ...initialParams,
+      page: page,
+    });
+    const url = `${JIKAN_API_BASE}${endpoint}?${params.toString()}`;
     try {
       const response = await enqueueRequest(() => _makeJikanRequest(url), url);
       const data = response.data;
@@ -213,6 +226,35 @@ async function jikanGetAllPages(endpoint) {
     page++;
   }
   return allItems;
+}
+
+
+/**
+ * Fetches the airing schedule for a specific day of the week.
+ * @param {string} day - The day of the week in lowercase (e.g., 'monday', 'tuesday').
+ * @param {object} [config={}] - The user's configuration for age rating.
+ * @returns {Promise<Array>} - An array of anime objects scheduled for that day.
+ */
+async function getAiringSchedule(day, config = {}) {
+  const queryParams = {
+    filter: day.toLowerCase()
+  };
+
+  if (config.ageRating) {
+    // ... (your existing ageRating switch logic)
+    let jikanRating;
+    switch (config.ageRating) {
+      case "G": jikanRating = 'g'; break;
+      case "PG": jikanRating = 'pg'; break;
+      case "PG-13": jikanRating = 'pg13'; break;
+      case "R": jikanRating = 'r17'; break;
+    }
+    if (jikanRating) {
+      queryParams.rating = jikanRating;
+    }
+  }
+
+  return jikanGetAllPages('/schedules', queryParams);
 }
 
 async function getAiringNow(totalItemsToFetch = 50, config = {}) {
@@ -336,5 +378,6 @@ module.exports = {
   getAnimeGenres,
   getAiringNow,
   getUpcoming,
-  getTopAnimeByDateRange
+  getTopAnimeByDateRange,
+  getAiringSchedule,
 };

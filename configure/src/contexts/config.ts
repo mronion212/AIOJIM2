@@ -1,45 +1,53 @@
-import { createContext } from 'react';
-
-export type CatalogConfig = {
+export interface CatalogConfig {
   id: string;
-  type: string;
-  name?: string;
+  name: string;
+  type: 'movie' | 'series' | 'anime';
   showInHome: boolean;
-  enabled: boolean;
-};
+}
 
-export type ConfigContextType = {
-  rpdbkey: string;
-  geminikey: string;
-  mdblistkey: string;
-  includeAdult: boolean;
-  provideImdbId: boolean;
-  tmdbPrefix: boolean;
-  hideEpisodeThumbnails: boolean;
+export interface SearchConfig {
+    id: string;
+    name: string;
+    type: 'movie' | 'series' | 'anime';
+    enabled: boolean;
+}
+
+export interface AppConfig {
   language: string;
-  sessionId: string;
-  streaming: string[];
-  catalogs: CatalogConfig[];
-  ageRating: string | undefined;
+  includeAdult: boolean;
+  blurThumbs: boolean;
+  providers: {
+    movie: string;
+    series: string;
+    anime: string;
+    anime_id_provider: 'kitsu' | 'mal';
+  };
+  tvdbSeasonType: string;
+  mal: {
+    skipFiller: boolean;
+    skipRecap: boolean;
+  };
+  apiKeys: {
+    gemini: string;
+    tmdb: string;
+    tvdb: string;
+    fanart: string;
+    rpdb: string;
+    mdblist: string;
+  };
+  ageRating: string;
   searchEnabled: boolean;
-  hideInCinemaTag: boolean;
-  castCount: number | undefined;
-  setRpdbkey: (rpdbkey: string) => void;
-  setGeminiKey: (geminikey: string) => void;
-  setMdblistkey: (mdblistkey: string) => void;
-  setIncludeAdult: (includeAdult: boolean) => void;
-  setProvideImdbId: (provideImdbId: boolean) => void;
-  setTmdbPrefix: (tmdbPrefix: boolean) => void;
-  setHideEpisodeThumbnails: (hideEpisodeThumbnails: boolean) => void;
-  setLanguage: (language: string) => void;
-  setSessionId: (sessionId: string) => void;
-  setStreaming: (streaming: string[]) => void;
-  setCatalogs: (catalogs: CatalogConfig[] | ((prev: CatalogConfig[]) => CatalogConfig[])) => void;
-  setAgeRating: (ageRating: string | undefined) => void;
-  setSearchEnabled: (enabled: boolean) => void;
-  setHideInCinemaTag: (hide: boolean) => void;
-  setCastCount: (count: number | undefined) => void;
-  loadConfigFromUrl: () => void;
-};
-
-export const ConfigContext = createContext<ConfigContextType | undefined>(undefined); 
+  sessionId: string;
+  catalogs: CatalogConfig[];
+  search: {
+    enabled: boolean; 
+    // This is the switch for the AI layer.
+    ai_enabled: boolean; 
+    // This stores the primary keyword engine for each type.
+    providers: {
+        movie: 'tmdb.search' | 'tvdb.search' | 'mal.search';
+        series: 'tmdb.search' | 'tvdb.search' | 'mal.search';
+        anime: 'tmdb.search' | 'tvdb.search' | 'mal.search';
+    };
+  };
+}

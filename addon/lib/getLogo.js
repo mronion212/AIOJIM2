@@ -1,13 +1,7 @@
 require('dotenv').config();
-const FanartTvApi = require("fanart.tv-api");
-const { MovieDb } = require("moviedb-promise");
+const fanart = require('../utils/fanart');
+const moviedb = require("./getTmdb");
 
-// --- Client Initializations ---
-const fanart = new FanartTvApi({ 
-  apiKey: process.env.FANART_API,
-  baseUrl: "http://webservice.fanart.tv/v3/" 
-});
-const moviedb = new MovieDb(process.env.TMDB_API);
 
 /**
  * @param {Array} logos - A combined list of logo objects from all sources.
@@ -35,7 +29,7 @@ function pickLogo(logos, language, originalLanguage) {
  * @param {string} originalLanguage - The media's original language.
  * @returns {Promise<string>} The URL of the best logo, or an empty string.
  */
-async function getLogo(type, ids, language, originalLanguage) {
+async function getLogo(type, ids, language, originalLanguage, config) {
   try {
     const { tmdbId, tvdbId } = ids;
 
@@ -43,12 +37,12 @@ async function getLogo(type, ids, language, originalLanguage) {
     let tmdbPromise;
 
     if (type === 'movie' && tmdbId) {
-      fanartPromise = fanart.getMovieImages(tmdbId);
-      tmdbPromise = moviedb.movieImages({ id: tmdbId });
+      fanartPromise = fanart.getMovieImages(tmdbId, config);
+      tmdbPromise = moviedb.movieImages({ id: tmdbId }, config);
     } else if (type === 'series' && (tmdbId || tvdbId)) {
-      fanartPromise = tvdbId ? fanart.getShowImages(tvdbId) : Promise.resolve({});
+      fanartPromise = tvdbId ? fanart.getShowImages(tvdbId, config) : Promise.resolve({});
       
-      tmdbPromise = tmdbId ? moviedb.tvImages({ id: tmdbId }) : Promise.resolve({});
+      tmdbPromise = tmdbId ? moviedb.tvImages({ id: tmdbId }, config) : Promise.resolve({});
     } else {
       return '';
     }
@@ -60,7 +54,7 @@ async function getLogo(type, ids, language, originalLanguage) {
     ]);
 
     
-    const fanartLogosSource = fanartRes.hdmovielogo || fanartRes.hdtvlogo || [];
+    const fanartLogosSource = (fanartRes || {}).hdmovielogo || (fanartRes || {}).hdtvlogo || [];
     const fanartLogos = fanartLogosSource.map(l => ({
       url: l.url,
       lang: l.lang || 'en', 

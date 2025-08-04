@@ -1,8 +1,7 @@
 // lib/getGenreList.js
 
 require('dotenv').config();
-const { MovieDb } = require('moviedb-promise');
-const moviedb = new MovieDb(process.env.TMDB_API);
+const moviedb = require("./getTmdb");
 
 /**
  * Fetches a list of genres from TMDB for building catalogs.
@@ -11,13 +10,13 @@ const moviedb = new MovieDb(process.env.TMDB_API);
  * @param {'movie'|'series'} type - The content type to fetch genres for.
  * @returns {Promise<Array<{id: number, name: string}>>} A list of genre objects, or an empty array on error.
  */
-async function getGenreList(language, type) {
+async function getGenreList(language, type, config) {
   try {
     if (type === "movie") {
-      const res = await moviedb.genreMovieList({ language });
+      const res = await moviedb.genreMovieList({ language }, config);
       return res.genres || []; 
     } else {
-      const res = await moviedb.genreTvList({ language });
+      const res = await moviedb.genreTvList({ language }, config);
       return res.genres || [];
     }
   } catch (error) {
