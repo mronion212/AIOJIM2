@@ -41,7 +41,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=beta,enable={{is_prerelease}}
+            type=raw,value=beta
 
       - name: Build and push multi-platform image
         uses: docker/build-push-action@v5
