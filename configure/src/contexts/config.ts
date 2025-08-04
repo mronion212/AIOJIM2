@@ -2,6 +2,8 @@ export interface CatalogConfig {
   id: string;
   name: string;
   type: 'movie' | 'series' | 'anime';
+  enabled: boolean;
+  source: 'tmdb' | 'tvdb' | 'mal';
   showInHome: boolean;
 }
 

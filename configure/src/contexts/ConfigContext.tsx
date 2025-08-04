@@ -2,7 +2,6 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { AppConfig, CatalogConfig, SearchConfig } from "./configTypes";
 import { decompressFromEncodedURIComponent } from 'lz-string';
 import { allCatalogDefinitions, allSearchProviders } from "@/data/catalogs"; 
-const injectedEnv = (window as any).injectedEnv || {};
 
 interface ConfigContextType {
   config: AppConfig;
@@ -24,9 +23,9 @@ const initialConfig: AppConfig = {
   },
   apiKeys: { 
     gemini: "", 
-    tmdb: injectedEnv.tmdb || "",
-    tvdb: injectedEnv.tvdb || "",
-    fanart: injectedEnv.fanart || "", 
+    tmdb: "",
+    tvdb: "",
+    fanart: "", 
     rpdb: "", 
     mdblist: "" 
   },
@@ -38,6 +37,7 @@ const initialConfig: AppConfig = {
       id: c.id,
       name: c.name,
       type: c.type,
+      source: c.source,
       enabled: c.isEnabledByDefault || false,
       showInHome: c.showOnHomeByDefault || false,
     })),
@@ -54,72 +54,53 @@ const initialConfig: AppConfig = {
 
 export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const [config, setConfig] = useState<AppConfig>(initialConfig);
+  const [isLoading, setIsLoading] = useState(true);
 
   // --- THIS IS THE IMPLEMENTED LOGIC ---
   useEffect(() => {
-    const loadConfigFromUrl = () => {
+    async function loadInitialConfig() {
       try {
-        const pathParts = window.location.pathname.split('/');
-        // A valid config URL will have a structure like ['', 'CONFIG_STRING', 'configure']
-        // So, we look for the part before 'configure'.
-        const configStringIndex = pathParts.findIndex(p => p.toLowerCase() === 'configure');
-        
-        if (configStringIndex <= 0 || !pathParts[configStringIndex - 1]) {
-          // No config string found in the URL. Use the default state.
-          console.log('[Config] No config in URL, using defaults.');
-          return;
+        // First, try to fetch the environment variables from our new API endpoint.
+        const envResponse = await fetch('/api/config');
+        const envApiKeys = await envResponse.json();
+
+        // Check for a config in the URL, which should take priority.
+        const path = window.location.pathname.split('/')[1];
+        if (path && path.toLowerCase() !== 'configure') {
+          const decompressed = decompressFromEncodedURIComponent(path);
+          const urlConfig = JSON.parse(decompressed);
+          
+          console.log('[Config] Hydrating state from URL...');
+          // Merge the loaded URL config on top of the env vars and defaults.
+          setConfig(prev => ({
+            ...prev, // Start with defaults
+            ...urlConfig, // Apply URL config
+            apiKeys: { ...prev.apiKeys, ...envApiKeys, ...urlConfig.apiKeys }, // Env < URL
+          }));
+          window.history.replaceState({}, '', '/configure');
+        } else {
+          // If no config in URL, just apply the environment variables.
+          console.log('[Config] Hydrating state from server environment...');
+          setConfig(prev => ({
+            ...prev,
+            apiKeys: { ...prev.apiKeys, ...envApiKeys },
+          }));
         }
-
-        const compressedConfig = pathParts[configStringIndex - 1];
-        console.log('[Config] Found config string in URL. Decompressing...');
-
-        const decompressed = decompressFromEncodedURIComponent(compressedConfig);
-        if (!decompressed) {
-          throw new Error("Decompression resulted in an empty string.");
-        }
-        
-        const urlConfig = JSON.parse(decompressed);
-        console.log('[Config] Successfully parsed config:', urlConfig);
-
-        // --- State Hydration ---
-        // We will create a new state object by merging the loaded config
-        // with our default structure to ensure all properties exist.
-
-        // First, handle the catalogs. We need to merge the user's choices
-        // with the full list of definitions to get names, etc.
-        const loadedCatalogs = allCatalogDefinitions.map(def => {
-          const userSetting = urlConfig.catalogs?.find((c: CatalogConfig) => c.id === def.id && c.type === def.type);
-          return {
-            id: def.id,
-            name: def.name,
-            type: def.type,
-            enabled: userSetting ? userSetting.enabled : false, // Default to disabled if not in user's list
-            showInHome: userSetting ? userSetting.showInHome : false,
-          };
-        });
-
-        setConfig(prevConfig => ({
-          ...prevConfig, // Start with the default structure
-          ...urlConfig,   // Overwrite with all simple values from the URL
-          apiKeys: { ...prevConfig.apiKeys, ...urlConfig.apiKeys }, // Deep merge apiKeys
-          providers: { ...prevConfig.providers, ...urlConfig.providers }, // Deep merge providers
-          search: { ...prevConfig.search, ...urlConfig.search },
-          catalogs: loadedCatalogs, // Use the carefully merged catalog list
-        }));
-
-        // Clean the URL to a simple '/configure' for a better user experience.
-        window.history.replaceState({}, '', '/configure');
-        console.log('[Config] State hydrated from URL and URL cleaned.');
-
       } catch (error) {
-        console.error('Error loading config from URL:', error);
-        // If loading or parsing fails, we simply fall back to the default config.
-        // The `useState(initialConfig)` already handles this.
+        console.error('Error loading initial config:', error);
+        // If anything fails, we just stick with the default state.
+      } finally {
+        setIsLoading(false); // We're done loading
       }
-    };
+    }
 
-    loadConfigFromUrl();
-  }, []); // The empty dependency array `[]` ensures this effect runs only once when the component mounts.
+    loadInitialConfig();
+  }, []); // Runs once on mount
+
+  // You can optionally show a loading spinner while the config is being fetched.
+  if (isLoading) {
+    return <div>Loading configuration...</div>; // Or a nice spinner component
+  }
 
   return (
     <ConfigContext.Provider value={{ config, setConfig }}>

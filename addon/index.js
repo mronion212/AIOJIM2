@@ -1,4 +1,3 @@
-const fs = require('fs');
 const express = require("express");
 const favicon = require('serve-favicon');
 const path = require("path");
@@ -294,30 +293,20 @@ addon.get("/api/image/blur", async function (req, res) {
   }
 });
 
-addon.get('/:catalogChoices?/configure', function (req, res) {
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  const publicEnv = {
-    TMDB_API_KEY: process.env.TMDB_API || "",
-    TVDB_API_KEY: process.env.TVDB_API_KEY || "",
-    FANART_API_KEY: process.env.FANART_API_KEY || ""
+addon.get("/api/config", (req, res) => {
+  const publicEnvConfig = {
+    tmdb: process.env.TMDB_API || "",
+    tvdb: process.env.TVDB_API_KEY || "",
+    fanart: process.env.FANART_API_KEY || ""
   };
-
-  const htmlPath = path.join(__dirname, '../dist/index.html');
-  fs.readFile(htmlPath, 'utf8', (err, htmlData) => {
-      if (err) {
-          console.error("Error reading index.html for injection:", err);
-          return res.status(500).send("Error loading configuration page.");
-      }
-
-      const injectedHtml = htmlData.replace(
-          '__INJECTED_ENV__',
-          JSON.stringify(publicEnv)
-      );
-
-      res.setHeader('Content-Type', 'text/html');
-      res.send(injectedHtml);
-  });
+  
+  res.json(publicEnvConfig);
 });
+
+addon.get('/:catalogChoices?/configure', function (req, res) {
+  res.sendFile(path.join(__dirname, '../dist/index.html'));
+});
+
 addon.use(favicon(path.join(__dirname, '../public/favicon.png')));
 addon.use('/configure', express.static(path.join(__dirname, '../dist')));
 addon.use(express.static(path.join(__dirname, '../public')));

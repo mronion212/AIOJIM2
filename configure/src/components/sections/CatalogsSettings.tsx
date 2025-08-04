@@ -5,10 +5,17 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Eye, EyeOff, Home, GripVertical } from 'lucide-react';
 
-const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig; }) => {
+const sourceBadgeStyles = {
+  tmdb: "bg-blue-800/80 text-blue-200 border-blue-600/50 hover:bg-blue-800",
+  tvdb: "bg-green-800/80 text-green-200 border-green-600/50 hover:bg-green-800",
+  mal: "bg-indigo-800/80 text-indigo-200 border-indigo-600/50 hover:bg-indigo-800",
+};
+
+const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & {source: string}; }) => {
   const { setConfig } = useConfig();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `${catalog.id}-${catalog.type}` });
 
@@ -17,6 +24,8 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig; }) => {
     transition,
     zIndex: isDragging ? 10 : 'auto',
   };
+
+  const badgeStyle = sourceBadgeStyles[catalog.source as keyof typeof sourceBadgeStyles] || "bg-gray-700";
 
   const handleToggleEnabled = () => {
     setConfig(prev => ({
@@ -55,6 +64,11 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig; }) => {
         <button {...attributes} {...listeners} className="cursor-grab text-muted-foreground p-2 -ml-2 touch-none" aria-label="Drag to reorder">
           <GripVertical />
         </button>
+        <div className="flex-shrink-0">
+          <Badge variant="outline" className={`font-semibold ${badgeStyle}`}>
+            {catalog.source.toUpperCase()}
+          </Badge>
+        </div>
         <div>
           {/* Use theme-aware text colors */}
           <p className={`font-medium transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
