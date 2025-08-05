@@ -202,7 +202,7 @@ async function buildTvdbMovieResponse(movieData, language, config, catalogChoice
   const imdbRating = imdbRatingValue || "N/A";
   
   const fallbackPosterUrl = tvdbPosterPath ? `${tvdbPosterPath}` : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
-  const posterProxyUrl = `${host}/poster/series/tvdb:${movieData.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.rpdbkey}`;
+  const posterProxyUrl = `${host}/poster/series/tvdb:${movieData.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   const tmdbLikeCredits = {
     cast: (characters || []).map(c => ({
       name: c.personName,
@@ -253,7 +253,7 @@ async function buildTmdbMovieResponse(movieData, language, config, catalogChoice
   ]);
   const imdbRating = imdbRatingValue || movieData.vote_average?.toFixed(1) || "N/A";
   const fallbackPosterUrl = `https://image.tmdb.org/t/p/w500${poster_path}`;
-  const posterProxyUrl = `${host}/poster/movie/tmdb:${movieData.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.rpdbkey}`;
+  const posterProxyUrl = `${host}/poster/movie/tmdb:${movieData.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   //console.log(Utils.parseCast(credits, castCount));
   return {
     id: `tmdb:${tmdbId}`,
@@ -270,7 +270,7 @@ async function buildTmdbMovieResponse(movieData, language, config, catalogChoice
     runtime: Utils.parseRunTime(movieData.runtime),
     country: Utils.parseCoutry(movieData.production_countries),
     imdbRating,
-    poster: config.rpdbkey ? posterProxyUrl : fallbackPosterUrl,
+    poster: config.apiKeys?.rpdb ? posterProxyUrl : fallbackPosterUrl,
     background: `https://image.tmdb.org/t/p/original${movieData.backdrop_path}`,
     logo: processLogo(logoUrl),
     trailers: Utils.parseTrailers(movieData.videos),
@@ -295,7 +295,7 @@ async function buildTmdbSeriesResponse(seriesData, language, config, catalogChoi
   ]);
   
   const finalPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w500${poster_path}` : null;
-  const posterProxyUrl = `${host}/poster/series/tmdb:${tmdbId}?fallback=${encodeURIComponent(finalPosterUrl)}&lang=${language}&key=${config.rpdbkey}`;
+  const posterProxyUrl = `${host}/poster/series/tmdb:${tmdbId}?fallback=${encodeURIComponent(finalPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   const finalBackgroundUrl = fanartUrl || (backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null);
   const imdbRating = imdbRatingValue || seriesData.vote_average?.toFixed(1) || "N/A";
   const castCount = config.castCount === 0 ? undefined : config.castCount;
@@ -341,7 +341,7 @@ async function buildTmdbSeriesResponse(seriesData, language, config, catalogChoi
     runtime: seriesData.episode_run_time?.[0] ? `${seriesData.episode_run_time[0]}min` : null,
     status: seriesData.status,
     imdbRating,
-    poster: config.rpdbkey ? posterProxyUrl : finalPosterUrl,
+    poster: config.apiKeys?.rpdb ? posterProxyUrl : finalPosterUrl,
     background: finalBackgroundUrl,
     logo: logoUrl,
     trailers: Utils.parseTrailers(trailers),
@@ -379,7 +379,7 @@ async function buildTvdbSeriesResponse(tvdbShow, tvdbEpisodes, language, config,
   ]);
   const imdbRating = imdbRatingValue || "N/A";
   const fallbackPosterUrl = tvdbPosterPath ? `${tvdbPosterPath}` : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
-  const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbShow.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.rpdbkey}`;
+  const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbShow.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   const tmdbLikeCredits = {
     cast: (characters || []).map(c => ({
       name: c.personName,
@@ -426,7 +426,7 @@ async function buildTvdbSeriesResponse(tvdbShow, tvdbEpisodes, language, config,
     status: tvdbShow.status?.name,
     country: tvdbShow.originalCountry,
     imdbRating,
-    poster: config.rpdbkey ? posterProxyUrl : fallbackPosterUrl,
+    poster: config.apiKeys?.rpdb ? posterProxyUrl : fallbackPosterUrl,
     background: tvdbShow.artworks?.find(a => a.type === 3)?.image, 
     logo: processLogo(logoUrl),
     videos: videos,
@@ -463,7 +463,7 @@ async function buildAnimeResponse(malData, language, characterData, episodeData,
     
     let finalPosterUrl = posterUrl; 
 
-    if (config.rpdbkey && mapping) {
+    if (config.apiKeys?.rpdb && mapping) {
       const tvdbId = mapping.tvdbId;
       const tmdbId = mapping.tmdbId;
       let proxyId = null;
@@ -483,7 +483,7 @@ async function buildAnimeResponse(malData, language, characterData, episodeData,
 
       if (proxyId) {
         const fallback = encodeURIComponent(posterUrl);
-        finalPosterUrl = `${host}/poster/${proxyType}/${proxyId}?fallback=${fallback}&lang=${language}&key=${config.rpdbkey}`;
+        finalPosterUrl = `${host}/poster/${proxyType}/${proxyId}?fallback=${fallback}&lang=${language}&key=${config.apiKeys?.rpdb}`;
         console.log(`[buildAnimeResponse] Constructed RPDB Poster Proxy URL: ${finalPosterUrl}`);
       }
     }

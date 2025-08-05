@@ -108,6 +108,9 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
   const config = parseConfig(catalogChoices) || {};
   const language = config.language || DEFAULT_LANGUAGE;
   const sessionId = config.sessionId;
+  //print config contents
+  //console.log(`[catalog] Config for ${catalogChoices}:`, config);
+  
 
   const isStaticCatalog = ['mal.decade80s', 'mal.decade90s', 'mal.decade00s', 'mal.decade10s'].includes(id);
   const cacheWrapper = isStaticCatalog ? cacheWrapStaticCatalog : cacheWrapCatalog;
@@ -244,7 +247,6 @@ addon.get("/:catalogChoices?/meta/:type/:id.json", async function (req, res) {
 addon.get("/poster/:type/:id", async function (req, res) {
   const { type, id } = req.params;
   const { fallback, lang, key } = req.query;
-  console.log("poster hit, yaay");
   if (!key) {
     return res.redirect(302, fallback);
   }
@@ -259,7 +261,7 @@ addon.get("/poster/:type/:id", async function (req, res) {
     const rpdbUrl = getRpdbPoster(type, ids, lang, key);
 
     if (rpdbUrl && await checkIfExists(rpdbUrl)) {
-      console.log("Success! Pipe the image from RPDB directly to the user.");
+      //console.log("Success! Pipe the image from RPDB directly to the user.");
       const imageResponse = await axios({
         method: 'get',
         url: rpdbUrl,

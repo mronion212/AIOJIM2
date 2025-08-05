@@ -44,12 +44,12 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   const tmdbId = extendedRecord.remoteIds?.find(id => id.sourceName === 'TheMovieDB')?.id;
   const tvdbId = extendedRecord.id;
   var fallbackImage = extendedRecord.image === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : extendedRecord.image;
-  const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(fallbackImage)}&lang=${language}&key=${config.rpdbkey}`;
+  const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(fallbackImage)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   return {
     id: `tvdb:${extendedRecord.id}`,
     type: type,
     name: translatedName, 
-    poster: config.rpdbkey ? posterProxyUrl : fallbackImage,
+    poster: config.apiKeys?.rpdb ? posterProxyUrl : fallbackImage,
     year: extendedRecord.year,
     description: overview,
     //isAnime: isAnime(extendedRecord)
@@ -127,9 +127,9 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
             ? `https://image.tmdb.org/t/p/w500${media.poster_path}`
             : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`; 
 
-        const posterProxyUrl = `${host}/poster/${mediaType}/tmdb:${media.id}?fallback=${encodeURIComponent(tmdbPosterFullUrl)}&lang=${language}&key=${config.rpdbkey}`;
+        const posterProxyUrl = `${host}/poster/${mediaType}/tmdb:${media.id}?fallback=${encodeURIComponent(tmdbPosterFullUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
 
-        parsed.poster = config.rpdbkey ? posterProxyUrl : tmdbPosterFullUrl;
+        parsed.poster = config.apiKeys?.rpdb ? posterProxyUrl : tmdbPosterFullUrl;
         parsed.popularity = media.popularity;
         return parsed;
     });

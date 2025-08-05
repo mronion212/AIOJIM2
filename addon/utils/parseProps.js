@@ -416,7 +416,7 @@ function parseAnimeCatalogMeta(anime, config, language) {
   //const kitsuId = mapping?.kitsu_id;
   //const imdbId = mapping?.imdb_id;
   //const metaType = (kitsuId || imdbId) ? stremioType : 'anime';
-  if (config.rpdbkey) {
+  if (config.apiKeys?.rpdb) {
     
     if (mapping) {
       const tvdbId = mapping.thetvdb_id;
@@ -431,7 +431,7 @@ function parseAnimeCatalogMeta(anime, config, language) {
       
       if (proxyId) {
         const fallback = encodeURIComponent(malPosterUrl);
-        finalPosterUrl = `${host}/poster/${stremioType}/${proxyId}?fallback=${fallback}&lang=${language}&key=${config.rpdbkey}`;
+        finalPosterUrl = `${host}/poster/${stremioType}/${proxyId}?fallback=${fallback}&lang=${language}&key=${config.apiKeys?.rpdb}`;
       }
     }
   }
