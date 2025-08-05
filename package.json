@@ -15,7 +15,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mrcanelas/tmdb-addon"
+    "url": "git+https://github.com/cedya77/aiometadata"
   },
   "keywords": [
     "tmdb",
@@ -28,9 +28,9 @@
   "author": "cedya",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/mrcanelas/tmdb-addon/issues"
+    "url": "https://github.com/cedya77/aiometadata/issues"
   },
-  "homepage": "https://github.com/mrcanelas/tmdb-addon#readme",
+  "homepage": "https://github.com/cedya77/aiometadata#readme",
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
