@@ -54,9 +54,29 @@ function createCatalog(id, type, catalogDef, options, tmdbPrefix, translatedCata
         }
         return translatedCatalogs[option] || option;
       });
-      extra.push({ name: "genre", options: formattedOptions, isRequired: showInHome ? false : true });
+      const genreExtra = {
+        name: "genre",
+        options: formattedOptions,
+        isRequired: showInHome ? false : true
+      };
+
+      if (options && options.length > 0) {
+        genreExtra.default = options[0];
+      }
+
+      extra.push(genreExtra);
     } else {
-      extra.push({ name: "genre", options, isRequired: showInHome ? false : true });
+      const genreExtra = {
+        name: "genre",
+        options,
+        isRequired: showInHome ? false : true
+      };
+
+      if (options && options.length > 0) {
+        genreExtra.default = options[0];
+      }
+
+      extra.push(genreExtra);
     }
   }
   if (catalogDef.extraSupported.includes("search")) {
@@ -168,8 +188,8 @@ async function getManifest(config) {
           const animeGenres = await cacheWrapJikanApi('anime-genres', async () => {
             console.log('[Cache Miss] Fetching fresh anime genre list in manifest from Jikan...');
             return await jikan.getAnimeGenres();
-          });
-          catalogOptions = animeGenres.map(genre => genre.name).sort();
+          })
+          catalogOptions = animeGenres.filter(Boolean).map(genre => genre.name).sort();
       } else if (userCatalog.id === 'mal.schedule') {
         catalogOptions = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
       } else {

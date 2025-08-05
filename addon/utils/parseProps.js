@@ -319,9 +319,14 @@ function getRpdbPoster(type, ids, language, rpdbkey) {
     let baseUrl = `https://api.ratingposterdb.com`;
     let idType = null;
     let fullMediaId = null;
-    if (type === 'movie' && tmdbId) {
-        idType = 'tmdb';
-        fullMediaId = `movie-${tmdbId}`;
+    if (type === 'movie') {
+        if (tvdbId) {
+            idType = 'tvdb';
+            fullMediaId = tvdbId;
+        } else if (tmdbId) {    
+            idType = 'tmdb';
+            fullMediaId = `movie-${tmdbId}`;
+        }
     } else if (type === 'series') {
         if (tvdbId) {
             idType = 'tvdb';

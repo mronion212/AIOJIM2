@@ -104,7 +104,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, cata
   const malId = stremioId.replace('mal:', '');
   const nativeProvider = 'mal'; 
 
-  console.log(`[AnimeMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
+  //console.log(`[AnimeMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
 
  
   const allIds = await resolveAllIds(stremioId, 'anime', config);
@@ -112,7 +112,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, cata
   if (preferredProvider !== nativeProvider) {
     try {
       if (preferredProvider === 'tmdb' && allIds.tmdbId) {
-        console.log(`[AnimeMeta] Attempting preferred provider TMDB with ID: ${allIds.tmdbId}`);
+        //console.log(`[AnimeMeta] Attempting preferred provider TMDB with ID: ${allIds.tmdbId}`);
         const mapping = idMapper.getMappingByMalId(malId);
         const tmdbType = mapping?.type?.toLowerCase() === 'movie' ? 'movie' : 'series';
         
@@ -126,7 +126,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, cata
       }
       
       if (preferredProvider === 'tvdb' && allIds.tvdbId) {
-        console.log(`[AnimeMeta] Attempting preferred provider TVDB with ID: ${allIds.tvdbId}`);
+        //console.log(`[AnimeMeta] Attempting preferred provider TVDB with ID: ${allIds.tvdbId}`);
         const [seriesData, episodes] = await Promise.all([
             tvdb.getSeriesExtended(allIds.tvdbId, config),
             tvdb.getSeriesEpisodes(allIds.tvdbId, language, config.tvdbSeasonType, config)
@@ -287,7 +287,6 @@ async function buildTmdbSeriesResponse(seriesData, language, config, catalogChoi
   const imdbId = allIds?.imdbId;
   const tvdbId = allIds?.tvdbId;
 
- console.log("got inside tmdb series");
   const [fanartUrl, logoUrl, imdbRatingValue] = await Promise.all([
     tvdbId ? fanart.getBestSeriesBackground(tvdbId, config) : Promise.resolve(null),
     getLogo('series', { tmdbId, tvdbId }, language, seriesData.original_language, config),
@@ -444,14 +443,11 @@ async function buildTvdbSeriesResponse(tvdbShow, tvdbEpisodes, language, config,
 async function buildAnimeResponse(malData, language, characterData, episodeData, episodeVideoData, config, catalogChoices, enrichmentData = {}) {
   try {
     const { mapping, bestBackgroundUrl } = enrichmentData;
-    console.log("mapping in buildanime looks like: " + mapping);
     const stremioType = malData.type.toLowerCase() === 'movie' ? 'movie' : 'series';
     const imdbId = mapping?.imdbId;
     const kitsuId = mapping?.kitsuId;
     const imdbRating = typeof malData.score === 'number' ? malData.score.toFixed(1) : "N/A";
-    const castCount = config.castCount === 0 ? undefined : config.castCount;
-    console.log("kitsu id made it to build ? " +kitsuId);   
-    console.log("cast count is: " + config.castCount);    
+    const castCount = config.castCount === 0 ? undefined : config.castCount;  
     let videos = [];
     const seriesId = `mal:${malData.mal_id}`;
     const idProvider = config.providers?.anime_id_provider || 'kitsu';

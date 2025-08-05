@@ -235,13 +235,13 @@ async function jikanGetAllPages(endpoint, initialParams = {}) {
  * @param {object} [config={}] - The user's configuration for age rating.
  * @returns {Promise<Array>} - An array of anime objects scheduled for that day.
  */
-async function getAiringSchedule(day, config = {}) {
+async function getAiringSchedule(day, page = 1, config = {}) {
   const queryParams = {
-    filter: day.toLowerCase()
+    filter: day.toLowerCase(),
+    page: page
   };
 
   if (config.ageRating) {
-    // ... (your existing ageRating switch logic)
     let jikanRating;
     switch (config.ageRating) {
       case "G": jikanRating = 'g'; break;
@@ -254,11 +254,20 @@ async function getAiringSchedule(day, config = {}) {
     }
   }
 
-  return jikanGetAllPages('/schedules', queryParams);
+  const params = new URLSearchParams(queryParams);
+  const url = `${JIKAN_API_BASE}/schedules?${params.toString()}`;
+  return enqueueRequest(() => _makeJikanRequest(url), url)
+    .then(response => response.data?.data || [])
+    .catch(e => {
+      console.error(`Could not fetch airing schedule for ${day}, page ${page}:`, e.message);
+      return [];
+    });
 }
 
-async function getAiringNow(totalItemsToFetch = 50, config = {}) {
-  const queryParams = {};
+async function getAiringNow(page = 1, config = {}) {
+  const queryParams = {
+    page: page
+  };
   if (config.ageRating) {
     let jikanRating;
     switch (config.ageRating) {
@@ -271,11 +280,20 @@ async function getAiringNow(totalItemsToFetch = 50, config = {}) {
       queryParams.rating = jikanRating;
     }
   }
-  return jikanPaginator('/seasons/now', totalItemsToFetch, queryParams);
+  const params = new URLSearchParams(queryParams);
+  const url = `${JIKAN_API_BASE}/seasons/now?${params.toString()}`;
+  return enqueueRequest(() => _makeJikanRequest(url), url)
+    .then(response => response.data?.data || [])
+    .catch(e => {
+      console.error(`Could not fetch currently airing anime, page ${page}:`, e.message);
+      return [];
+    });
 }
 
-async function getUpcoming(totalItemsToFetch = 50, config = {}) {
-  const queryParams = {};
+async function getUpcoming(page = 1, config = {}) {
+  const queryParams = {
+    page: page
+  };
   if (config.ageRating) {
     let jikanRating;
     switch (config.ageRating) {
@@ -288,22 +306,34 @@ async function getUpcoming(totalItemsToFetch = 50, config = {}) {
       queryParams.rating = jikanRating;
     }
   }
-  return jikanPaginator('/seasons/upcoming', totalItemsToFetch, queryParams);
+  const params = new URLSearchParams(queryParams);
+  const url = `${JIKAN_API_BASE}/seasons/upcoming?${params.toString()}`;
+  
+  return enqueueRequest(() => _makeJikanRequest(url), url)
+    .then(response => response.data?.data || [])
+    .catch(e => {
+      console.error(`Could not fetch upcoming anime , page ${page}:`, e.message);
+      return [];
+    });
 }
 
-async function getAnimeByGenre(genreId, typeFilter = null, totalItemsToFetch = 50, config = {}) {
+async function getAnimeByGenre(genreId, typeFilter = null, page = 1 , config = {}) {
   const queryParams = {
     genres: genreId,
     order_by: 'members',
     sort: 'desc',
+    page: page,
   };
 
   if (typeFilter) {
     let jikanType = typeFilter.toLowerCase();
     if (jikanType === 'series') {
-        jikanType = 'tv';
+      jikanType = 'tv';
     }
-    queryParams.type = jikanType;
+    if (genreId !==12){
+      queryParams.type = jikanType;
+    }
+    
   }
 
   if (config.ageRating) {
@@ -318,7 +348,19 @@ async function getAnimeByGenre(genreId, typeFilter = null, totalItemsToFetch = 5
       queryParams.rating = jikanRating;
     }
   }
-  return jikanPaginator('/anime', totalItemsToFetch, queryParams);
+  const params = new URLSearchParams(queryParams);
+  const url = `${JIKAN_API_BASE}/anime?${params.toString()}`;
+  try {
+    const response = await enqueueRequest(() => _makeJikanRequest(url), url);
+    const animeList = response.data?.data || [];
+
+    const desiredTypes = new Set(['tv', 'movie', 'ova', 'ona']);
+    return animeList.filter(anime => anime.type && desiredTypes.has(anime.type.toLowerCase()));
+
+  } catch (error) {
+    console.error(`Jikan API Error: Could not fetch anime for genre ID ${genreId}, page ${page}. URL: ${url}`, error.message);
+    return []; 
+  }
 }
 
 
@@ -342,12 +384,13 @@ async function getAnimeGenres() {
  * @param {object} [config={}] - The user's configuration for age rating.
  * @returns {Promise<Array>} - A promise that resolves to a flat array of all fetched anime.
  */
-async function getTopAnimeByDateRange(startDate, endDate, totalItemsToFetch = 50, config = {}) {
+async function getTopAnimeByDateRange(startDate, endDate, page = 1, config = {}) {
   const queryParams = {
     start_date: startDate,
     end_date: endDate,
     order_by: 'members', 
     sort: 'desc',
+    page: page
   };
 
   if (config.ageRating) {
@@ -363,7 +406,14 @@ async function getTopAnimeByDateRange(startDate, endDate, totalItemsToFetch = 50
     }
   }
 
-  return jikanPaginator('/anime', totalItemsToFetch, queryParams);
+  const params = new URLSearchParams(queryParams);
+  const url = `${JIKAN_API_BASE}/anime?${params.toString()}`;   
+  return enqueueRequest(() => _makeJikanRequest(url), url)
+    .then(response => response.data?.data || [])
+    .catch(e => {
+      console.error(`Could not fetch top anime between ${startDate} and ${endDate}, page ${page}:`, e.message);
+      return [];
+  });
 }
 
 

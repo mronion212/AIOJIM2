@@ -126,7 +126,8 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
         metas = searchResult.metas || [];
       } else {
         const { genre: genreName, skip } = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
-        const page = skip ? Math.ceil(parseInt(skip) / 20 + 1) : 1;
+        const pageSize = 25; // Match Jikan's page size
+        const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
         const args = [type, language, page];
         switch (id) {
           // --- Dynamic Catalogs (will use 1-hour cache) ---
@@ -142,26 +143,26 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
           case 'mal.airing':
           case 'mal.upcoming':
           case 'mal.decade20s': {
-            const pageSize = 50;
             const animeResults = id === 'mal.airing'
-              ? await jikan.getAiringNow(pageSize, config)
+              ? await jikan.getAiringNow(page, config)
               : id === 'mal.upcoming'
-                ? await jikan.getUpcoming(pageSize, config)
-                : await jikan.getTopAnimeByDateRange('2020-01-01', '2029-12-31', pageSize, config);
+                ? await jikan.getUpcoming(page, config)
+                : await jikan.getTopAnimeByDateRange('2020-01-01', '2029-12-31', page, config);
             metas = animeResults.map(anime => parseAnimeCatalogMeta(anime, config, language)).filter(Boolean);
             break;
           }
           case 'mal.genres': {
             const mediaType = 'series';
-            if (genreName) {
-               const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
-                console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
-                return await jikan.getAnimeGenres();
-               });
-              const selectedGenre = allAnimeGenres.find(g => g.name === genreName);
+            const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
+              console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
+              return await jikan.getAnimeGenres();
+             });
+             const genreNameToFetch = genreName || allAnimeGenres[0]?.name;
+            if (genreNameToFetch) {
+              const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
               if (selectedGenre) {
                 const genreId = selectedGenre.mal_id;
-                const animeResults = await jikan.getAnimeByGenre(genreId, mediaType, 50, config);
+                const animeResults = await jikan.getAnimeByGenre(genreId, mediaType, page, config);
                 metas = animeResults.map(anime => parseAnimeCatalogMeta(anime, config, language)).filter(Boolean);
               }
             }
@@ -171,7 +172,7 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
           case 'mal.schedule': {
             
             const dayOfWeek = genreName || 'Monday'; 
-            const animeResults = await jikan.getAiringSchedule(dayOfWeek, config);
+            const animeResults = await jikan.getAiringSchedule(dayOfWeek, page, config);
             metas = animeResults.map(anime => 
               parseAnimeCatalogMeta(anime, config, language)
             ).filter(Boolean);
@@ -190,7 +191,7 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
               'mal.decade10s': ['2010-01-01', '2019-12-31'],
             };
             const [startDate, endDate] = decadeMap[id];
-            const animeResults = await jikan.getTopAnimeByDateRange(startDate, endDate, 50, config);
+            const animeResults = await jikan.getTopAnimeByDateRange(startDate, endDate, page, config);
             metas = animeResults.map(anime => parseAnimeCatalogMeta(anime, config, language)).filter(Boolean);
             break;
           
