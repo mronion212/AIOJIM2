@@ -76,6 +76,16 @@ const respond = function (req, res, data, opts) {
   res.send(data);
 };
 
+addon.get("/api/config", (req, res) => {
+  const publicEnvConfig = {
+    tmdb: process.env.TMDB_API || "",
+    tvdb: process.env.TVDB_API_KEY || "",
+    fanart: process.env.FANART_API_KEY || ""
+  };
+  
+  res.json(publicEnvConfig);
+});
+
 // --- Static, Auth, and Configuration Routes ---
 addon.get("/", function (_, res) {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -296,15 +306,6 @@ addon.get("/api/image/blur", async function (req, res) {
   }
 });
 
-addon.get("/api/config", (req, res) => {
-  const publicEnvConfig = {
-    tmdb: process.env.TMDB_API || "",
-    tvdb: process.env.TVDB_API_KEY || "",
-    fanart: process.env.FANART_API_KEY || ""
-  };
-  
-  res.json(publicEnvConfig);
-});
 
 addon.get('/:catalogChoices?/configure', function (req, res) {
   res.sendFile(path.join(__dirname, '../dist/index.html'));

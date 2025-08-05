@@ -1,6 +1,7 @@
 const idMapper = require('./id-mapper');
 const tvdb = require('./tvdb'); 
 const moviedb = require("./getTmdb");
+const axios = require('axios');
 
 async function resolveAllIds(stremioId, type, config) {
   console.log(`[ID Resolver] Resolving ${stremioId} (type: ${type})`);
@@ -11,7 +12,7 @@ async function resolveAllIds(stremioId, type, config) {
   if (prefix === 'tmdb') allIds.tmdbId = sourceId;
   if (prefix === 'tvdb') allIds.tvdbId = sourceId;
   if (prefix === 'mal') allIds.malId = sourceId;
-  if (prefix === 'tt') allIds.imdbId = stremioId;
+  if (stremioId.startsWith('tt')) allIds.imdbId = stremioId;
 
   try {
     if (type === 'anime' && allIds.malId) {
@@ -35,7 +36,12 @@ async function resolveAllIds(stremioId, type, config) {
     }
 
     if (allIds.imdbId && (!allIds.tmdbId || !allIds.tvdbId)) {
-      
+      // get external IDs from Cinemeta
+      const externalIds = await getExternalIdsFromImdb(allIds.imdbId, type);
+      if (externalIds) {
+        allIds.tmdbId = allIds.tmdbId || externalIds.tmdbId;
+        allIds.tvdbId = allIds.tvdbId || externalIds.tvdbId;
+      }
       if (!allIds.tmdbId) {
         const findResults = await moviedb.find({ id: allIds.imdbId, external_source: 'imdb_id' }, config);
         const match = findResults.movie_results?.[0] || findResults.tv_results?.[0];
@@ -65,5 +71,27 @@ async function resolveAllIds(stremioId, type, config) {
   console.log(`[ID Resolver] Final IDs:`, allIds);
   return allIds;
 }
+
+async function getExternalIdsFromImdb(imdbId, type) {
+  if (!imdbId) {
+    return undefined;
+  }
+
+  const url = `https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`;
+  try {
+    const response = await axios.get(url);
+    const tvdbId = response.data?.meta?.tvdb_id;
+    const tmdbId = response.data?.meta?.moviedb_id;
+    return {
+      tmdbId: tmdbId || null,
+      tvdbId: tvdbId || nul
+    };
+
+  } catch (error) {
+    console.warn(`Could not fetch external ids for ${imdbId} from Cinemeta. Error: ${error.message}`);
+    return undefined;
+  }
+}
+
 
 module.exports = { resolveAllIds };
