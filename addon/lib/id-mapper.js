@@ -102,6 +102,12 @@ function getMappingByMalId(malId) {
   return animeIdMap.get(parseInt(malId, 10)) || null;
 }
 
+function getMappingByImdbId(imdbId) {
+  if (!isInitialized) return null;
+  const mapping = Array.from(animeIdMap.values()).find(item => item.imdb_id === imdbId);
+  return mapping || null;
+}
+
 function getMappingByTmdbId(tmdbId, type) {
   if (!isInitialized) return null;
   const lookupType = type.toLowerCase() === 'tv' ? 'series' : type.toLowerCase();
@@ -124,4 +130,5 @@ module.exports = {
   getMappingByMalId,
   getMappingByTmdbId,
   getMappingByTvdbId,
+  getMappingByImdbId,
 };

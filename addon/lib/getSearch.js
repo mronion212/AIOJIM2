@@ -115,7 +115,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
     }
 
     const genreType = type ==='movie' ? 'movie' : 'series'
-    const genreList = await getGenreList(language, genreType);
+    const genreList = await getGenreList(language, genreType, config);
     
     const hydrationPromises = Array.from(rawResults.values()).map(async (media) => {
         const mediaType = media.media_type === 'tv' ? 'series' : 'movie';

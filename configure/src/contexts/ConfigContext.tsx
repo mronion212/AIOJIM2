@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef  } from "react";
-import { AppConfig, CatalogConfig, SearchConfig } from "./configTypes";
+import { AppConfig, CatalogConfig, SearchConfig } from "./config";
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { allCatalogDefinitions, allSearchProviders } from "@/data/catalogs"; 
 
@@ -12,7 +12,6 @@ const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 
 const CONFIG_STORAGE_KEY = 'stremio-addon-config';
 
-// --- The Singleton Initializer (Upgraded) ---
 let initialConfigFromSources: AppConfig | null = null;
 let hasInitialized = false;
 
@@ -22,7 +21,6 @@ function initializeConfigFromSources(): AppConfig | null {
   }
   hasInitialized = true;
 
-  // PRIORITY 1: Check the URL
   try {
     const pathParts = window.location.pathname.split('/');
     const configStringIndex = pathParts.findIndex(p => p.toLowerCase() === 'configure');
@@ -31,13 +29,12 @@ function initializeConfigFromSources(): AppConfig | null {
       if (decompressed) {
         console.log('[Config] Initialized from URL.');
         initialConfigFromSources = JSON.parse(decompressed);
-        window.history.replaceState({}, '', '/configure'); // Clean URL after import
+        window.history.replaceState({}, '', '/configure'); 
         return initialConfigFromSources;
       }
     }
   } catch (e) { /* Fall through */ }
 
-  // PRIORITY 2: Check localStorage
   try {
     const storedConfig = localStorage.getItem(CONFIG_STORAGE_KEY);
     if (storedConfig) {
@@ -55,7 +52,7 @@ function initializeConfigFromSources(): AppConfig | null {
 const initialConfig: AppConfig = {
   language: "en-US",
   includeAdult: false,
-  blurThumbs: true,
+  blurThumbs: false,
   providers: { movie: 'tmdb', series: 'tvdb', anime: 'mal', anime_id_provider: 'kitsu', },
   tvdbSeasonType: 'default',
   mal: {
@@ -94,14 +91,12 @@ const initialConfig: AppConfig = {
 
 
 export function ConfigProvider({ children }: { children: React.ReactNode }) {
-  // Use our new initializer. This will synchronously get the config from URL or localStorage.
+  // This part is all correct
   const [preloadedConfig] = useState(initializeConfigFromSources);
-
   const [config, setConfig] = useState<AppConfig>(() => {
-    // Set the initial state by merging the preloaded config with defaults
-    // This ensures new properties in `initialConfig` are not lost for returning users.
     if (preloadedConfig) {
       return {
+        // ... (your robust merging logic here is correct)
         ...initialConfig,
         ...preloadedConfig,
         apiKeys: { ...initialConfig.apiKeys, ...preloadedConfig.apiKeys },
@@ -115,10 +110,9 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
     }
     return initialConfig;
   });
-  
   const [isLoading, setIsLoading] = useState(true);
 
-  // Effect for fetching server keys AND merging with the preloaded config
+  // --- THIS IS THE CORRECTED EFFECT ---
   useEffect(() => {
     let isMounted = true;
     const finalizeConfig = async () => {
@@ -127,14 +121,14 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
         if (!isMounted) return;
         const envApiKeys = await envResponse.json();
 
-        // Update the state just one more time to layer in the server keys.
-        // User-entered keys will still have priority due to the merge order.
+        // Layer in the server keys with the correct priority.
+        // We use `preloadedConfig` because it holds the user's saved data.
         setConfig(currentConfig => ({
           ...currentConfig,
           apiKeys: {
-            ...initialConfig.apiKeys, // Start with defaults
-            ...envApiKeys,           // Layer server keys
-            ...currentConfig.apiKeys // Layer user's keys on top
+            ...initialConfig.apiKeys,   // Priority 3: Default empty strings
+            ...envApiKeys,              // Priority 2: Server-provided keys
+            ...preloadedConfig?.apiKeys // Priority 1: User's saved keys (from URL or localStorage)
           }
         }));
 
@@ -146,23 +140,13 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
     };
     finalizeConfig();
     return () => { isMounted = false; };
-  }, []);
+  }, []); // The empty dependency array is correct.
 
-  // --- NEW: Effect for SAVING config to localStorage on change ---
+  // --- The rest of your component is correct ---
   useEffect(() => {
-    // Don't save during the initial loading phase
-    if (isLoading) {
-      return;
-    }
-    try {
-      // We don't need to lz-string compress for localStorage, but we can.
-      // Simple JSON is fine.
-      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config));
-    } catch (error) {
-      console.error('Error saving config to localStorage:', error);
-    }
-  }, [config, isLoading]); // This effect runs whenever `config` or `isLoading` changes.
-
+    if (isLoading) return;
+    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config));
+  }, [config, isLoading]);
 
   if (isLoading) {
     return <div>Loading configuration...</div>;

@@ -18,7 +18,7 @@ async function resolveAllIds(stremioId, type, config) {
     if (type === 'anime' && allIds.malId) {
       const mapping = idMapper.getMappingByMalId(allIds.malId);
       if (mapping) {
-        console.log(JSON.stringify(mapping));
+        //console.log(JSON.stringify(mapping));
         allIds.tmdbId = allIds.tmdbId || mapping.themoviedb_id;
         allIds.tvdbId = allIds.tvdbId || mapping.thetvdb_id;
         allIds.imdbId = allIds.imdbId || mapping.imdb_id;
@@ -35,7 +35,7 @@ async function resolveAllIds(stremioId, type, config) {
       allIds.tvdbId = allIds.tvdbId || details.external_ids?.tvdb_id;
     }
 
-    if (allIds.imdbId && (!allIds.tmdbId || !allIds.tvdbId)) {
+    if (allIds.imdbId && (!allIds.tmdbId || !allIds.tvdbId || !allIds.malId)) {
       // get external IDs from Cinemeta
       const externalIds = await getExternalIdsFromImdb(allIds.imdbId, type);
       if (externalIds) {
@@ -52,6 +52,10 @@ async function resolveAllIds(stremioId, type, config) {
         const tvdbMatch = await tvdb.findByImdbId(allIds.imdbId, config);
         //console.log(tvdbMatch);
         if (tvdbMatch) allIds.tvdbId = type === 'movie' ? tvdbMatch.movie.id : tvdbMatch.series.id;
+      }
+      if (!allIds.malId) {
+        const malMatch = idMapper.getMappingByImdbId(allIds.imdbId);
+        if (malMatch) allIds.malId = malMatch.mal_id;
       }
     }
     
@@ -84,11 +88,11 @@ async function getExternalIdsFromImdb(imdbId, type) {
     const tmdbId = response.data?.meta?.moviedb_id;
     return {
       tmdbId: tmdbId || null,
-      tvdbId: tvdbId || nul
+      tvdbId: tvdbId || null
     };
 
   } catch (error) {
-    console.warn(`Could not fetch external ids for ${imdbId} from Cinemeta. Error: ${error.message}`);
+    console.warn(`Could not fetch external ids for ${imdbId} from Cinemeta for type ${type}. Error: ${error.message}`);
     return undefined;
   }
 }

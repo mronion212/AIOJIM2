@@ -10,12 +10,12 @@ const clientCache = new Map();
  */
 function getFanartClient(config) {
   const apiKey = config.apiKeys?.fanart || process.env.FANART_API_KEY;
-  console.log(`[Fanart] Attempting to get client with API key ending in ...${process.env.FANART_API_KEY}`);
-  console.log(`[Fanart] Attempting to get client with API key ending in ...${apiKey}`);
+  //console.log(`[Fanart] Attempting to get client with API key ending in ...${process.env.FANART_API_KEY}`);
+  //console.log(`[Fanart] Attempting to get client with API key ending in ...${apiKey}`);
   if (!apiKey) {
     return null;
   }
-  console.log(`[Fanart] Initializing client with API key ending in ...${apiKey.slice(-4)}`);
+  //console.log(`[Fanart] Initializing client with API key ending in ...${apiKey.slice(-4)}`);
 
   if (clientCache.has(apiKey)) {
     return clientCache.get(apiKey);
@@ -27,7 +27,7 @@ function getFanartClient(config) {
     });
 
     clientCache.set(apiKey, newClient);
-    console.log(`[Fanart] Caching new client for API key ending in ...${apiKey.slice(-4)}`);
+    //console.log(`[Fanart] Caching new client for API key ending in ...${apiKey.slice(-4)}`);
     return newClient;
   } catch (error) {
     console.error(`[Fanart] Failed to initialize client for key ending in ...${apiKey.slice(-4)}:`, error.message);
