@@ -11,6 +11,7 @@ const CATALOG_TTL = process.env.CATALOG_TTL ||  1 * 24 * 60 * 60;  // 1 day
 const JIKAN_API_TTL = 7 * 24 * 60 * 60;   // 7 days for stable Jikan data
 const STATIC_CATALOG_TTL = 30 * 24 * 60 * 60; // 30 days for historical catalogs
 const TVDB_API_TTL = 12 * 60 * 60;   // 12 hours in seconds for API data
+const TVMAZE_API_TTL = 12 * 60 * 60; // 12 hours in seconds for API data
 
 const redis = GLOBAL_NO_CACHE ? null : new Redis(REDIS_URL, {
   maxRetriesPerRequest: 3,
@@ -113,6 +114,10 @@ function cacheWrapTvdbApi(key, method, bypassCache = false) {
   return cacheWrap(`tvdb-api:${key}`, method, TVDB_API_TTL, bypassCache);
 }
 
+function cacheWrapTvmazeApi(key, method, bypassCache = false) {
+  return cacheWrap(`tvmaze-api:${key}`, method, TVMAZE_API_TTL, bypassCache);
+}
+
 module.exports = {
   redis,
   cacheWrapCatalog,
@@ -120,5 +125,6 @@ module.exports = {
   cacheWrapJikanApi,
   cacheWrapStaticCatalog,
   cacheWrapTvdbApi,
+  cacheWrapTvmazeApi, 
   cacheWrap
 };

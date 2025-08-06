@@ -3,7 +3,7 @@ export interface CatalogConfig {
   name: string;
   type: 'movie' | 'series' | 'anime';
   enabled: boolean;
-  source: 'tmdb' | 'tvdb' | 'mal';
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze';
   showInHome: boolean;
 }
 
@@ -48,8 +48,8 @@ export interface AppConfig {
     // This stores the primary keyword engine for each type.
     providers: {
         movie: 'tmdb.search' | 'tvdb.search' | 'mal.search';
-        series: 'tmdb.search' | 'tvdb.search' | 'mal.search';
-        anime: 'tmdb.search' | 'tvdb.search' | 'mal.search';
+        series: 'tmdb.search' | 'tvdb.search' | 'tvmaze.search' | 'mal.search';
+        anime: 'tmdb.search' | 'tvdb.search' | 'tvmaze.search' | 'mal.search';
     };
   };
 }

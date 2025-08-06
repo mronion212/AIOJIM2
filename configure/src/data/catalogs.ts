@@ -2,8 +2,8 @@ interface CatalogDefinition {
   id: string;
   name: string;
   type: 'movie' | 'series' | 'anime';
-  source: 'tmdb' | 'tvdb' | 'mal'; // Optional source for better categorization
-  isEnabledByDefault?: boolean; 
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze'; // Optional source for better categorization
+  isEnabledByDefault?: boolean;
   showOnHomeByDefault?: boolean;
 }
 
@@ -50,6 +50,7 @@ export const allSearchProviders: SearchProviderDefinition[] = [
     { id: 'tmdb.search', name: 'TMDB Search' },
     { id: 'tvdb.search', name: 'TVDB Search' },
     { id: 'mal.search', name: 'MAL Search' },
+    { id: 'tvmaze.search', name: 'TVmaze Search' },
 ];
 
 export const allCatalogDefinitions: CatalogDefinition[] = [

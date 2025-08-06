@@ -42,6 +42,13 @@ async function processQueue() {
       if (requestTask.retries >= MAX_RETRIES) {
         console.error(`Jikan request failed for "${requestTask.url}" after ${MAX_RETRIES} retries. Giving up.`);
       }
+      if (error.code) {
+        console.error(`[NETWORK DEBUG] Jikan request for "${requestTask.url}" failed with network error code: ${error.code}`);
+      }
+      if (error.cause) {
+        console.error(`[NETWORK DEBUG] Underlying cause:`, error.cause);
+      }
+
       requestTask.reject(error);
     }
   }

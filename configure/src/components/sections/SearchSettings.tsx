@@ -9,6 +9,7 @@ const keywordSearchEngines = [
     { value: 'tmdb.search', label: 'TMDB Search' },
     { value: 'tvdb.search', label: 'TVDB Search' },
     { value: 'mal.search', label: 'MAL Search' },
+    { value: 'tvmaze.search', label: 'TVmaze Search' },
 ];
 
 export function SearchSettings() {

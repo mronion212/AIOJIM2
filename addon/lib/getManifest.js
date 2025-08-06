@@ -283,10 +283,10 @@ async function getManifest(config) {
     logo: `${host}/logo.png`,
     background: `${host}/background.png`,
     name: "AIOMetadata",
-    description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source. Also includes an optional AI search powered by Gemini.",
+    description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source. Also includes an optional AI search powered by Gemini.",
     resources: ["catalog", "meta"],
     types: ["movie", "series", "anime"],
-    idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:"],
+    idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:"],
     //stremioAddonsConfig,
     behaviorHints: {
       configurable: true,

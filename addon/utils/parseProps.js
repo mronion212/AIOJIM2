@@ -326,6 +326,9 @@ function getRpdbPoster(type, ids, language, rpdbkey) {
         } else if (tmdbId) {    
             idType = 'tmdb';
             fullMediaId = `movie-${tmdbId}`;
+        } else if (ids.imdbId) {
+            idType = 'imdb';
+            fullMediaId = ids.imdbId;
         }
     } else if (type === 'series') {
         if (tvdbId) {
@@ -334,6 +337,9 @@ function getRpdbPoster(type, ids, language, rpdbkey) {
         } else if (tmdbId) {
             idType = 'tmdb';
             fullMediaId = `series-${tmdbId}`;
+        } else if (ids.imdbId) {
+            idType = 'imdb';
+            fullMediaId = ids.imdbId;
         }
     }
     if (!idType || !fullMediaId) {

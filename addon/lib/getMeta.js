@@ -2,6 +2,7 @@ require("dotenv").config();
 const Utils = require("../utils/parseProps");
 const moviedb = require("./getTmdb");
 const tvdb = require("./tvdb");
+const tvmaze = require("./tvmaze");
 const { getLogo } = require("./getLogo");
 const { getImdbRating } = require("./getImdbRating");
 const { to3LetterCode } = require('./language-map');
@@ -82,6 +83,14 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, cat
       console.warn(`[SeriesMeta] Preferred provider 'tmdb' failed for ${stremioId}. Falling back.`);
     }
   }
+  if (preferredProvider === 'tvmaze' && allIds.tvmazeId) {
+    try {
+      const seriesData = await tvmaze.getShowDetails(allIds.tvmazeId);
+      return buildSeriesResponseFromTvmaze(seriesData, language, config, catalogChoices);
+    } catch (e) {
+      console.warn(`[SeriesMeta] Preferred provider 'tvmaze' failed for ${stremioId}. Falling back.`);
+    }
+  }
 
   if (allIds.tvdbId) {
     try {
@@ -132,6 +141,12 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, cata
             tvdb.getSeriesEpisodes(allIds.tvdbId, language, config.tvdbSeasonType, config)
         ]);
         return buildTvdbSeriesResponse(seriesData, episodes, language, config, catalogChoices, { allIds });
+      }
+
+      if (preferredProvider === 'tvmaze' && allIds.tvmazeId) {
+        //console.log(`[AnimeMeta] Attempting preferred provider TVmaze with ID: ${allIds.tvmazeId}`);
+        const seriesData = await tvmaze.getShowDetails(allIds.tvmazeId);
+        return buildSeriesResponseFromTvmaze(seriesData, language, config, catalogChoices);
       }
 
       console.log(`[AnimeMeta] No ID found for preferred provider '${preferredProvider}'. Falling back to MAL.`);
@@ -436,6 +451,67 @@ async function buildTvdbSeriesResponse(tvdbShow, tvdbEpisodes, language, config,
     app_extras: { cast: Utils.parseCast(tmdbLikeCredits, castCount) }
   };
   //console.log(Utils.parseCast(tmdbLikeCredits, castCount));
+  return meta;
+}
+
+async function buildSeriesResponseFromTvmaze(tvmazeShow, language, config, catalogChoices) {
+  const { name, premiered, image, summary, externals } = tvmazeShow;
+  const imdbId = externals.imdb;
+  const tmdbId = externals.themoviedb;
+  const tvdbId = externals.thetvdb;
+  const castCount = config.castCount === 0 ? undefined : config.castCount;
+
+  const [logoUrl, imdbRatingValue] = await Promise.all([
+    getLogo('series', { tmdbId, tvdbId }, language, tvmazeShow.language, config),
+    getImdbRating(imdbId, 'series')
+  ]);
+  const imdbRating = imdbRatingValue || tvmazeShow.rating?.average?.toFixed(1) || "N/A";
+
+  const tmdbLikeCredits = {
+    cast: (tvmazeShow?._embedded?.cast || []).map(c => ({
+      name: c.person.name, character: c.character.name, profile_path: c.person.image?.medium.replace('https://static.tvmaze.com/uploads/images/', '')
+    })),
+    crew: (tvmazeShow?._embedded?.cast || []).filter(c => c.type === 'Creator').map(c => ({
+        name: c.person.name, job: 'Creator'
+    }))
+  };
+
+  const posterProxyUrl = `${host}/poster/series/${imdbId}?fallback=${encodeURIComponent(image?.original || '')}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+
+  const videos = (tvmazeShow?._embedded?.episodes || []).map(episode => ({
+    id: `${imdbId}:${episode.season}:${episode.number}`,
+    title: episode.name || `Episode ${episode.number}`,
+    season: episode.season,
+    episode: episode.number,
+    thumbnail: config.blurThumbs && episode.image?.medium
+      ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(episode.image.medium)}`
+      : episode.image?.medium || image?.medium,
+    overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
+    released: new Date(episode.airstamp),
+    available: new Date(episode.airstamp) < new Date(),
+  }));
+
+  const meta = {
+    id: imdbId? imdbId : tvdbId ? `tvdb:${tvdbId}` : `tmdb:${tmdbId}`,
+    type: 'series', 
+    name: name, 
+    imdb_id: imdbId,
+    slug: Utils.parseSlug('series', name, imdbId),
+    genres: tvmazeShow.genres || [],
+    description: summary ? summary.replace(/<[^>]*>?/gm, '') : '',
+    writer: Utils.parseWriter(tmdbLikeCredits).join(', '),
+    year: Utils.parseYear(tvmazeShow.status, premiered, tvmazeShow.ended),
+    released: new Date(premiered),
+    runtime: tvmazeShow.runtime ? Utils.parseRunTime(tvmazeShow.runtime) : Utils.parseRunTime(tvmazeShow.averageRuntime),
+    status: tvmazeShow.status,
+    country: tvmazeShow.network?.country?.name || null,
+    imdbRating,
+    poster: config.apiKeys?.rpdb ? posterProxyUrl : image?.original, background: image?.original,
+    logo: processLogo(logoUrl), videos,
+    links: Utils.buildLinks(imdbRating, imdbId, name, 'series', tvmazeShow.genres.map(g => ({ name: g })), tmdbLikeCredits, language, castCount, catalogChoices),
+    behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
+  };
+
   return meta;
 }
 

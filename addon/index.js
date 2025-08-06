@@ -265,7 +265,8 @@ addon.get("/poster/:type/:id", async function (req, res) {
   const [idSource, idValue] = id.split(':');
   const ids = {
     tmdbId: idSource === 'tmdb' ? idValue : null,
-    tvdbId: idSource === 'tvdb' ? idValue : null
+    tvdbId: idSource === 'tvdb' ? idValue : null,
+    imdbId: idSource.startsWith('tt') ? idSource : null,
   };
 
   try {

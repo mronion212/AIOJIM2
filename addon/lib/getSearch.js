@@ -5,7 +5,8 @@ const Utils = require("../utils/parseProps");
 const tvdb = require("./tvdb");
 const { to3LetterCode } = require("./language-map"); 
 const jikan = require('./mal');
-const moviedb = require('./getTmdb')
+const moviedb = require('./getTmdb');
+const tvmaze = require('./tvmaze');
 const { isAnime } = require("../utils/isAnime");
 const { performGeminiSearch } = require('../utils/gemini-service');
 
@@ -273,6 +274,85 @@ async function performTvdbSearch(type, query, language, config) {
   return Utils.sortSearchResults(filteredResults, query);
 }
 
+async function performTvmazeSearch(query, language, config) {
+  const sanitizedQuery = sanitizeTvmazeQuery(query);
+  if (!sanitizedQuery) return [];
+
+  const [titleResults, peopleResults] = await Promise.all([
+    tvmaze.searchShows(sanitizedQuery),
+    tvmaze.searchPeople(sanitizedQuery)
+  ]);
+  
+  const searchResults = new Map();
+  const addResult = (show) => {
+    const parsed = parseTvmazeResult(show, config);
+    if (parsed && show?.id && !searchResults.has(show.id)) {
+      searchResults.set(show.id, parsed);
+    }
+  };
+
+  titleResults.forEach(result => addResult(result.show));
+
+  if (peopleResults.length > 0) {
+    const personId = peopleResults[0].person.id;
+    const castCredits = await tvmaze.getPersonCastCredits(personId);
+    castCredits.forEach(credit => addResult(credit._embedded.show));
+  }
+  
+  if (searchResults.size > 0) {
+    return Array.from(searchResults.values());
+  }
+  
+  // --- TIER 2 & 3 FALLBACKS ---
+  console.log(`Initial searches failed for "${query}". Trying fallback tiers...`);
+  /*const tvdbResults = await tvdb.search(query);
+  if (tvdbResults.length > 0) {
+    const topTvdbResult = tvdbResults[0];
+    const tvdbId = topTvdbResult.tvdb_id;
+    if (tvdbId) {
+      const finalShow = await tvmaze.getShowByTvdbId(tvdbId);
+      if (finalShow) return [parseTvmazeResult(finalShow)].filter(Boolean);
+    }
+  }*/
+  
+  const tmdbResults = await moviedb.searchTv({ query: query, language }, config);
+  if (tmdbResults.results.length > 0) {
+    const topTmdbResult = tmdbResults.results[0];
+    const tmdbInfo = await moviedb.tvInfo({ id: topTmdbResult.id, append_to_response: 'external_ids' });
+    const imdbId = tmdbInfo.external_ids?.imdb_id;
+    if (imdbId) {
+      const finalShow = await tvmaze.getShowByImdbId(imdbId);
+      if (finalShow) return [parseTvmazeResult(finalShow, config)].filter(Boolean);
+    }
+  }
+
+  return [];
+}
+
+function sanitizeTvmazeQuery(query) {
+  if (!query) return '';
+  return query.replace(/[\[\]()]/g, ' ').replace(/[:.-]/g, ' ').trim().replace(/\s\s+/g, ' ');
+}
+
+function parseTvmazeResult(show, config) {
+  if (!show || !show.id || !show.name) return null;
+
+  const imdbId = show.externals?.imdb;
+  var fallbackImage = show.image === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : show.image.original;
+  const posterProxyUrl = `${host}/poster/series/${imdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`;
+  return {
+    id: `tvmaze:${show.id}`,
+    type: 'series',
+    name: show.name,
+    poster: show.image ? show.image.medium : null,
+    background: config.apiKeys?.rpdb ? posterProxyUrl : fallbackImage,
+    description: show.summary ? show.summary.replace(/<[^>]*>?/gm, '') : '',
+    genres: show.genres || [],
+    year: show.premiered ? show.premiered.substring(0, 4) : '',
+    imdbRating: show.rating?.average ? show.rating.average.toFixed(1) : 'N/A'
+  };
+}
+
 
 async function getSearch(id, type, language, extra, config) {
   const timerLabel = `Search for "${extra}" (type: ${id})`;
@@ -322,6 +402,9 @@ async function getSearch(id, type, language, extra, config) {
                 break;
               case 'tvdb.search':
                 metas = await performTvdbSearch(type, query, language, config);
+                break;
+              case 'tvmaze.search':
+                metas = await performTvmazeSearch(query, language, config);
                 break;
             }
           }
