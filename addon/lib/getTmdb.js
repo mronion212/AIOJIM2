@@ -1,12 +1,30 @@
 const { MovieDb } = require("moviedb-promise");
 const { SocksProxyAgent } = require('socks-proxy-agent');
+const https = require('https'); 
+
+const robustAgent = new https.Agent({
+  keepAlive: true, 
+  maxSockets: 100,
+  maxFreeSockets: 10,
+  timeout: 60000,
+  freeSocketTimeout: 30000
+});
 
 const SOCKS_PROXY_URL = process.env.TMDB_SOCKS_PROXY_URL;
-const agent = SOCKS_PROXY_URL ? new SocksProxyAgent(SOCKS_PROXY_URL) : undefined;
-if (agent) {
+let agent;
+let axiosConfig;
+
+if (SOCKS_PROXY_URL) {
+  agent = new SocksProxyAgent(SOCKS_PROXY_URL);
+  // For SOCKS, both http and https agents must be the same
+  axiosConfig = { httpAgent: agent, httpsAgent: agent };
   console.log(`[TMDB] SOCKS5 proxy is enabled.`);
+} else {
+  agent = robustAgent;
+  // For standard HTTPS, we only need to specify the httpsAgent
+  axiosConfig = { httpsAgent: agent };
+  console.log(`[TMDB] Robust networking agent is enabled (IPv4 Forced, Keep-Alive On).`);
 }
-const axiosConfig = agent ? { httpAgent: agent, httpsAgent: agent } : {};
 
 const moviedbClientCache = new Map();
 

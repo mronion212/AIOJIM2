@@ -17,7 +17,7 @@ async function resolveAllIds(stremioId, type, config) {
   if (stremioId.startsWith('tt')) allIds.imdbId = stremioId;
 
   try {
-    if (type === 'anime' && allIds.malId) {
+    if (allIds.malId) {
       const mapping = idMapper.getMappingByMalId(allIds.malId);
       if (mapping) {
         //console.log(JSON.stringify(mapping));
@@ -35,6 +35,11 @@ async function resolveAllIds(stremioId, type, config) {
       
       allIds.imdbId = allIds.imdbId || details.external_ids?.imdb_id;
       allIds.tvdbId = allIds.tvdbId || details.external_ids?.tvdb_id;
+      const mapping= idMapper.getMappingByTmdbId(allIds.tmdbId);
+      if (mapping) {
+        allIds.malId = allIds.malId || mapping.mal_id;
+        allIds.kitsuId = allIds.kitsuId || mapping.kitsu_id;
+      }
     }
 
     if (allIds.imdbId && (!allIds.tmdbId || !allIds.tvdbId || !allIds.malId || !allIds.tvmazeId)) {
@@ -66,7 +71,7 @@ async function resolveAllIds(stremioId, type, config) {
       }
     }
     
-    if (allIds.tvdbId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvmazeId)) {
+    if (allIds.tvdbId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvmazeId || !allIds.malId)) {
         const tvdbDetails = type === 'movie' 
             ? await tvdb.getMovieExtended(allIds.tvdbId, config) 
             : await tvdb.getSeriesExtended(allIds.tvdbId, config);
@@ -74,6 +79,11 @@ async function resolveAllIds(stremioId, type, config) {
         allIds.imdbId = allIds.imdbId || tvdbDetails.remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
         allIds.tmdbId = allIds.tmdbId || tvdbDetails.remoteIds?.find(id => id.sourceName === 'TheMovieDB.com')?.id;
         allIds.tvmazeId = allIds.tvmazeId || tvdbDetails.remoteIds?.find(id => id.sourceName === "TV Maze")?.id ;
+        const mapping = idMapper.getMappingByTvdbId(allIds.tvdbId);
+        if (mapping) {  
+          allIds.malId = allIds.malId || mapping.mal_id;
+          allIds.kitsuId = allIds.kitsuId || mapping.kitsu_id;
+        }
     }
 
   } catch (error) {

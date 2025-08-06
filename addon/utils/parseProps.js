@@ -450,7 +450,7 @@ function parseAnimeCatalogMeta(anime, config, language) {
 
   return {
     id: id,
-    type: 'anime',
+    type: stremioType,
     name: anime.title_english || anime.title,
     poster: finalPosterUrl,
     description: anime.synopsis,

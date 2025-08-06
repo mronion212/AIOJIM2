@@ -1,13 +1,23 @@
 require("dotenv").config();
 const axios = require('axios');
+const https = require('https');
+
+const robustAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 100,
+  maxFreeSockets: 10,
+  timeout: 60000,
+  freeSocketTimeout: 30000
+});
 
 const JIKAN_API_BASE = process.env.JIKAN_API_BASE || 'https://api.jikan.moe/v4';
 
 const BASE_REQUEST_DELAY = 350; 
-const MAX_RETRIES = 3;          // Max number of times to retry a rate-limited request
+const MAX_RETRIES = 3;      
 
 let requestQueue = [];
 let isProcessing = false;
+console.log(`[Jikan] Keep-Alive is enabled.`);
 
 
 async function processQueue() {
@@ -67,7 +77,7 @@ function enqueueRequest(task, url) {
 
 async function _makeJikanRequest(url) {
   console.log(`Jikan request for: ${url}`);
-  return axios.get(url, { timeout: 15000 });
+  return axios.get(url, { timeout: 15000, httpsAgent: robustAgent });
 }
 
 async function searchAnime(type, query, limit = 20, config = {}) {

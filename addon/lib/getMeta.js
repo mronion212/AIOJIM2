@@ -25,7 +25,10 @@ const host = process.env.HOST_NAME.startsWith('http')
 async function getMeta(type, language, stremioId, config = {}, catalogChoices) {
   try {
     let meta;
-    switch (type) {
+    const allIds = await resolveAllIds(stremioId, type, config);
+    const isAnime = !!allIds.malId;
+    const finalType = isAnime ? 'anime' : type;
+    switch (finalType) {
       case 'movie':
         meta = await getMovieMeta(config.providers?.movie, stremioId, language, config, catalogChoices);
         break;
