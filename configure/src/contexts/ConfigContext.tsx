@@ -6,6 +6,7 @@ import { allCatalogDefinitions, allSearchProviders } from "@/data/catalogs";
 interface ConfigContextType {
   config: AppConfig;
   setConfig: React.Dispatch<React.SetStateAction<AppConfig>>;
+  addonVersion: string;
 }
 
 const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
@@ -53,6 +54,7 @@ const initialConfig: AppConfig = {
   language: "en-US",
   includeAdult: false,
   blurThumbs: false,
+  showPrefix: false, 
   providers: { movie: 'tmdb', series: 'tvdb', anime: 'mal', anime_id_provider: 'kitsu', },
   tvdbSeasonType: 'default',
   mal: {
@@ -92,6 +94,7 @@ const initialConfig: AppConfig = {
 
 export function ConfigProvider({ children }: { children: React.ReactNode }) {
   // This part is all correct
+  const [addonVersion, setAddonVersion] = useState<string>(' ');
   const [preloadedConfig] = useState(initializeConfigFromSources);
   const [config, setConfig] = useState<AppConfig>(() => {
     if (preloadedConfig) {
@@ -120,6 +123,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
         const envResponse = await fetch('/api/config');
         if (!isMounted) return;
         const envApiKeys = await envResponse.json();
+        setAddonVersion(envApiKeys.addonVersion || ' ');
 
         // Layer in the server keys with the correct priority.
         // We use `preloadedConfig` because it holds the user's saved data.
@@ -153,7 +157,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ConfigContext.Provider value={{ config, setConfig }}>
+    <ConfigContext.Provider value={{ config, setConfig, addonVersion }}>
       {children}
     </ConfigContext.Provider>
   );

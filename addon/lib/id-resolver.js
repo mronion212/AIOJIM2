@@ -35,7 +35,7 @@ async function resolveAllIds(stremioId, type, config) {
       
       allIds.imdbId = allIds.imdbId || details.external_ids?.imdb_id;
       allIds.tvdbId = allIds.tvdbId || details.external_ids?.tvdb_id;
-      const mapping= idMapper.getMappingByTmdbId(allIds.tmdbId);
+      const mapping= idMapper.getMappingByTmdbId(allIds.tmdbId, type);
       if (mapping) {
         allIds.malId = allIds.malId || mapping.mal_id;
         allIds.kitsuId = allIds.kitsuId || mapping.kitsu_id;
@@ -65,7 +65,7 @@ async function resolveAllIds(stremioId, type, config) {
         if (malMatch) allIds.malId = malMatch.mal_id;
       }
 
-      if (!allIds.tvmazeId) {
+      if (!allIds.tvmazeId && type === 'series') {
         const tvmazeMatch = await tvmaze.getShowByImdbId(allIds.imdbId);
         if (tvmazeMatch) allIds.tvmazeId = tvmazeMatch.id;
       }
@@ -84,6 +84,18 @@ async function resolveAllIds(stremioId, type, config) {
           allIds.malId = allIds.malId || mapping.mal_id;
           allIds.kitsuId = allIds.kitsuId || mapping.kitsu_id;
         }
+    }
+
+    if (allIds.tvmazeId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvdbId || !allIds.malId)) {
+      const tvmazeDetails = await tvmaze.getShowById(allIds.tvmazeId);
+      allIds.imdbId = allIds.imdbId || tvmazeDetails.externals?.imdb;
+      allIds.tmdbId = allIds.tmdbId || tvmazeDetails.externals?.themoviedb;
+      allIds.tvdbId = allIds.tvdbId || tvmazeDetails.externals?.thetvdb;
+      const mapping = idMapper.getMappingByTvdbId(allIds.tvdbId);
+      if (mapping) {
+        allIds.malId = allIds.malId || mapping.mal_id;
+        allIds.kitsuId = allIds.kitsuId || mapping.kitsu_id;
+      }
     }
 
   } catch (error) {

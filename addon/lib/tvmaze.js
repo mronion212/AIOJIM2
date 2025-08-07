@@ -42,6 +42,20 @@ async function getShowDetails(tvmazeId) {
     return notFound ? null : null;
   }
 }
+/**
+ * Gets the full show namely to retrieve external ids, using a TVmaze ID.
+ */
+async function getShowById(tvmazeId) {
+  const url = `${TVMAZE_API_URL}/shows/${tvmazeId}`;
+  try {
+    const response = await axios.get(url, { timeout: DEFAULT_TIMEOUT });
+    return response.data;
+  } catch (error) {
+    const { notFound } = handleAxiosError(error, `getShowById for TVmaze ID ${tvmazeId}`);
+    return notFound ? null : null;
+  }
+}
+
 
 /**
  * Searches for shows on TVmaze based on a query.
@@ -106,4 +120,5 @@ module.exports = {
   searchShows,
   searchPeople,
   getPersonCastCredits,
+  getShowById
 };

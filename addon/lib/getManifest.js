@@ -39,7 +39,7 @@ function loadTranslations(language) {
   return { ...defaultTranslations, ...selectedTranslations };
 }
 
-function createCatalog(id, type, catalogDef, options, tmdbPrefix, translatedCatalogs, showInHome = false) {
+function createCatalog(id, type, catalogDef, options, showPrefix, translatedCatalogs, showInHome = false) {
   const extra = [];
 
   if (catalogDef.extraSupported.includes("genre")) {
@@ -89,7 +89,7 @@ function createCatalog(id, type, catalogDef, options, tmdbPrefix, translatedCata
   return {
     id,
     type,
-    name: `${tmdbPrefix ? "TMDB - " : ""}${translatedCatalogs[catalogDef.nameKey]}`,
+    name: `${showPrefix ? "AIOMetadata - " : ""}${translatedCatalogs[catalogDef.nameKey]}`,
     pageSize: 20,
     extra
   };
@@ -143,7 +143,7 @@ async function createMDBListCatalog(userCatalog, mdblistKey) {
 
 async function getManifest(config) {
   const language = config.language || DEFAULT_LANGUAGE;
-  const tmdbPrefix = config.tmdbPrefix === "true";
+  const showPrefix = config.showPrefix === true;
   const provideImdbId = config.provideImdbId === "true";
   const sessionId = config.sessionId;
   const userCatalogs = config.catalogs || getDefaultCatalogs();
@@ -201,7 +201,7 @@ async function getManifest(config) {
           userCatalog.type,
           catalogDef,
           catalogOptions,
-          tmdbPrefix,
+          showPrefix,
           translatedCatalogs,
           userCatalog.showInHome
       );   
@@ -212,9 +212,10 @@ async function getManifest(config) {
   const isSearchEnabled = config.search?.enabled ?? true;
 
   if (isSearchEnabled) {
-    catalogs.push({ id: 'search', type: 'movie', name: 'Search', extra: [{ name: 'search', isRequired: true }] });
-    catalogs.push({ id: 'search', type: 'series', name: 'Search', extra: [{ name: 'search', isRequired: true }] });
-    catalogs.push({ id: 'search', type: 'anime', name: 'Search', extra: [{ name: 'search', isRequired: true }] });
+    const prefix = showPrefix ? "AIOMetadata - " : "";
+    catalogs.push({ id: 'search', type: 'movie', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
+    catalogs.push({ id: 'search', type: 'series', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
+    catalogs.push({ id: 'search', type: 'anime', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
     
     const providers = config.search?.providers || { movie: '', series: '', anime: 'mal.search' };
     const isMalSearchInUse = Object.values(providers).includes('mal.search');
@@ -225,14 +226,14 @@ async function getManifest(config) {
       const searchVAAnime = {
         id: "mal.va_search",
         type: "anime",
-        name: "Voice Actor Roles",
+        name: `${prefix}Voice Actor Roles`,
         extra: [{ name: "va_id", isRequired: true }]
       };
 
       const searchGenreAnime = {
         id: "mal.genre_search",
         type: "anime",
-        name: "Anime Genre",
+        name: `${prefix}Anime Genre`,
         extra: [{ name: "genre_id", isRequired: true }]
       };
       

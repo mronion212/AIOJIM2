@@ -18,6 +18,8 @@ export interface AppConfig {
   language: string;
   includeAdult: boolean;
   blurThumbs: boolean;
+  showPrefix: boolean;
+  castCount: number;
   providers: {
     movie: string;
     series: string;

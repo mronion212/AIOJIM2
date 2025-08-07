@@ -101,7 +101,7 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, cat
         tvdb.getSeriesExtended(allIds.tvdbId, config),
         tvdb.getSeriesEpisodes(allIds.tvdbId, language, config.tvdbSeasonType, config)
       ]);
-      return buildTvdbSeriesResponse(seriesData, episodes, language, config, catalogChoices);
+      return buildTvdbSeriesResponse(seriesData, episodes, language, config, catalogChoices, { allIds });
     } catch (e) {
       console.error(`[SeriesMeta] Native provider 'tvdb' also failed for ${stremioId}: ${e.message}`);
     }
@@ -116,7 +116,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, cata
   const malId = stremioId.replace('mal:', '');
   const nativeProvider = 'mal'; 
 
-  //console.log(`[AnimeMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
+  console.log(`[AnimeMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
 
  
   const allIds = await resolveAllIds(stremioId, 'anime', config);
@@ -304,6 +304,7 @@ async function buildTmdbSeriesResponse(seriesData, language, config, catalogChoi
   const { allIds } = enrichmentData;
   const imdbId = allIds?.imdbId;
   const tvdbId = allIds?.tvdbId;
+  const kitsuId = allIds?.kitsuId;
 
   const [fanartUrl, logoUrl, imdbRatingValue] = await Promise.all([
     tvdbId ? fanart.getBestSeriesBackground(tvdbId, config) : Promise.resolve(null),
@@ -326,6 +327,9 @@ async function buildTmdbSeriesResponse(seriesData, language, config, catalogChoi
   const videos = seasonDetails.flatMap(season => 
     (season.episodes || []).map(ep => {
       const episodeId = imdbId ? `${imdbId}:${ep.season_number}:${ep.episode_number}` : null;
+      if(kitsuId) {
+        episodeId = `kitsu:${kitsuId}:1:${ep.episode_number}`;
+      }
       if (!episodeId) return null;
 
       const thumbnailUrl = ep.still_path ? `https://image.tmdb.org/t/p/w300${ep.still_path}` : finalPosterUrl;
@@ -372,8 +376,10 @@ async function buildTmdbSeriesResponse(seriesData, language, config, catalogChoi
   };
 }
 
-async function buildTvdbSeriesResponse(tvdbShow, tvdbEpisodes, language, config, catalogChoices) {
+async function buildTvdbSeriesResponse(tvdbShow, tvdbEpisodes, language, config, catalogChoices, enrichmentData = {}) {
   const { year, image: tvdbPosterPath, remoteIds, characters, episodes } = tvdbShow;
+  const { allIds } = enrichmentData;
+  const kitsuId = allIds?.kitsuId;
   const langCode = language.split('-')[0];
   const langCode3 = await to3LetterCode(langCode, config);
   const nameTranslations = tvdbShow.translations?.nameTranslations || [];
@@ -416,7 +422,7 @@ async function buildTvdbSeriesResponse(tvdbShow, tvdbEpisodes, language, config,
             : thumbnailUrl;
 
         return {
-            id: `${imdbId || `tvdb${tvdbId}`}:${episode.seasonNumber}:${episode.number}`,
+            id: kitsuId ? `kitsu:${kitsuId}:1:${episode.number}` : `${imdbId || `tvdb${tvdbId}`}:${episode.seasonNumber}:${episode.number}`,
             title: episode.name || `Episode ${episode.number}`,
             season: episode.seasonNumber,
             episode: episode.number,

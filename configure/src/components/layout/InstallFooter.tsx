@@ -14,6 +14,7 @@ export function InstallFooter() {
       language: config.language,
       includeAdult: config.includeAdult,
       blurThumbs: config.blurThumbs,
+      showPrefix: config.showPrefix,
       providers: config.providers,
       tvdbSeasonType: config.tvdbSeasonType,
       apiKeys: config.apiKeys,

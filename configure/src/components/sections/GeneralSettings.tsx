@@ -233,6 +233,10 @@ export function GeneralSettings() {
     setConfig(prevConfig => ({ ...prevConfig, blurThumbs: checked }));
   };
 
+  const handleShowPrefixChange = (checked: boolean) => {
+    setConfig(prevConfig => ({ ...prevConfig, showPrefix: checked }));
+  };
+
   const handleCastCountChange = (value: string) => {
     const count = parseInt(value, 10);
     setConfig(prevConfig => ({ ...prevConfig, castCount: count }));
@@ -294,6 +298,18 @@ export function GeneralSettings() {
             id="blur-thumbs"
             checked={config.blurThumbs}
             onCheckedChange={handleBlurThumbsChange}
+          />
+        </div>
+        {/* Show Prefix Setting */}
+        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+          <div>
+            <Label htmlFor="show-prefix" className="text-lg font-medium">Show Prefix</Label>
+            <p className="text-sm text-muted-foreground">Add "AIOMetadata - " prefix to all catalogs and search names.</p>
+          </div>
+          <Switch
+            id="show-prefix"
+            checked={config.showPrefix}
+            onCheckedChange={handleShowPrefixChange}
           />
         </div>
         <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">

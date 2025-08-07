@@ -80,7 +80,8 @@ addon.get("/api/config", (req, res) => {
   const publicEnvConfig = {
     tmdb: process.env.TMDB_API || "",
     tvdb: process.env.TVDB_API_KEY || "",
-    fanart: process.env.FANART_API_KEY || ""
+    fanart: process.env.FANART_API_KEY || "",
+    addonVersion: ADDON_VERSION,
   };
   
   res.json(publicEnvConfig);
