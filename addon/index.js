@@ -136,7 +136,7 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
         const searchResult = await getSearch(id, type, language, extraArgs, config);
         metas = searchResult.metas || [];
       } else {
-        const { genre: genreName, skip } = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
+        const { genre: genreName, type_filter,  skip } = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
         const pageSize = 25; // Match Jikan's page size
         const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
         const args = [type, language, page];
@@ -163,12 +163,12 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
             break;
           }
           case 'mal.genres': {
-            const mediaType = 'series';
+            const mediaType = type_filter ||'series';
             const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
               console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
               return await jikan.getAnimeGenres();
              });
-             const genreNameToFetch = genreName || allAnimeGenres[0]?.name;
+            const genreNameToFetch = genreName || allAnimeGenres[0]?.name;
             if (genreNameToFetch) {
               const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
               if (selectedGenre) {

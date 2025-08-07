@@ -355,7 +355,7 @@ function parseTvmazeResult(show, config) {
 
 
 async function getSearch(id, type, language, extra, config) {
-  const timerLabel = `Search for "${extra}" (type: ${id})`;
+  const timerLabel = `Search for "${JSON.stringify(extra)}" (type: ${id})`;
   try {
     if (!extra) {
       console.warn(`Search request for id '${id}' received with no 'extra' argument.`);
@@ -366,11 +366,13 @@ async function getSearch(id, type, language, extra, config) {
     console.time(timerLabel);
 
     let metas = [];
- 
+     const pageSize = 25; 
+    
+    const page = extra.skip ? Math.floor(parseInt(extra.skip) / pageSize) + 1 : 1;
     switch (id) {
       case 'mal.genre_search':
         if (extra.genre_id) {
-          const results = await jikan.getAnimeByGenre(extra.genre_id, extra.type_filter, 50, config);
+          const results = await jikan.getAnimeByGenre(extra.genre_id, extra.type_filter, page, config);
           metas = results.map(item => Utils.parseAnimeCatalogMeta(item, config, language));
         }
         break;

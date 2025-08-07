@@ -420,9 +420,10 @@ async function buildTvdbSeriesResponse(tvdbShow, tvdbEpisodes, language, config,
         const finalThumbnail = config.blurThumbs && thumbnailUrl
             ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
             : thumbnailUrl;
-
+        // use kitus id only if seasontype is absolute, otherwise use imdb or tvdb id
+        const episodeId = config.tvdbSeasonType === 'absolute' ? `kitsu:${kitsuId}:1:${episode.number}` : `${imdbId || `tvdb${tvdbId}`}:${episode.seasonNumber}:${episode.number}`;
         return {
-            id: kitsuId ? `kitsu:${kitsuId}:1:${episode.number}` : `${imdbId || `tvdb${tvdbId}`}:${episode.seasonNumber}:${episode.number}`,
+            id: episodeId,
             title: episode.name || `Episode ${episode.number}`,
             season: episode.seasonNumber,
             episode: episode.number,

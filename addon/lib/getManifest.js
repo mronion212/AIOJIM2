@@ -86,11 +86,18 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
     extra.push({ name: "skip" });
   }
 
+  let pageSize;
+  if (id.startsWith('mal.')) {
+    pageSize = 25; // Jikan API uses a page size of 25
+  } else {
+    pageSize = 20; // Default for TMDB or others
+  }
+
   return {
     id,
     type,
     name: `${showPrefix ? "AIOMetadata - " : ""}${translatedCatalogs[catalogDef.nameKey]}`,
-    pageSize: 20,
+    pageSize: pageSize,
     extra
   };
 }

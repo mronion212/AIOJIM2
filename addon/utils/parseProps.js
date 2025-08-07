@@ -144,7 +144,7 @@ function parseGenreLink(genres, type, configString, stremioType) {
       if (!genreId) return null;
       let url = `stremio:///discover/${encodeURIComponent(
         manifestUrl
-      )}/anime/mal.genre_search?genre_id=${genreId}`;
+      )}/anime/mal.genres?genre=${genre.name}`;
       if (stremioType === 'movie') {
         url += `&type_filter=movie`;
       } else if (stremioType === 'series') {
