@@ -434,7 +434,7 @@ async function buildTvdbSeriesResponse(tvdbShow, tvdbEpisodes, language, config,
             const kitsuSeasonNumber = episode.seasonNumber === 0 ? 0 : 1
             const absoluteNumber = episode.seasonNumber === 0 ? episode.number : episode.absoluteNumber;
             return {
-                id: episode.seasonNumber === 0 ? imdbId ? `${imdbId}:${episode.seasonNumber}:${episode.number}` : `tvdb:${tvdbId}:${episode.seasonNumber}:${episode.number}` : `kitsu:${kitsuId}:${kitsuSeasonNumber}:${absoluteNumber}`,
+                id: episode.seasonNumber === 0 ? imdbId ? `${imdbId}:${episode.seasonNumber}:${episode.number}` : `tvdb:${tvdbId}:${episode.seasonNumber}:${episode.number}` : `kitsu:${kitsuId}:${absoluteNumber}`,
                 title: episode.name || `Episode ${episode.number}`,
                 season: episode.seasonNumber,
                 episode: episode.number,
