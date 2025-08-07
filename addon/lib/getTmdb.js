@@ -7,7 +7,8 @@ const robustAgent = new https.Agent({
   maxSockets: 100,
   maxFreeSockets: 10,
   timeout: 60000,
-  freeSocketTimeout: 30000
+  freeSocketTimeout: 30000,
+  family: 4 // Force IPv4
 });
 
 const SOCKS_PROXY_URL = process.env.TMDB_SOCKS_PROXY_URL;

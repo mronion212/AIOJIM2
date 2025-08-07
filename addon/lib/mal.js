@@ -3,6 +3,7 @@ const axios = require('axios');
 const https = require('https');
 
 const robustAgent = new https.Agent({
+  family: 4, // Force IPv4
   keepAlive: true,
   maxSockets: 100,
   maxFreeSockets: 10,
