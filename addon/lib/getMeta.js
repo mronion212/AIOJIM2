@@ -336,7 +336,7 @@ async function buildTmdbSeriesResponse(seriesData, language, config, catalogChoi
     (season.episodes || []).map(ep => {
       let episodeId = imdbId ? `${imdbId}:${ep.season_number}:${ep.episode_number}` : null;
       if(kitsuId) {
-        episodeId = `kitsu:${kitsuId}:1:${ep.episode_number}`;
+        episodeId = `kitsu:${kitsuId}:${ep.episode_number}`;
       }
       if (!episodeId) return null;
 
@@ -431,7 +431,6 @@ async function buildTvdbSeriesResponse(tvdbShow, tvdbEpisodes, language, config,
         // use kitus id only if seasontype is absolute, otherwise use imdb or tvdb id
         if(kitsuId){
           if(config.tvdbSeasonType === 'default' || config.tvdbSeasonType === 'official') {
-            const kitsuSeasonNumber = episode.seasonNumber === 0 ? 0 : 1
             const absoluteNumber = episode.seasonNumber === 0 ? episode.number : episode.absoluteNumber;
             return {
                 id: episode.seasonNumber === 0 ? imdbId ? `${imdbId}:${episode.seasonNumber}:${episode.number}` : `tvdb:${tvdbId}:${episode.seasonNumber}:${episode.number}` : `kitsu:${kitsuId}:${absoluteNumber}`,
