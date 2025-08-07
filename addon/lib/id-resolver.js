@@ -4,7 +4,7 @@ const tvmaze = require('./tvmaze');
 const moviedb = require("./getTmdb");
 const axios = require('axios');
 
-async function resolveAllIds(stremioId, type, config) {
+async function resolveAllIds(stremioId, type, config, animeType = null) {
   console.log(`[ID Resolver] Resolving ${stremioId} (type: ${type})`);
 
   const allIds = { tmdbId: null, tvdbId: null, imdbId: null, malId: null, kitsuId: null, tvmazeId: null };
@@ -22,10 +22,23 @@ async function resolveAllIds(stremioId, type, config) {
       if (mapping) {
         //console.log(JSON.stringify(mapping));
         allIds.tmdbId = allIds.tmdbId || mapping.themoviedb_id;
-        allIds.tvdbId = allIds.tvdbId || mapping.thetvdb_id;
         allIds.imdbId = allIds.imdbId || mapping.imdb_id;
         allIds.kitsuId = allIds.kitsuId || mapping.kitsu_id;
+        if(animeType) {
+          if (animeType === 'movie') {
+            const tvdbMatch = await tvdb.findByImdbId(allIds.imdbId, config);
+            if (tvdbMatch) {
+              console.log(`[ID Resolver] Found TVDB match for MAL ID  ${JSON.stringify(tvdbMatch)}`);
+              allIds.tvdbId = tvdbMatch.movie.id;
+            }
+          } else if (animeType === 'series') {
+            allIds.tvdbId = allIds.tvdbId || mapping.thetvdb_id;
+          }
+        }
       }
+    } else {
+      // --- ADD THIS LOG ---
+      console.log(`[ID Resolver] No mapping found in idMapper for mal:${allIds.malId}`);
     }
 
     if (allIds.tmdbId) {
@@ -72,7 +85,7 @@ async function resolveAllIds(stremioId, type, config) {
     }
     
     if (allIds.tvdbId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvmazeId || !allIds.malId)) {
-        const tvdbDetails = type === 'movie' 
+        const tvdbDetails = type === animeType || 'movie' 
             ? await tvdb.getMovieExtended(allIds.tvdbId, config) 
             : await tvdb.getSeriesExtended(allIds.tvdbId, config);
         

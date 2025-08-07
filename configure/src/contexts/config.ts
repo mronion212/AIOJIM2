@@ -49,9 +49,10 @@ export interface AppConfig {
     ai_enabled: boolean; 
     // This stores the primary keyword engine for each type.
     providers: {
-        movie: 'tmdb.search' | 'tvdb.search' | 'mal.search';
-        series: 'tmdb.search' | 'tvdb.search' | 'tvmaze.search' | 'mal.search';
-        anime: 'tmdb.search' | 'tvdb.search' | 'tvmaze.search' | 'mal.search';
+        movie: 'tmdb.search' | 'tvdb.search' | 'mal.search.movie';
+        series: 'tmdb.search' | 'tvdb.search' | 'tvmaze.search' | 'mal.search.series';
+        anime_movie: string;
+        anime_series: string;
     };
   };
 }

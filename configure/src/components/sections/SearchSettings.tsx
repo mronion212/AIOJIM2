@@ -3,14 +3,8 @@ import { Switch } from '@/components/ui/switch';
 import { useConfig } from '@/contexts/ConfigContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { allSearchProviders } from '@/data/catalogs';
 
-
-const keywordSearchEngines = [
-    { value: 'tmdb.search', label: 'TMDB Search' },
-    { value: 'tvdb.search', label: 'TVDB Search' },
-    { value: 'mal.search', label: 'MAL Search' },
-    { value: 'tvmaze.search', label: 'TVmaze Search' },
-];
 
 export function SearchSettings() {
   const { config, setConfig } = useConfig();
@@ -23,7 +17,10 @@ export function SearchSettings() {
     setConfig(prev => ({ ...prev, search: { ...prev.search, ai_enabled: checked } }));
   };
 
-  const handleProviderChange = (type: 'movie' | 'series' | 'anime', value: string) => {
+  const handleProviderChange = (
+    type: 'movie' | 'series' | 'anime_movie' | 'anime_series', 
+    value: string
+  ) => {
     setConfig(prev => ({
         ...prev,
         search: { 
@@ -35,6 +32,10 @@ export function SearchSettings() {
         }
     }));
   };
+
+  const movieSearchProviders = allSearchProviders.filter(p => p.mediaType.includes('movie'));
+  const seriesSearchProviders = allSearchProviders.filter(p => p.mediaType.includes('series'));
+  const animeSearchProviders = allSearchProviders.filter(p => p.mediaType.includes('anime'));
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -94,7 +95,7 @@ export function SearchSettings() {
                         <Select value={config.search.providers.movie} onValueChange={(val) => handleProviderChange('movie', val)}>
                             <SelectTrigger className="w-full sm:w-[280px]"><SelectValue /></SelectTrigger>
                             <SelectContent>
-                                {keywordSearchEngines.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                                {movieSearchProviders.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
                             </SelectContent>
                         </Select>
                     </div>
@@ -104,15 +105,27 @@ export function SearchSettings() {
                         <Select value={config.search.providers.series} onValueChange={(val) => handleProviderChange('series', val)}>
                             <SelectTrigger className="w-full sm:w-[280px]"><SelectValue /></SelectTrigger>
                             <SelectContent>
-                                {keywordSearchEngines.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                                {seriesSearchProviders.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
                             </SelectContent>
                         </Select>
                     </div>
                     {/* Anime Search Provider */}
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                      <Label className="text-lg font-medium">Anime Engine:</Label>
-                      <div className="w-full sm:w-[280px] text-right sm:text-left px-3 py-2 text-sm text-muted-foreground">
-                          MAL Search
+                      <Label className="text-lg font-medium">Anime (Series) Engine:</Label>
+                      <div className="flex items-center justify-start w-full sm:w-[280px] h-10 px-3 py-2 text-sm text-muted-foreground border border-input rounded-md bg-stone-900">
+                        {
+                          // Find the label for the currently configured provider
+                          allSearchProviders.find(p => p.value === config.search.providers.anime_series)?.label || 'N/A'
+                        }
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
+                      <Label className="text-lg font-medium">Anime (Movies) Engine:</Label>
+                      <div className="flex items-center justify-start w-full sm:w-[280px] h-10 px-3 py-2 text-sm text-muted-foreground border border-input rounded-md bg-stone-900">
+                        {
+                          allSearchProviders.find(p => p.value === config.search.providers.anime_movie)?.label || 'N/A'
+                        }
                       </div>
                     </div>
                 </CardContent>

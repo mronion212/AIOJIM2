@@ -222,10 +222,25 @@ async function getManifest(config) {
     const prefix = showPrefix ? "AIOMetadata - " : "";
     catalogs.push({ id: 'search', type: 'movie', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
     catalogs.push({ id: 'search', type: 'series', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
-    catalogs.push({ id: 'search', type: 'anime', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
-    
-    const providers = config.search?.providers || { movie: '', series: '', anime: 'mal.search' };
-    const isMalSearchInUse = Object.values(providers).includes('mal.search');
+    const searchAnimeSeries = {
+    id: "search",
+    type: "anime.series", 
+    name: "Anime Search (Series)",
+    extra: [{ name: "search", isRequired: true }]
+    };
+    const searchAnimeMovies = {
+      id: "search", 
+      type: "anime.movie", 
+      name: "Anime Search (Movies)",
+      extra: [{ name: "search", isRequired: true }]
+    };
+    catalogs.push(searchAnimeMovies, searchAnimeSeries);
+  
+    const providers = config.search?.providers || {};
+    console.log('[Manifest] Search providers in use:', providers);
+    const isMalSearchInUse = Object.values(providers).some(providerId => 
+        typeof providerId === 'string' && providerId.startsWith('mal.search')
+    );
 
     if (isMalSearchInUse) {
       console.log('[Manifest] MAL search is in use for at least one content type. Adding VA and Genre search catalogs.');
@@ -293,7 +308,7 @@ async function getManifest(config) {
     name: "AIOMetadata",
     description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source. Also includes an optional AI search powered by Gemini.",
     resources: ["catalog", "meta"],
-    types: ["movie", "series", "anime"],
+    types: ["movie", "series", "anime.movie", "anime.series"],
     idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:"],
     //stremioAddonsConfig,
     behaviorHints: {

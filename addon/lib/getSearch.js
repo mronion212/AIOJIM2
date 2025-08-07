@@ -14,8 +14,10 @@ const { performGeminiSearch } = require('../utils/gemini-service');
 function getDefaultProvider(type) {
   if (type === 'movie') return 'tmdb.search';
   if (type === 'series') return 'tvdb.search';
-  if (type === 'anime') return 'mal.search';
-  return 'tmdb.search';
+  if (type === 'anime.movie') return 'mal.search.movie';
+  if (type === 'anime.series') return 'mal.search.series';
+  if (type === 'anime') return 'mal.search.series';
+  return 'tmdb.search'; 
 }
 
 function sanitizeQuery(query) {
@@ -57,7 +59,7 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   };
 }
 
-async function performAnimeSearch(type, query, language, config) {
+async function performAnimeSearch(type, query, language, config, page = 1) {
   let searchResults = [];
   switch(type){
     case 'movie':
@@ -68,10 +70,11 @@ async function performAnimeSearch(type, query, language, config) {
       break;
     default:
       const desiredTypes = new Set(['tv', 'movie', 'ova', 'ona']);
-      searchResults = await jikan.searchAnime('anime', query, 25, config);
+      searchResults = await jikan.searchAnime('anime', query, 25, config, page);
       searchResults = searchResults.filter(item => {
     return typeof item?.type === 'string' && desiredTypes.has(item.type.toLowerCase());
   });
+    console.log(`Performing anime search for type '${type}' with ${searchResults.length} results.`);  
       break;
 
   }
@@ -380,15 +383,40 @@ async function getSearch(id, type, language, extra, config) {
       case 'mal.va_search':
         if (extra.va_id) {
           const roles = await jikan.getAnimeByVoiceActor(extra.va_id);
-          metas = roles.map(role => Utils.parseAnimeCatalogMeta(role.anime, config, language));
+          metas = roles.map(role => Utils.parseAnimeCatalogMeta(role.anime, config, language, `Role: ${role.character.name}`));
         }
         break;
+
+      /*case 'mal.search.series':
+        console.log(`[getSearch] Performing mal.search.series search for series: ${extra.search}`);
+        if (extra.search) {
+          metas = await performAnimeSearch('series', extra.search, language, config);
+        }
+        break;  
+      case 'mal.search.movie':
+        console.log(`[getSearch] Performing mal.search.movie search for movies: ${extra.search}`);
+        if (extra.search) {
+          metas = await performAnimeSearch('movie', extra.search, language, config);
+        }
+        break;*/
 
       case 'search':
         if (extra.search) {
           const query = extra.search;
           console.log(config.search?.providers);
-          const providerId = config.search?.providers?.[type] || getDefaultProvider(type);
+          let providerId;
+          console.log(`[getSearch] Performing search for type '${type}' with query '${query}'`);
+          if (type === 'movie') {
+            providerId = config.search?.providers?.movie;
+          } else if (type === 'series') {
+            providerId = config.search?.providers?.series;
+          } else if (type === 'anime.movie') {
+            providerId = config.search?.providers?.anime_movie;
+          } else if (type === 'anime.series') {
+            providerId = config.search?.providers?.anime_series;
+          }
+          
+          providerId = providerId || getDefaultProvider(type);
           if (config.search?.ai_enabled && config.geminikey) {
             console.log(`[getSearch] Performing AI-enhanced search for type '${type}'`);
             metas = await performAiSearch(type, query, language, config);
@@ -396,13 +424,17 @@ async function getSearch(id, type, language, extra, config) {
             console.log(`[getSearch] Performing direct keyword search for type '${type}' using provider '${providerId}'`);
 
             switch (providerId) {
-              case 'mal.search':
-                metas = await performAnimeSearch(type, query, language, config);
+              case 'mal.search.series':
+                metas = await performAnimeSearch('series', query, language, config, page);
+                break;
+              case 'mal.search.movie':
+                metas = await performAnimeSearch('movie', query, language, config, page);
                 break;
               case 'tmdb.search':
                 metas = await performTmdbSearch(type, query, language, config);
                 break;
               case 'tvdb.search':
+                console.log(`[getSearch] Using TVDB search for query: "${query}"`);
                 metas = await performTvdbSearch(type, query, language, config);
                 break;
               case 'tvmaze.search':

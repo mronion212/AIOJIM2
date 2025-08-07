@@ -111,6 +111,59 @@ async function getMovieImages(tmdbId, config) {
 }
 
 /**
+ * Fetches the best logo image (movielogo) for a movie from Fanart.tv.
+ */
+
+async function getBestMovieLogo(tmdbId, config) {
+  const fanartClient = getFanartClient(config);
+  if (!fanartClient || !tmdbId) {
+    return null;
+  }
+
+  try {
+    const images = await fanartClient.getMovieImages(tmdbId);
+    if (!images.movielogo || images.hdmovielogo.length === 0) {
+      return null;
+    }
+    const sortedLogos = images.movielogo.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
+    return sortedLogos[0].url;
+  } catch (error) {
+    if (error.message && error.message.includes("Not Found")) {
+      console.log(`[Fanart] No entry found on Fanart.tv for TMDB ID ${tmdbId}.`);
+    } else {
+      console.error(`[Fanart] Error fetching data for TMDB ID ${tmdbId}:`, error.message);
+    }
+    return null;
+  }
+}
+
+/**
+ * Fetches the best logo image (tvlogo) for a tv from Fanart.tv.
+ */
+async function getBestTVLogo(tvdbId, config) {
+  const fanartClient = getFanartClient(config);
+  if (!fanartClient || !tvdbId) {
+    return null;
+  }
+
+  try {
+    const images = await fanartClient.getShowImages(tvdbId);
+    if (!images.movielogo || images.movielogo.length === 0) {
+      return null;
+    }
+    const sortedLogos = images.hdtvlogo.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
+    return sortedLogos[0].url;
+  } catch (error) {
+    if (error.message && error.message.includes("Not Found")) {
+      console.log(`[Fanart] No entry found on Fanart.tv for TVDB ID ${tvdbId}.`);
+    } else {
+      console.error(`[Fanart] Error fetching data for TVDB ID ${tvdbId}:`, error.message);
+    }
+    return null;
+  }
+}
+
+/**
  * Fetches the complete image object for a series from Fanart.tv.
  * @param {string} tvdbId - The TVDB ID of the series.
  * @param {object} config - The user's configuration object.
@@ -138,4 +191,6 @@ module.exports = {
   getBestMovieBackground,
   getMovieImages,
   getShowImages,
+  getBestMovieLogo,
+  getBestTVLogo,
 };

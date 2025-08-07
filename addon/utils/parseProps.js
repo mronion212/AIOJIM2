@@ -400,7 +400,7 @@ async function getAnimeBg({ tvdbId, tmdbId, malPosterUrl, mediaType = 'series' }
   return malPosterUrl;
 }
 
-function parseAnimeCatalogMeta(anime, config, language) {
+function parseAnimeCatalogMeta(anime, config, language, descriptionFallback = null) {
   if (!anime || !anime.mal_id) return null;
 
   const malId = anime.mal_id;
@@ -423,7 +423,7 @@ function parseAnimeCatalogMeta(anime, config, language) {
     }
   }
   const malPosterUrl = anime.images?.jpg?.large_image_url;
-  let finalPosterUrl = malPosterUrl;
+  let finalPosterUrl = malPosterUrl || `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
   //const kitsuId = mapping?.kitsu_id;
   //const imdbId = mapping?.imdb_id;
   //const metaType = (kitsuId || imdbId) ? stremioType : 'anime';
@@ -449,11 +449,11 @@ function parseAnimeCatalogMeta(anime, config, language) {
 
 
   return {
-    id: id,
+    id: `mal:${malId}`,
     type: stremioType,
     name: anime.title_english || anime.title,
     poster: finalPosterUrl,
-    description: anime.synopsis,
+    description: descriptionFallback || anime.synopsis,
     year: anime.year,
     isAnime: true
   };

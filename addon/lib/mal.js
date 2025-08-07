@@ -81,8 +81,8 @@ async function _makeJikanRequest(url) {
   return axios.get(url, { timeout: 15000, httpsAgent: robustAgent });
 }
 
-async function searchAnime(type, query, limit = 20, config = {}) {
-  const url = `${JIKAN_API_BASE}/anime?q=${encodeURIComponent(query)}&limit=${limit}&order_by=popularity&sort=asc`;
+async function searchAnime(type, query, limit = 20, config = {}, page = 1) {
+  let url = `${JIKAN_API_BASE}/anime?q=${encodeURIComponent(query)}&limit=${limit}&order_by=popularity&sort=asc&page=${page}`;
   if (config.ageRating) {
     let jikanRating;
     switch (config.ageRating) {

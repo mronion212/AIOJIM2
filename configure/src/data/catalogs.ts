@@ -41,16 +41,22 @@ export const authCatalogs: CatalogDefinition[] = [
 ];
 
 interface SearchProviderDefinition {
-  id: string;
-  name: string;
-  type: 'movie' | 'series' | 'anime';
+  // Let's adjust this slightly to make filtering easier
+  value: string;
+  label: string;
+  // This helps us know which dropdown to put it in
+  mediaType: ('movie' | 'series' | 'anime_movie' | 'anime_series')[];
 }
 
 export const allSearchProviders: SearchProviderDefinition[] = [
-    { id: 'tmdb.search', name: 'TMDB Search' },
-    { id: 'tvdb.search', name: 'TVDB Search' },
-    { id: 'mal.search', name: 'MAL Search' },
-    { id: 'tvmaze.search', name: 'TVmaze Search' },
+  // Generic Providers
+  { value: 'tmdb.search', label: 'TMDB Search', mediaType: ['movie', 'series'] },
+  { value: 'tvdb.search', label: 'TheTVDB Search', mediaType: ['series'] },
+  { value: 'tvmaze.search', label: 'TVmaze Search', mediaType: ['series'] },
+
+  // Anime-Specific Providers
+  { value: 'mal.search.movie', label: 'MAL Keyword (Movies)', mediaType: ['movie', 'anime_movie'] },
+  { value: 'mal.search.series', label: 'MAL Keyword (Series)', mediaType: ['series', 'anime_series'] },
 ];
 
 export const allCatalogDefinitions: CatalogDefinition[] = [

@@ -22,30 +22,52 @@ function initializeConfigFromSources(): AppConfig | null {
   }
   hasInitialized = true;
 
+  let loadedConfig: any = null; 
+
   try {
     const pathParts = window.location.pathname.split('/');
     const configStringIndex = pathParts.findIndex(p => p.toLowerCase() === 'configure');
     if (configStringIndex > 0 && pathParts[configStringIndex - 1]) {
       const decompressed = decompressFromEncodedURIComponent(pathParts[configStringIndex - 1]);
       if (decompressed) {
-        console.log('[Config] Initialized from URL.');
-        initialConfigFromSources = JSON.parse(decompressed);
-        window.history.replaceState({}, '', '/configure'); 
-        return initialConfigFromSources;
+        console.log('[Config] Initializing from URL.');
+        loadedConfig = JSON.parse(decompressed);
+        window.history.replaceState({}, '', '/configure');
       }
     }
   } catch (e) { /* Fall through */ }
 
-  try {
-    const storedConfig = localStorage.getItem(CONFIG_STORAGE_KEY);
-    if (storedConfig) {
-      console.log('[Config] Initialized from localStorage.');
-      initialConfigFromSources = JSON.parse(storedConfig);
-      return initialConfigFromSources;
+  if (!loadedConfig) {
+    try {
+      const storedConfig = localStorage.getItem(CONFIG_STORAGE_KEY);
+      if (storedConfig) {
+        console.log('[Config] Initializing from localStorage.');
+        loadedConfig = JSON.parse(storedConfig);
+      }
+    } catch (e) { /* Fall through */ }
+  }
+
+  if (loadedConfig) {
+    const providers = loadedConfig.search?.providers;
+    if (providers && providers.anime) {
+      console.log("[Config Migration] Old 'anime' provider found. Upgrading configuration...");
+      
+      providers.anime_movie = providers.anime_movie || 'mal.search.movie';
+      providers.anime_series = providers.anime_series || 'mal.search.series';
+      
+      delete providers.anime;
+      
+      try {
+        localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(loadedConfig));
+        console.log("[Config Migration] Migrated config saved back to localStorage.");
+      } catch (e) {
+        console.error("[Config Migration] Failed to save migrated config:", e);
+      }
     }
-  } catch (e) { /* Fall through */ }
-  console.log('[Config] No saved config found. Will use defaults.');
-  return null;
+  }
+
+  initialConfigFromSources = loadedConfig;
+  return initialConfigFromSources;
 }
 
 
@@ -86,7 +108,8 @@ const initialConfig: AppConfig = {
     providers: {
       movie: 'tmdb.search',
       series: 'tvdb.search',
-      anime: 'mal.search',
+      anime_movie: 'mal.search.movie',
+      anime_series: 'mal.search.series',
     },
   }
 };
@@ -98,6 +121,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const [preloadedConfig] = useState(initializeConfigFromSources);
   const [config, setConfig] = useState<AppConfig>(() => {
     if (preloadedConfig) {
+
       return {
         // ... (your robust merging logic here is correct)
         ...initialConfig,
