@@ -28,7 +28,6 @@ async function resolveAllIds(stremioId, type, config, animeType = null) {
           if (animeType === 'movie') {
             const tvdbMatch = await tvdb.findByImdbId(allIds.imdbId, config);
             if (tvdbMatch) {
-              console.log(`[ID Resolver] Found TVDB match for MAL ID  ${JSON.stringify(tvdbMatch)}`);
               allIds.tvdbId = tvdbMatch.movie.id;
             }
           } else if (animeType === 'series') {
@@ -36,9 +35,6 @@ async function resolveAllIds(stremioId, type, config, animeType = null) {
           }
         }
       }
-    } else {
-      // --- ADD THIS LOG ---
-      console.log(`[ID Resolver] No mapping found in idMapper for mal:${allIds.malId}`);
     }
 
     if (allIds.tmdbId) {
@@ -85,9 +81,20 @@ async function resolveAllIds(stremioId, type, config, animeType = null) {
     }
     
     if (allIds.tvdbId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvmazeId || !allIds.malId)) {
-        const tvdbDetails = type === animeType || 'movie' 
-            ? await tvdb.getMovieExtended(allIds.tvdbId, config) 
-            : await tvdb.getSeriesExtended(allIds.tvdbId, config);
+        if (type === 'anime') {
+            console.log(`[ID Resolver] Anime detected. Using animeType ('${animeType}') to query TVDB.`);
+            if (animeType === 'movie') {
+                tvdbDetails = await tvdb.getMovieExtended(allIds.tvdbId, config);
+            } else {
+                tvdbDetails = await tvdb.getSeriesExtended(allIds.tvdbId, config);
+            }
+        } else {
+            if (type === 'movie') {
+                tvdbDetails = await tvdb.getMovieExtended(allIds.tvdbId, config);
+            } else {
+                tvdbDetails = await tvdb.getSeriesExtended(allIds.tvdbId, config);
+            }
+        }
         
         allIds.imdbId = allIds.imdbId || tvdbDetails.remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
         allIds.tmdbId = allIds.tmdbId || tvdbDetails.remoteIds?.find(id => id.sourceName === 'TheMovieDB.com')?.id;

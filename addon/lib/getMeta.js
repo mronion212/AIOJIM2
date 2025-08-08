@@ -445,7 +445,7 @@ async function buildTvdbSeriesResponse(tvdbShow, tvdbEpisodes, language, config,
           }
           else if(config.tvdbSeasonType === 'absolute') {
             return {
-                id: `kitsu:${kitsuId}:1:${episode.absoluteNumber}`,
+                id: `kitsu:${kitsuId}:${episode.absoluteNumber}`,
                 title: episode.name || `Episode ${episode.number}`,
                 season: 1,
                 episode: episode.absoluteNumber,
@@ -467,6 +467,17 @@ async function buildTvdbSeriesResponse(tvdbShow, tvdbEpisodes, language, config,
                 available: episode.aired ? new Date(episode.aired) < new Date() : false,
             };
           }
+        } else {
+          return {
+            id: imdbId ? `${imdbId}:${episode.seasonNumber}:${episode.number}` : `tvdb:${tvdbId}:${episode.seasonNumber}:${episode.number}`,
+            title: episode.name || `Episode ${episode.number}`,
+            season: episode.seasonNumber,
+            episode: episode.number,
+            thumbnail: finalThumbnail,
+            overview: episode.overview,
+            released: episode.aired ? new Date(episode.aired) : null,
+            available: episode.aired ? new Date(episode.aired) < new Date() : false,
+          };
         }
     });
  

@@ -135,7 +135,6 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
         const extraArgs = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
         const searchResult = await getSearch(id, type, language, extraArgs, config);
         metas = searchResult.metas || [];
-        console.log(`[Catalog] Search results for ${id} (${type}):`, metas.length, 'items found.');
       } else {
         const { genre: genreName, type_filter,  skip } = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
         const pageSize = 25; // Match Jikan's page size

@@ -74,7 +74,6 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
       searchResults = searchResults.filter(item => {
     return typeof item?.type === 'string' && desiredTypes.has(item.type.toLowerCase());
   });
-    console.log(`Performing anime search for type '${type}' with ${searchResults.length} results.`);  
       break;
 
   }
@@ -214,7 +213,6 @@ async function performTvdbSearch(type, query, language, config) {
   if (!sanitizedQuery) return [];
 
   const idMap = new Map(); 
-  console.log("started tvdb search of type: " + type);
 
   let titleResults = [];
   if (type === 'movie') {
@@ -403,7 +401,6 @@ async function getSearch(id, type, language, extra, config) {
       case 'search':
         if (extra.search) {
           const query = extra.search;
-          console.log(config.search?.providers);
           let providerId;
           console.log(`[getSearch] Performing search for type '${type}' with query '${query}'`);
           if (type === 'movie') {
@@ -434,7 +431,6 @@ async function getSearch(id, type, language, extra, config) {
                 metas = await performTmdbSearch(type, query, language, config);
                 break;
               case 'tvdb.search':
-                console.log(`[getSearch] Using TVDB search for query: "${query}"`);
                 metas = await performTvdbSearch(type, query, language, config);
                 break;
               case 'tvmaze.search':
