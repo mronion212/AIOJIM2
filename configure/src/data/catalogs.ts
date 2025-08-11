@@ -17,6 +17,8 @@ export const baseCatalogs: CatalogDefinition[] = [
   { id: 'tmdb.year', name: 'TMDB By Year (Series)', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: false },
   { id: 'tmdb.language', name: 'TMDB By Language (Movies)', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: false },
   { id: 'tmdb.language', name: 'TMDB By Language (Series)', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: false },
+  { id: 'tvdb.genres', name: 'TVDB Genres (Movies)', type: 'movie', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
+  { id: 'tvdb.genres', name: 'TVDB Genres (Series)', type: 'series', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
 ];
 
 // --- Catalogs sourced from MyAnimeList ---
@@ -29,7 +31,7 @@ export const animeCatalogs: CatalogDefinition[] = [
   { id: 'mal.decade00s', name: 'MAL Best of 2000s', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'mal.decade10s', name: 'MAL Best of 2010s', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'mal.decade20s', name: 'MAL Best of 2020s', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
-  { id: 'mal.genres', name: 'MAL Genres', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true }, 
+  { id: 'mal.genres', name: 'MAL Genres', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: false }, 
 ]
 
 // --- Catalogs requiring TMDB Authentication ---

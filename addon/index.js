@@ -137,7 +137,7 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
         metas = searchResult.metas || [];
       } else {
         const { genre: genreName, type_filter,  skip } = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
-        const pageSize = 25; // Match Jikan's page size
+        const pageSize = 25;
         const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
         const args = [type, language, page];
         switch (id) {
@@ -150,6 +150,9 @@ addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (re
             break;
           case "tmdb.watchlist":
             metas = (await getWatchList(...args, genreName, sessionId, config)).metas;
+            break;
+          case "tvdb.genres":
+            metas = (await  getCatalog(type, language, page, id, genreName, config, catalogChoices)).metas;
             break;
           case 'mal.airing':
           case 'mal.upcoming':

@@ -134,7 +134,7 @@ async function getPersonalList(type, language, page, genre, sessionId, listType,
     let parameters = { language, page };
     parameters = configureSortingParameters(parameters, genre);
 
-    const genreList = await getGenreList(language, type, config);
+    const genreList = await getGenreList('tmdb', language, type, config);
 
     let fetchFunction;
     if (listType === 'favorite') {

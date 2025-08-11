@@ -126,6 +126,57 @@ async function getMovieExtended(tvdbId, config) {
   });
 }
 
+/**
+ * Fetches the extended details for a single season from TVDB, including its episode list.
+ * This is used to get an accurate episode count for building the season layout map.
+ * The result is cached in Redis.
+ *
+ * @param {string|number} seasonId - The UNIQUE ID of the season (not its number).
+ * @param {object} config - The addon's config object.
+ * @returns {Promise<object|null>} The full season data object, or null on failure.
+ */
+async function getSeasonExtended(seasonId, config) {
+  return cacheWrapTvdbApi(`season-extended:${seasonId}`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb);
+    if (!token) return null;
+
+    const url = `${TVDB_API_URL}/seasons/${seasonId}/extended`;
+    
+    try {
+      const response = await fetch(url, { 
+        headers: { 'Authorization': `Bearer ${token}` } 
+      });
+      
+      if (!response.ok) {
+        console.warn(`[TVDB Client] Request for season ${seasonId} failed with status: ${response.status}`);
+        return null;
+      }
+      
+      const data = await response.json();
+      return data.data;
+
+    } catch(error) {
+      console.error(`Error fetching extended season data for TVDB Season ID ${seasonId}:`, error.message);
+      return null; 
+    }
+  });
+}
+
+async function getAllGenres(config) {
+  const token = await getAuthToken(config.apiKeys?.tvdb);
+  if (!token) return [];
+  try {
+    const response = await fetch(`${TVDB_API_URL}/genres`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    console.error(`[TVDB] Error fetching genres:`, error.message);
+    return [];
+  }
+}
 
 async function findByImdbId(imdbId, config) {
   const token = await getAuthToken(config.apiKeys?.tvdb);
@@ -207,9 +258,9 @@ async function getSeriesEpisodes(tvdbId, language = 'en-US', seasonType = 'defau
     console.log(`[TVDB] Fetching episodes for ${tvdbId} with type: '${seasonType}' and lang: '${language}'`);
     let result = await _fetchEpisodesBySeasonType(tvdbId, seasonType, language, config);
  
-    if ((!result || result.episodes.length === 0) && seasonType !== 'default') {
-      console.warn(`[TVDB] No episodes found for type '${seasonType}'. Falling back to 'default' order.`);
-      result = await _fetchEpisodesBySeasonType(tvdbId, 'default', language, config);
+    if ((!result || result.episodes.length === 0) && seasonType !== 'official') {
+      console.warn(`[TVDB] No episodes found for type '${seasonType}'. Falling back to 'official' order.`);
+      result = await _fetchEpisodesBySeasonType(tvdbId, 'official', language, config);
     }
 
     if ((!result || result.episodes.length === 0) && language !== 'en-US') {
@@ -221,6 +272,35 @@ async function getSeriesEpisodes(tvdbId, language = 'en-US', seasonType = 'defau
   }, bypassCache);
 }
 
+async function filter(type, params, config) {
+  const token = await getAuthToken(config.apiKeys?.tvdb);
+  if (!token) return [];
+
+  try {
+    const queryParams = new URLSearchParams(params);
+    const url = `${TVDB_API_URL}/${type}/filter?${queryParams.toString()}`;
+    console.log(`[TVDB] request to: ${url}`);
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    if (!response.ok) {
+      console.error(`[TVDB] Filter request failed with status: ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    console.error(`[TVDB] Error in filter for ${type}:`, error.message);
+    return [];
+  }
+}
+
 module.exports = {
   searchSeries,
   searchMovies,
@@ -229,5 +309,8 @@ module.exports = {
   getMovieExtended,
   getPersonExtended,
   getSeriesEpisodes,
-  findByImdbId
+  findByImdbId,
+  getAllGenres,
+  filter,
+  getSeasonExtended
 };

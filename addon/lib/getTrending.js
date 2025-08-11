@@ -1,9 +1,13 @@
 require("dotenv").config();
 const moviedb = require("./getTmdb");
-const { getMeta } = require("./getMeta");
 //const { isAnime } = require("../utils/isAnime");
 //const { getGenreList } = require('./getGenreList');
 
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
+
+const host = process.env.HOST_NAME.startsWith('http')
+    ? process.env.HOST_NAME
+    : `https://${process.env.HOST_NAME}`;
 
 async function getTrending(type, language, page, genre, config, catalogChoices) {
   try {
@@ -14,16 +18,20 @@ async function getTrending(type, language, page, genre, config, catalogChoices) 
     //const genreList = await getGenreList(language, type);
     const res = await moviedb.trending(parameters, config);
 
-    const metaPromises = res.results.map(item => 
-      getMeta(type, language, `tmdb:${item.id}`, config, catalogChoices, false)
-        .then(result => result.meta)
-        .catch(err => {
-          console.error(`Error fetching metadata for tmdb:${item.id}:`, err.message);
-          return null;
-        })
-    );
+    const metas = res.results.map(item => {
+      const tmdbPosterFullUrl = item.poster_path
+            ? `${TMDB_IMAGE_BASE}${item.poster_path}`
+            : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`; 
 
-    const metas = (await Promise.all(metaPromises)).filter(Boolean);
+    const posterProxyUrl = `${host}/poster/${type}/tmdb:${item.id}?fallback=${encodeURIComponent(tmdbPosterFullUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+      return {
+        id: `tmdb:${item.id}`,
+        type: type,
+        name: item.title || item.name,
+        poster: posterProxyUrl,
+        year: (item.release_date || item.first_air_date || '').substring(0, 4),
+      };
+    });
 
     return { metas };
 

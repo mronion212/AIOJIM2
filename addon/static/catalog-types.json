@@ -18,6 +18,12 @@
       "defaultOptions": ["Day", "Week"]
     }
   },
+  "tvdb": {
+    "genres": {
+      "nameKey": "tvdb_genres",
+      "extraSupported": ["genre", "skip"]
+    }
+  },
   "mal": {
     "airing": {
       "nameKey": "airing",

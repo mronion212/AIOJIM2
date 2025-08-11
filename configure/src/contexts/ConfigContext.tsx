@@ -77,7 +77,7 @@ const initialConfig: AppConfig = {
   includeAdult: false,
   blurThumbs: false,
   showPrefix: false, 
-  providers: { movie: 'tmdb', series: 'tvdb', anime: 'mal', anime_id_provider: 'kitsu', },
+  providers: { movie: 'tmdb', series: 'tvdb', anime: 'mal', anime_id_provider: 'imdb', },
   tvdbSeasonType: 'default',
   mal: {
     skipFiller: false, 
@@ -121,18 +121,24 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const [preloadedConfig] = useState(initializeConfigFromSources);
   const [config, setConfig] = useState<AppConfig>(() => {
     if (preloadedConfig) {
-
+      const definitionMap = new Map(allCatalogDefinitions.map(def => [`${def.id}-${def.type}`, def]));
+      const hydratedCatalogs = (preloadedConfig.catalogs || []).map(userCatalog => {
+        const definition = definitionMap.get(`${userCatalog.id}-${userCatalog.type}`);
+        if (definition) {
+          return {
+            ...definition, 
+            ...userCatalog, 
+          };
+        }
+        return userCatalog;
+      });
       return {
-        // ... (your robust merging logic here is correct)
         ...initialConfig,
         ...preloadedConfig,
         apiKeys: { ...initialConfig.apiKeys, ...preloadedConfig.apiKeys },
         providers: { ...initialConfig.providers, ...preloadedConfig.providers },
         search: { ...initialConfig.search, ...preloadedConfig.search },
-        catalogs: allCatalogDefinitions.map(def => {
-            const userSetting = preloadedConfig.catalogs?.find(c => c.id === def.id && c.type === def.type);
-            return { ...def, name: def.name, ...userSetting };
-        })
+        catalogs: hydratedCatalogs,
       };
     }
     return initialConfig;
@@ -194,3 +200,7 @@ export const useConfig = () => {
   }
   return context;
 };
+export type { AppConfig };
+
+export type { CatalogConfig };
+

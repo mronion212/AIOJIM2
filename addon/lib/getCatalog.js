@@ -7,51 +7,115 @@ const { getMeta } = require("./getMeta");
 const { isAnime } = require("../utils/isAnime");
 const moviedb = require("./getTmdb");
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
+const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com';
+const tvdb = require('./tvdb');
+const { to3LetterCode, to3LetterCountryCode } = require('./language-map');
+
+const host = process.env.HOST_NAME.startsWith('http')
+    ? process.env.HOST_NAME
+    : `https://${process.env.HOST_NAME}`;
 
 async function getCatalog(type, language, page, id, genre, config, catalogChoices) {
   try {
-    if (id.startsWith("mdblist.")) {
-      const listId = id.split(".")[1];
-      const results = await fetchMDBListItems(listId, config.mdblistkey, language, page);
-      return await parseMDBListItems(results, type, genre, language, config);
+    if (id.startsWith('tvdb.')) {
+      console.log(`[getCatalog] Routing to TVDB catalog handler for id: ${id}`);
+      const tvdbResults = await getTvdbCatalog(type, id, genre, page, language, config);
+      return { metas: tvdbResults };
+    } 
+    else if (id.startsWith('tmdb.') || id.startsWith('mdblist.')) {
+      console.log(`[getCatalog] Routing to TMDB/MDBList catalog handler for id: ${id}`);
+      const tmdbResults = await getTmdbAndMdbListCatalog(type, id, genre, page, language, config, catalogChoices);
+      return { metas: tmdbResults };
     }
-
-    const genreList = await getGenreList(language, type, config);
-    const parameters = await buildParameters(type, language, page, id, genre, genreList, config);
-
-    const fetchFunction = type === "movie" 
-      ? () => moviedb.discoverMovie(parameters, config) 
-      : () => moviedb.discoverTv(parameters, config);
-
-    const res = await fetchFunction();
-
-    const metaPromises = res.results.map(async (item) => {
-      try {
-        const fullItem = type === "movie"
-          ? await moviedb.movieInfo({ id: item.id, append_to_response: 'external_ids' }, config)
-          : await moviedb.tvInfo({ id: item.id, append_to_response: 'external_ids' }, config);
-
-        const preFetchedData = {
-          tmdbData: fullItem,
-          imdbId: fullItem.external_ids?.imdb_id,
-          tvdbId: fullItem.external_ids?.tvdb_id
-        };
-
-        const result = await getMeta(type, language, `tmdb:${item.id}`, config, catalogChoices, preFetchedData);
-        return result.meta;
-      } catch (err) {
-        console.error(`Error processing metadata for tmdb:${item.id}:`, err.message);
-        return null;
-      }
-    });
-
-    const metas = (await Promise.all(metaPromises)).filter(Boolean);
-    return { metas };
-
+    else {
+      console.warn(`[getCatalog] Received request for unknown catalog prefix: ${id}`);
+      return { metas: [] };
+    }
   } catch (error) {
-    console.error(`Error fetching catalog for id=${id}, type=${type}:`, error.message);
+    console.error(`Error in getCatalog router for id=${id}, type=${type}:`, error.message);
     return { metas: [] };
   }
+}
+
+async function getTvdbCatalog(type, catalogId, genreName, page, language, config) {
+  console.log(`[getCatalog] Fetching TVDB catalog: ${catalogId}, Genre: ${genreName}, Page: ${page}`);
+  
+  const allTvdbGenres = await getGenreList('tvdb', language, type, config);
+  const genre = allTvdbGenres.find(g => g.name === genreName);
+   const langParts = language.split('-');
+  const langCode2 = langParts[0];
+  const countryCode2 = langParts[1] || langCode2; 
+  const langCode3 = await to3LetterCode(langCode2, config);
+  const countryCode3 = to3LetterCountryCode(countryCode2);
+  
+  const params = {
+    country: countryCode3 || 'usa',
+    lang: langCode3 || 'eng',
+    sort: 'score'
+  };
+
+  if (genre) {
+    params.genre = genre.id;
+  }
+  
+  const tvdbType = type === 'movie' ? 'movies' : 'series';
+  if(tvdbType === 'series'){
+    params.sortType = 'desc';
+  }
+  const results = await tvdb.filter(tvdbType, params, language, config);
+  if (!results || results.length === 0) return [];
+
+
+  const metas = results.sort((a, b) => b.score - a.score).map(item => {
+    const tvdbId = item.tvdb_id || item.id;
+    if (!tvdbId || !item.name) return null;
+    const fallbackPosterUrl = item.image ? `${item.image}` : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
+    const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+    return {
+      id: `tvdb:${tvdbId}`,
+      type: type,
+      name: item.name,
+      poster: posterProxyUrl,
+      year: item.year || null,
+    };
+  }).filter(Boolean);
+
+  return metas;
+}
+
+async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config, catalogChoices) {
+  if (id.startsWith("mdblist.")) {
+    console.log(`[getCatalog] Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
+    const listId = id.split(".")[1];
+    const results = await fetchMDBListItems(listId, config.apiKeys?.mdblist, language, page);
+    return await parseMDBListItems(results, type, genre, language, config);
+  }
+
+  const genreList = await getGenreList('tmdb', language, type, config);
+  const parameters = await buildParameters(type, language, page, id, genre, genreList, config);
+
+  const fetchFunction = type === "movie" 
+    ? () => moviedb.discoverMovie(parameters, config) 
+    : () => moviedb.discoverTv(parameters, config);
+
+  const res = await fetchFunction();
+
+  const metas = res.results.map(item => {
+    const tmdbPosterFullUrl = item.poster_path
+            ? `${TMDB_IMAGE_BASE}${item.poster_path}`
+            : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`; 
+
+    const posterProxyUrl = `${host}/poster/${type}/tmdb:${item.id}?fallback=${encodeURIComponent(tmdbPosterFullUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+    return {
+      id: `tmdb:${item.id}`,
+      type: type,
+      name: item.title || item.name,
+      poster: posterProxyUrl,
+      year: (item.release_date || item.first_air_date || '').substring(0, 4)
+    };
+  });
+
+  return metas;
 }
 
 async function buildParameters(type, language, page, id, genre, genreList, config) {

@@ -3,7 +3,7 @@ export interface CatalogConfig {
   name: string;
   type: 'movie' | 'series' | 'anime';
   enabled: boolean;
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze';
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist';
   showInHome: boolean;
 }
 
@@ -24,7 +24,7 @@ export interface AppConfig {
     movie: string;
     series: string;
     anime: string;
-    anime_id_provider: 'kitsu' | 'mal';
+    anime_id_provider: 'kitsu' | 'mal' | 'imdb';
   };
   tvdbSeasonType: string;
   mal: {

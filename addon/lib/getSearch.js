@@ -66,7 +66,11 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
       searchResults = await jikan.searchAnime('movie', query, 25, config);
       break;
     case 'series':
-      searchResults = await jikan.searchAnime('tv', query, 25, config);
+      const desiredTvTypes = new Set(['tv', 'ova', 'ona']);
+      searchResults = await jikan.searchAnime('anime', query, 25, config);
+      searchResults = searchResults.filter(item => {
+        return typeof item?.type === 'string' && desiredTvTypes.has(item.type.toLowerCase());
+      });
       break;
     default:
       const desiredTypes = new Set(['tv', 'movie', 'ova', 'ona']);
@@ -118,8 +122,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
     }
 
     const genreType = type ==='movie' ? 'movie' : 'series'
-    const genreList = await getGenreList(language, genreType, config);
-    
+    const genreList = await getGenreList('tmdb', language, genreType, config);
+
     const hydrationPromises = Array.from(rawResults.values()).map(async (media) => {
         const mediaType = media.media_type === 'tv' ? 'series' : 'movie';
         

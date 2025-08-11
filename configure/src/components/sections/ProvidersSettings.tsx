@@ -27,6 +27,7 @@ const animeProviders = [
 ];
 
 const animeIdProviders = [
+  { value: 'imdb', label: 'IMDb (More compatibility)' },
   { value: 'kitsu', label: 'Kitsu ID (Recommended)' },
   { value: 'mal', label: 'MyAnimeList ID' },
 ];
@@ -39,6 +40,7 @@ const tvdbSeasonTypes = [
   { value: 'alternate', label: 'Alternate Order' },
   { value: 'regional', label: 'Regional Order' },
 ];
+
 
 export function ProvidersSettings() {
   const { config, setConfig } = useConfig();
@@ -61,7 +63,7 @@ export function ProvidersSettings() {
     }));
   };
 
-  const handleAnimeIdProviderChange = (value: 'kitsu' | 'mal') => {
+  const handleAnimeIdProviderChange = (value: 'imdb' | 'kitsu' | 'mal') => {
     setConfig(prev => ({
         ...prev,
         providers: {
@@ -138,7 +140,7 @@ export function ProvidersSettings() {
               </SelectContent>
             </Select>
             {/* FIX: Use theme-aware text color for the helper text */}
-            <p className="text-xs text-muted-foreground mt-2">"Absolute Order" is often best for anime on TVDB to match MAL's episode numbering.</p>
+            <p className="text-xs text-muted-foreground mt-2">"Aired Order (Default)" or "Official aired" are recommended.</p>
         </CardContent>
       </Card>
       {/* MyAnimeList Specific Settings */}
@@ -190,7 +192,7 @@ export function ProvidersSettings() {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground mt-2">
-              "Kitsu" is best for modern anime addons.
+              "IMDb" can improve compatibility as it is supported by most streaming addons. Kitsu is recommended when using MAL as meta provider.
             </p>
           </div>
         </CardContent>

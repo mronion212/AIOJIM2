@@ -103,14 +103,14 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
 }
 
 function getCatalogDefinition(catalogId) {
-  const [provider, type] = catalogId.split('.');
+  const [provider, catalogType] = catalogId.split('.');
 
-  for (const category of Object.keys(CATALOG_TYPES)) {
-    if (CATALOG_TYPES[category][type]) {
-      return CATALOG_TYPES[category][type];
-    }
+  if (CATALOG_TYPES[provider] && CATALOG_TYPES[provider][catalogType]) {
+    return CATALOG_TYPES[provider][catalogType];
   }
-
+  if (CATALOG_TYPES.default && CATALOG_TYPES.default[catalogType]) {
+    return CATALOG_TYPES.default[catalogType];
+  }
   return null;
 }
 
@@ -135,7 +135,7 @@ function getOptionsForCatalog(catalogDef, type, showInHome, { years, genres_movi
 async function createMDBListCatalog(userCatalog, mdblistKey) {
   const listId = userCatalog.id.split(".")[1];
   const genres = await getGenresFromMDBList(listId, mdblistKey);
-
+  console.log(`[Manifest] Creating MDBList catalog for list ID: ${listId}, Genres: ${genres.length}`);
   return {
     id: userCatalog.id,
     type: userCatalog.type,
@@ -163,13 +163,9 @@ async function getManifest(config) {
 
   const enabledCatalogs = userCatalogs.filter(c => c.enabled);
   const years = generateArrayOfYears(20);
-  const genres_movie = await getGenreList(language, "movie", config).then(genres => {
-    return genres.map(el => el.name).sort();
-  });
-
-  const genres_series = await getGenreList(language, "series", config).then(genres => {
-    return genres.map(el => el.name).sort();
-  });
+  const genres_movie = (await getGenreList('tmdb', language, "movie", config)).map(g => g.name).sort();
+  const genres_series = (await getGenreList('tmdb', language, "series", config)).map(g => g.name).sort();
+  const genres_tvdb_all = (await getGenreList('tvdb', language, "series", config)).map(g => g.name).sort();
 
   const languagesArray = await getLanguages(config);
   const filterLanguages = setOrderLanguage(language, languagesArray);
@@ -186,12 +182,19 @@ async function getManifest(config) {
     })
     .map(async (userCatalog) => {
       if (isMDBList(userCatalog.id)) {
-          return createMDBListCatalog(userCatalog, config.mdblistkey);
+          return createMDBListCatalog(userCatalog, config.apiKeys?.mdblist);
       }
       const catalogDef = getCatalogDefinition(userCatalog.id);
       let catalogOptions = [];
 
-      if (userCatalog.id === 'mal.genres') {
+      if (userCatalog.id.startsWith('tvdb.')) {
+        console.log('[Manifest] Building TVDB genres catalog options...');
+        const excludedGenres = ['awards show', 'podcast', 'game show', 'news'];
+        catalogOptions = genres_tvdb_all
+          .filter(name => !excludedGenres.includes(name.toLowerCase()))
+          .sort();
+      }
+      else if (userCatalog.id === 'mal.genres') {
           const animeGenres = await cacheWrapJikanApi('anime-genres', async () => {
             console.log('[Cache Miss] Fetching fresh anime genre list in manifest from Jikan...');
             return await jikan.getAnimeGenres();
@@ -199,8 +202,9 @@ async function getManifest(config) {
           catalogOptions = animeGenres.filter(Boolean).map(genre => genre.name).sort();
       } else if (userCatalog.id === 'mal.schedule') {
         catalogOptions = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-      } else {
-          catalogOptions = getOptionsForCatalog(catalogDef, userCatalog.type, userCatalog.showInHome, options);
+      } 
+      else {
+        catalogOptions = getOptionsForCatalog(catalogDef, userCatalog.type, userCatalog.showInHome, options);
       }
 
       return createCatalog(
@@ -309,7 +313,7 @@ async function getManifest(config) {
     description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source. Also includes an optional AI search powered by Gemini.",
     resources: ["catalog", "meta"],
     types: ["movie", "series", "anime.movie", "anime.series"],
-    idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:"],
+    idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:"],
     //stremioAddonsConfig,
     behaviorHints: {
       configurable: true,
@@ -322,6 +326,8 @@ async function getManifest(config) {
 function getDefaultCatalogs() {
   const defaultTypes = ['movie', 'series'];
   const defaultTmdbCatalogs = Object.keys(CATALOG_TYPES.default);
+  const defaultTvdbCatalogs = Object.keys(CATALOG_TYPES.tvdb);
+  const defaultMalCatalogs = Object.keys(CATALOG_TYPES.mal);
 
   const tmdbCatalogs = defaultTmdbCatalogs.flatMap(id =>
     defaultTypes.map(type => ({
@@ -331,36 +337,22 @@ function getDefaultCatalogs() {
       enabled: true 
     }))
   );
-
-  const animeCatalogs = [
-    {
-      id: 'mal.airing',
-      type: 'anime',
-      showInHome: true,
-      enabled: true, 
-    },
-    {
-      id: 'mal.upcoming',
-      type: 'anime',
-      showInHome: true,
-      enabled: true, 
-    },
-    {
-      id: 'mal.genres',
-      name: 'MAL Genres',
-      type: 'anime',
+  const tvdbCatalogs = defaultTvdbCatalogs.flatMap(id =>
+    defaultTypes.map(type => ({
+      id: `tvdb.${id}`,
+      type,
       showInHome: false,
-      enabled: true, 
-    },
-    { id: 'mal.schedule', name: 'MAL Airing Schedule', type: 'anime', enabled: true, showInHome: false },
-    { id: 'mal.decade80s', type: 'anime', showInHome: true, enabled: true },
-    { id: 'mal.decade90s', type: 'anime', showInHome: true, enabled: true, },
-    { id: 'mal.decade00s', type: 'anime', showInHome: true, enabled: true, },
-    { id: 'mal.decade10s', type: 'anime', showInHome: true, enabled: true, },
-    { id: 'mal.decade20s', type: 'anime', showInHome: true, enabled: true, },
-  ];
+      enabled: true 
+    }))
+  );
+  const malCatalogs = defaultMalCatalogs.map(id => ({
+    id: `mal.${id}`,
+    type: 'anime',
+    showInHome: !['genres', 'schedule'].includes(id),
+    enabled: true 
+  }));
 
-  return [...tmdbCatalogs, ...animeCatalogs];
+  return [...tmdbCatalogs, ...tvdbCatalogs, ...malCatalogs];
 }
 
 module.exports = { getManifest, DEFAULT_LANGUAGE };

@@ -252,7 +252,7 @@ export function GeneralSettings() {
       </div>
 
       {/* Settings Group */}
-      <div className="space-y-4 max-w-md">
+      <div>
 
         {/* Language Setting */}
         {/* FIX: Use theme-aware background/border on hover */}

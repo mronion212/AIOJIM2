@@ -1,6 +1,6 @@
 require("dotenv").config();
 const moviedb = require("./getTmdb");
-
+const getCountryISO3 = require("country-iso-2-to-3");
 let languageData = null; // We will cache the data here
 
 /**
@@ -61,4 +61,19 @@ async function to3LetterCode(langCode2, config) {
   return details?.code3 || 'eng'; // Default to English if not found
 }
 
-module.exports = { getLanguageListForConfig, to3LetterCode };
+/**
+ * Converts a 2-letter country code (e.g., 'US') to the 3-letter ISO 3166-1 alpha-3 code.
+ * @param {string} countryCode2 The 2-letter country code from a language tag like 'en-US'.
+ * @returns {string} The 3-letter code, defaulting to 'usa'.
+ */
+function to3LetterCountryCode(countryCode2) {
+  if (!countryCode2) {
+    return 'usa';
+  }
+  console.log(`Converting country code: ${countryCode2}`);
+  const countryData = getCountryISO3(countryCode2.toUpperCase());
+  
+  return countryData ? countryData.toLowerCase() : 'usa';
+}
+
+module.exports = { getLanguageListForConfig, to3LetterCode, to3LetterCountryCode };

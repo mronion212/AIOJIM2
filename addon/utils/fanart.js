@@ -1,5 +1,5 @@
 require("dotenv").config();
-const FanartTvApi = require("fanart.tv-api");
+const FanartTvApi = require('fanart.tv-api');
 
 const clientCache = new Map();
 

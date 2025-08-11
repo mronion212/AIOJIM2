@@ -129,7 +129,36 @@ function parseShareLink(title, imdb_id, type) {
   };
 }
 
-function parseGenreLink(genres, type, configString, stremioType) {
+function parseAnimeGenreLink(genres, type, configString) {
+  if (!Array.isArray(genres) || !process.env.HOST_NAME) return [];
+  const manifestPath = configString ? `${configString}/manifest.json` : 'manifest.json';
+  const manifestUrl = `${host}/${manifestPath}`;  
+
+  return genres.map((genre) => {
+    if (!genre || !genre.name) return null;
+
+    let searchUrl;
+    const genreId = genre.mal_id;
+    if (!genreId) return null;
+    let url = `stremio:///discover/${encodeURIComponent(
+      manifestUrl
+    )}/anime/mal.genres?genre=${genre.name}`;
+    if (type === 'movie') {
+      url += `&type_filter=movie`;
+    } else if (type === 'series') {
+      url += `&type_filter=tv`;
+    }
+    searchUrl = url;
+
+    return {
+      name: genre.name,
+      category: "Genres",
+      url: searchUrl,
+    };
+  }).filter(Boolean);
+}
+
+function parseGenreLink(genres, type, configString, isTvdb = false) {
   if (!Array.isArray(genres) || !process.env.HOST_NAME) return [];
   const manifestPath = configString ? `${configString}/manifest.json` : 'manifest.json';
   const manifestUrl = `${host}/${manifestPath}`;
@@ -138,20 +167,12 @@ function parseGenreLink(genres, type, configString, stremioType) {
     if (!genre || !genre.name) return null;
 
     let searchUrl;
-    
-    if (type === 'anime') {
-      const genreId = genre.mal_id;
-      if (!genreId) return null;
-      let url = `stremio:///discover/${encodeURIComponent(
+    if (isTvdb) {
+      searchUrl = `stremio:///discover/${encodeURIComponent(
         manifestUrl
-      )}/anime/mal.genres?genre=${genre.name}`;
-      if (stremioType === 'movie') {
-        url += `&type_filter=movie`;
-      } else if (stremioType === 'series') {
-        url += `&type_filter=tv`;
-      }
-      searchUrl = url;
-      
+      )}/${type}/tvdb.genres?genre=${encodeURIComponent(
+        genre.name
+      )}`;
     } else {
       searchUrl = `stremio:///discover/${encodeURIComponent(
         manifestUrl
@@ -182,15 +203,17 @@ function parseCreditsLink(credits, castCount) {
   return [...Cast, ...Director, ...Writer];
 }
 
-function buildLinks(imdbRating, imdbId, title, type, genres, credits, language, castCount, catalogChoices) {
+
+
+function buildLinks(imdbRating, imdbId, title, type, genres, credits, language, castCount, catalogChoices, isTvdb = false) {
   const links = [];
 
   if (imdbId) {
     links.push(parseImdbLink(imdbRating, imdbId));
     links.push(parseShareLink(title, imdbId, type));
   }
-  
-  const genreLinks = parseGenreLink(genres, type, catalogChoices);
+
+  const genreLinks = parseGenreLink(genres, type, catalogChoices, isTvdb);
   if (genreLinks.length > 0) {
     links.push(...genreLinks);
   }
@@ -221,7 +244,7 @@ function parseYear(status, first_air_date, last_air_date) {
 }
 
 
-function parseAnimeCreditsLink(characterData, type, configString, castCount) {
+function parseAnimeCreditsLink(characterData, configString, castCount) {
   if (!characterData || !characterData.length === 0) return [];
 
   const host = process.env.HOST_NAME.startsWith('http')
@@ -238,7 +261,7 @@ function parseAnimeCreditsLink(characterData, type, configString, castCount) {
 
     const searchUrl = `stremio:///discover/${encodeURIComponent(
       manifestUrl
-    )}/${type}/mal.va_search?va_id=${vaMalId}`;
+    )}/anime/mal.va_search?va_id=${vaMalId}`;
 
     return {
       name: voiceActor.person.name,
@@ -251,6 +274,45 @@ function parseAnimeCreditsLink(characterData, type, configString, castCount) {
 }
 
 
+function parseAnimeRelationsLink(relationsData, type) {
+  if (!Array.isArray(relationsData) || relationsData.length === 0) {
+    return [];
+  }
+
+  const relationLinks = relationsData.flatMap(relation => {
+    const relationType = relation.relation;
+    if (relationType !== 'Prequel' && relationType !== 'Sequel') {
+      return [];
+    }
+
+    return (relation.entry || []).map(entry => {
+      if (!entry.mal_id || !entry.name) return null;
+
+      const metaUrl = `stremio:///detail/${type}/mal:${entry.mal_id}`;
+
+      return {
+        name: entry.name,
+        category: relationType,
+        url: metaUrl
+      };
+    }).filter(Boolean);
+  });
+
+  return relationLinks;
+}
+
+
+async function getAnimeGenres() {
+  const url = `${JIKAN_API_BASE}/genres/anime`;
+  return enqueueRequest(() => _makeJikanRequest(url), url)
+    .then(response => response.data?.data || [])
+    .catch(e => {
+      console.error(`Could not fetch anime genres from Jikan`, e.message);
+      return [];
+    });
+}
+
+
 
 function parseRunTime(runtime) {
   if (!runtime) return "";
@@ -259,7 +321,7 @@ function parseRunTime(runtime) {
 
   if (typeof runtime === 'number') {
     totalMinutes = runtime;
-  } 
+  }
   else if (typeof runtime === 'string') {
     let hours = 0;
     let minutes = 0;
@@ -280,7 +342,7 @@ function parseRunTime(runtime) {
     }
 
   } else {
-    return ""; 
+    return "";
   }
 
   if (isNaN(totalMinutes) || totalMinutes <= 0) {
@@ -323,7 +385,7 @@ function getRpdbPoster(type, ids, language, rpdbkey) {
         if (tvdbId) {
             idType = 'tvdb';
             fullMediaId = tvdbId;
-        } else if (tmdbId) {    
+        } else if (tmdbId) {
             idType = 'tmdb';
             fullMediaId = `movie-${tmdbId}`;
         } else if (ids.imdbId) {
@@ -406,9 +468,10 @@ function parseAnimeCatalogMeta(anime, config, language, descriptionFallback = nu
   const malId = anime.mal_id;
   const stremioType = anime.type?.toLowerCase() === 'movie' ? 'movie' : 'series';
   const preferredProvider = config.providers?.anime || 'mal';
-    
+
   const mapping = idMapper.getMappingByMalId(malId);
   let id = `mal:${malId}`;
+  const kitsuId = mapping?.kitsu_id;
   if (preferredProvider === 'tvdb') {
     if (mapping && mapping.thetvdb_id) {
       id= `tvdb:${mapping.thetvdb_id}`;
@@ -421,14 +484,14 @@ function parseAnimeCatalogMeta(anime, config, language, descriptionFallback = nu
     if (mapping && mapping.imdb_id) {
       id= `${mapping.imdb_id}`;
     }
-  }
+  } 
   const malPosterUrl = anime.images?.jpg?.large_image_url;
   let finalPosterUrl = malPosterUrl || `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
   //const kitsuId = mapping?.kitsu_id;
   //const imdbId = mapping?.imdb_id;
   //const metaType = (kitsuId || imdbId) ? stremioType : 'anime';
   if (config.apiKeys?.rpdb) {
-    
+
     if (mapping) {
       const tvdbId = mapping.thetvdb_id;
       const tmdbId = mapping.themoviedb_id;
@@ -439,7 +502,7 @@ function parseAnimeCatalogMeta(anime, config, language, descriptionFallback = nu
       } else if (stremioType === 'movie') {
         proxyId = tmdbId ? `tmdb:${tmdbId}` : null;
       }
-      
+
       if (proxyId) {
         const fallback = encodeURIComponent(malPosterUrl);
         finalPosterUrl = `${host}/poster/${stremioType}/${proxyId}?fallback=${fallback}&lang=${language}&key=${config.apiKeys?.rpdb}`;
@@ -499,7 +562,7 @@ function parseTvdbTrailers(tvdbTrailers, defaultTitle = 'Official Trailer') {
   for (const trailer of tvdbTrailers) {
     if (trailer.url && trailer.url.includes('youtube.com') || trailer.url.includes('youtu.be')) {
       const ytId = getYouTubeIdFromUrl(trailer.url);
-      
+
       if (ytId) {
         const title = trailer.name || defaultTitle;
 
@@ -522,7 +585,7 @@ function parseTvdbTrailers(tvdbTrailers, defaultTitle = 'Official Trailer') {
 
 
 module.exports = {
-  parseMedia, 
+  parseMedia,
   parseCast,
   parseDirector,
   parseWriter,
@@ -547,5 +610,7 @@ module.exports = {
   parseAnimeCreditsLink,
   getAnimeBg,
   parseAnimeCatalogMeta,
-  parseTvdbTrailers
+  parseTvdbTrailers,
+  parseAnimeRelationsLink,
+  parseAnimeGenreLink
 };

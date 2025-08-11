@@ -1,10 +1,14 @@
 const axios = require("axios");
-const { getMeta } = require("../lib/getMeta"); 
+const { it } = require("node:test");
+
+const host = process.env.HOST_NAME.startsWith('http')
+    ? process.env.HOST_NAME
+    : `https://${process.env.HOST_NAME}`;
 
 async function fetchMDBListItems(listId, apiKey, language, page) {
     const offset = (page * 20) - 20;
   try {
-    const url = `https://api.mdblist.com/lists/${listId}/items?language=${language}&limit=20&offset=${offset}&apikey=${apiKey}`;
+    const url = `https://api.mdblist.com/lists/${listId}/items?language=${language}&limit=20&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster`;
     const response = await axios.get(url);
     return [
       ...(response.data.movies || []),
@@ -48,20 +52,24 @@ async function parseMDBListItems(items, type, genreFilter, language, config) {
 
   const targetMediaType = type === 'series' ? 'show' : 'movie';
 
-  const metaPromises = filteredItems
+  const metas = filteredItems
     .filter(item => item.mediatype === targetMediaType)
-    .map(item => 
-      getMeta(type, language, `tmdb:${item.id}`, config)
-        .then(result => result.meta)
-        .catch(err => {
-          console.error(`Error fetching metadata for MDBList item tmdb:${item.id}:`, err.message);
-          return null;
-        })
-  );
+    .map(item => {
 
-  const metas = (await Promise.all(metaPromises)).filter(Boolean);
+    const fallbackPosterUrl = item.poster ? `https://image.tmdb.org/t/p/w500${item.poster}` : `https://artworks.thetvdb.com/banners/images/missing/${type}.jpg`;
+    const posterProxyUrl = `${host}/poster/${type}/tmdb:${item.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
 
-  return { metas };
+    return {
+      id: `tmdb:${item.id}`,
+      type: type,
+      name: item.title || item.name,
+      poster: posterProxyUrl,
+      year: item.release_year || null
+    };
+  }).filter(Boolean);
+
+
+  return metas;
 }
 
 module.exports = { fetchMDBListItems, getGenresFromMDBList, parseMDBListItems };

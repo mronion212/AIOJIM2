@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useConfig } from '@/contexts/ConfigContext';
 import { compressToEncodedURIComponent } from 'lz-string';
-import { InstallDialog } from '../InstallDialog'; // Correctly imports from the sibling directory
+import { InstallDialog } from '../InstallDialog'; 
+import { toast } from "sonner";
 
 export function InstallFooter() {
   const { config } = useConfig();
@@ -10,6 +11,24 @@ export function InstallFooter() {
   const [manifestUrl, setManifestUrl] = useState('');
 
   const handleOpenDialog = () => {
+    const tmdbKey = config.apiKeys.tmdb?.trim();
+    const tvdbKey = config.apiKeys.tvdb?.trim();
+    if (!tmdbKey) {
+      toast.error("TMDB API Key is Required", {
+        description: "Please go to the 'Integrations' tab and enter your TMDB API key. This is the primary data source for the addon.",
+        duration: 5000,
+      });
+      return; 
+    }
+
+    // Check for TVDB key
+    if (!tvdbKey) {
+      toast.error("TVDB API Key is Required", {
+        description: "Please go to the 'Integrations' tab and enter your TVDB API key. This is required for series and anime metadata.",
+        duration: 5000,
+      });
+      return; 
+    }
     const configToSerialize = {
       language: config.language,
       includeAdult: config.includeAdult,
