@@ -2,7 +2,7 @@ interface CatalogDefinition {
   id: string;
   name: string;
   type: 'movie' | 'series' | 'anime';
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze'; // Optional source for better categorization
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist'; // Optional source for better categorization
   isEnabledByDefault?: boolean;
   showOnHomeByDefault?: boolean;
 }

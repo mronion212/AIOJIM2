@@ -114,24 +114,42 @@ const initialConfig: AppConfig = {
   }
 };
 
+const defaultCatalogs = allCatalogDefinitions.map(c => ({
+  id: c.id,
+  name: c.name,
+  type: c.type,
+  source: c.source,
+  enabled: c.isEnabledByDefault || false,
+  showInHome: c.showOnHomeByDefault || false,
+}));
+
 
 export function ConfigProvider({ children }: { children: React.ReactNode }) {
-  // This part is all correct
   const [addonVersion, setAddonVersion] = useState<string>(' ');
   const [preloadedConfig] = useState(initializeConfigFromSources);
   const [config, setConfig] = useState<AppConfig>(() => {
     if (preloadedConfig) {
-      const definitionMap = new Map(allCatalogDefinitions.map(def => [`${def.id}-${def.type}`, def]));
-      const hydratedCatalogs = (preloadedConfig.catalogs || []).map(userCatalog => {
-        const definition = definitionMap.get(`${userCatalog.id}-${userCatalog.type}`);
-        if (definition) {
-          return {
-            ...definition, 
-            ...userCatalog, 
-          };
-        }
-        return userCatalog;
-      });
+      let hydratedCatalogs = [...defaultCatalogs];
+      
+      if (preloadedConfig.catalogs && preloadedConfig.catalogs.length > 0) {
+          const userCatalogSettings = new Map(
+              preloadedConfig.catalogs.map(c => [`${c.id}-${c.type}`, { enabled: c.enabled, showInHome: c.showInHome }])
+          );
+
+          hydratedCatalogs = hydratedCatalogs.map(defaultCatalog => {
+              const key = `${defaultCatalog.id}-${defaultCatalog.type}`;
+              if (userCatalogSettings.has(key)) {
+                  return { ...defaultCatalog, ...userCatalogSettings.get(key) };
+              }
+              return defaultCatalog;
+          });
+          
+          preloadedConfig.catalogs.forEach(userCatalog => {
+              if (!hydratedCatalogs.some(c => c.id === userCatalog.id && c.type === userCatalog.type)) {
+                  hydratedCatalogs.push(userCatalog);
+              }
+          });
+      }
       return {
         ...initialConfig,
         ...preloadedConfig,
