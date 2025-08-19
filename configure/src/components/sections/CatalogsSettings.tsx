@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { streamingServices, regions } from "@/data/streamings";
@@ -79,6 +79,14 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
     }));
   };
 
+  const handleDelete = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.filter(c => !(c.id === catalog.id && c.type === catalog.type)),
+      deletedCatalogs: [...(prev.deletedCatalogs || []), `${catalog.id}-${catalog.type}`],
+    }));
+  };
+
   return (
     <Card
       ref={setNodeRef}
@@ -132,6 +140,16 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </TooltipTrigger>
             <TooltipContent><p>{catalog.showInHome && catalog.enabled ? 'Featured on Home Board' : 'Not on Home Board'}</p></TooltipContent>
           </Tooltip>
+          {(catalog.source === 'mdblist' || catalog.source === 'streaming') && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog">
+                  <Trash2 className="h-5 w-5 text-red-500" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Remove from your catalog list</TooltipContent>
+            </Tooltip>
+          )}
         </TooltipProvider>
       </div>
     </Card>
@@ -230,7 +248,6 @@ export function CatalogsSettings() {
     }),
     [config.catalogs, config.streaming]
   );
-  const grouped = useMemo(() => groupBySource(filteredCatalogs), [filteredCatalogs]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -268,8 +285,8 @@ export function CatalogsSettings() {
                 name: def.name,
                 type: def.type,
                 source: def.source,
-                enabled: false,
-                showInHome: false,
+                enabled: true,
+                showInHome: true,
               });
             }
           }
@@ -298,13 +315,13 @@ export function CatalogsSettings() {
         prev.catalogs.map(c => [`${c.id}-${c.type}`, { enabled: c.enabled, showInHome: c.showInHome }])
       );
       const userCatalogKeys = new Set(prev.catalogs.map(c => `${c.id}-${c.type}`));
-      const missingCatalogs = defaultCatalogs.filter(def => !userCatalogKeys.has(`${def.id}-${def.type}`));
+      const missingCatalogs = defaultCatalogs.filter(def => !userCatalogKeys.has(`${def.id}-${def.type}`) && !(prev.deletedCatalogs || []).includes(`${def.id}-${def.type}`));
       // Append missing catalogs to the end of the list
       const mergedCatalogs = [
         ...prev.catalogs,
         ...missingCatalogs
       ];
-      const hydratedCatalogs = mergedCatalogs.map(defaultCatalog => {
+      const hydratedCatalogs = mergedCatalogs.filter(defaultCatalog => !(prev.deletedCatalogs || []).includes(`${defaultCatalog.id}-${defaultCatalog.type}`)).map(defaultCatalog => {
         const key = `${defaultCatalog.id}-${defaultCatalog.type}`;
         if (userCatalogSettings.has(key)) {
           return { ...defaultCatalog, ...userCatalogSettings.get(key) };
@@ -353,12 +370,8 @@ export function CatalogsSettings() {
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={catalogItemIds} strategy={verticalListSortingStrategy}>
           <div className="space-y-4">
-            {Object.entries(grouped).map(([source, groupCatalogs]) => (
-              <CollapsibleSection key={source} title={source.toUpperCase()}>
-                {groupCatalogs.map((catalog) => (
-                  <SortableCatalogItem key={`${catalog.id}-${catalog.type}`} catalog={catalog} />
-                ))}
-              </CollapsibleSection>
+            {filteredCatalogs.map((catalog) => (
+              <SortableCatalogItem key={`${catalog.id}-${catalog.type}`} catalog={catalog} />
             ))}
           </div>
         </SortableContext>

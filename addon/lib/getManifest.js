@@ -153,7 +153,8 @@ async function getManifest(config) {
   const showPrefix = config.showPrefix === true;
   const provideImdbId = config.provideImdbId === "true";
   const sessionId = config.sessionId;
-  const userCatalogs = config.catalogs || getDefaultCatalogs();
+  const deletedCatalogs = config.deletedCatalogs || [];
+  const userCatalogs = (config.catalogs || getDefaultCatalogs()).filter(c => !deletedCatalogs.includes(`${c.id}-${c.type}`));
   const translatedCatalogs = loadTranslations(language);
 
   /*const stremioAddonsConfig = {

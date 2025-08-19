@@ -275,7 +275,7 @@ export function ProvidersSettings() {
               </SelectContent>
             </Select>
             {/* FIX: Use theme-aware text color for the helper text */}
-            <p className="text-xs text-muted-foreground mt-2">"Aired Order (Default)" or "Official aired" are recommended.</p>
+            <p className="text-xs text-muted-foreground mt-2">"Aired Order (Default)" or "Official order" are recommended.</p>
         </CardContent>
       </Card>
       {/* MyAnimeList Specific Settings */}

@@ -1342,7 +1342,7 @@ async function getMovieLogo({ tmdbId, tvdbId, metaProvider, fallbackLogoUrl }, c
         });
         if (tmdbLogo) {
           console.log(`[getMovieLogo] Found TMDB logo for movie (TMDB ID: ${tmdbId})`);
-          return `https://image.tmdb.org/t/p/w500${tmdbLogo}`;
+          return `https://image.tmdb.org/t/p/original${tmdbLogo}`;
         }
       }
       else {
@@ -1355,7 +1355,7 @@ async function getMovieLogo({ tmdbId, tvdbId, metaProvider, fallbackLogoUrl }, c
           });
           if (tmdbLogo) {
             console.log(`[getMovieLogo] Found TMDB logo via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
-            return `https://image.tmdb.org/t/p/w500${tmdbLogo}`;
+            return `https://image.tmdb.org/t/p/original${tmdbLogo}`;
           }
         }
       }
@@ -1610,7 +1610,7 @@ async function getSeriesLogo({ tmdbId, tvdbId, metaProvider, fallbackLogoUrl }, 
         });
         if (tmdbLogo) {
           console.log(`[getSeriesLogo] Found TMDB logo for series (TMDB ID: ${tmdbId})`);
-          return `https://image.tmdb.org/t/p/w500${tmdbLogo}`;
+          return `https://image.tmdb.org/t/p/original${tmdbLogo}`;
         }
       }
       else {
@@ -1623,7 +1623,7 @@ async function getSeriesLogo({ tmdbId, tvdbId, metaProvider, fallbackLogoUrl }, 
           });
           if (tmdbLogo) {
             console.log(`[getSeriesLogo] Found TMDB logo via ID mapping for series (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
-            return `https://image.tmdb.org/t/p/w500${tmdbLogo}`;
+            return `https://image.tmdb.org/t/p/original${tmdbLogo}`;
           }
         }
       }

@@ -637,7 +637,7 @@ async function buildTvdbSeriesResponse(tvdbShow, tvdbEpisodes, language, config,
   // Get artwork based on art provider preference
   const tvdbPosterUrl = tvdbPosterPath ? `${tvdbPosterPath}` : null;
   const tvdbBackgroundUrl = tvdbShow.artworks?.find(a => a.type === 3)?.image;
-  const tvdbLogoUrl = tvdbShow.artworks?.find(a => a.type === 25)?.image;
+  const tvdbLogoUrl = tvdbShow.artworks?.find(a => a.type === 23)?.image;
   const [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
     Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, metaProvider: 'tvdb', fallbackPosterUrl: tvdbPosterUrl }, config),
     Utils.getSeriesBackground({ tmdbId: tmdbId, tvdbId: tvdbId, metaProvider: 'tvdb', fallbackBackgroundUrl: tvdbBackgroundUrl }, config),

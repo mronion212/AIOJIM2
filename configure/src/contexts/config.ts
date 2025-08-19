@@ -48,6 +48,7 @@ export interface AppConfig {
   searchEnabled: boolean;
   sessionId: string;
   catalogs: CatalogConfig[];
+  deletedCatalogs?: string[];
   search: {
     enabled: boolean; 
     // This is the switch for the AI layer.
