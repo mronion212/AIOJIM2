@@ -72,10 +72,8 @@ class ConfigApi {
       const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
       
       await database.saveUserConfig(userUUID, passwordHash, config);
-      // Trust the UUID if addon password was required and provided
-      if (process.env.ADDON_PASSWORD && process.env.ADDON_PASSWORD.length > 0 && addonPassword === process.env.ADDON_PASSWORD) {
-        await database.trustUUID(userUUID);
-      }
+      // Always trust the UUID after creation
+      await database.trustUUID(userUUID);
       
       // Create compressed config for URL
       const compressedConfig = compressToEncodedURIComponent(JSON.stringify(config));
@@ -156,8 +154,9 @@ class ConfigApi {
         return res.status(400).json({ error: 'Configuration data is required' });
       }
 
-      // Check addon password if one is set
-      if (process.env.ADDON_PASSWORD && process.env.ADDON_PASSWORD.length > 0) {
+      // Check if UUID is trusted
+      const isTrusted = await database.isUUIDTrusted(userUUID);
+      if (!isTrusted && process.env.ADDON_PASSWORD && process.env.ADDON_PASSWORD.length > 0) {
         if (!addonPassword || addonPassword !== process.env.ADDON_PASSWORD) {
           return res.status(401).json({ error: 'Invalid addon password. Contact the addon administrator.' });
         }
@@ -224,6 +223,8 @@ class ConfigApi {
       if (!userUUID) {
         return res.status(400).json({ error: 'Failed to migrate localStorage data' });
       }
+      // Always trust the UUID after migration
+      await database.trustUUID(userUUID);
 
       const config = await database.getUserConfig(userUUID);
       const compressedConfig = compressToEncodedURIComponent(JSON.stringify(config));

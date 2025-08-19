@@ -1,8 +1,8 @@
 const axios = require('axios');
 const { cacheWrapGlobal } = require('./getCache');
 
-const host = process.env.HOST_NAME.startsWith('http')
-  ? process.env.HOST_NAME
+const host = process.env.HOST_NAME.startsWith('http') 
+  ? process.env.HOST_NAME 
   : `https://${process.env.HOST_NAME}`;
 
 class AniListAPI {
@@ -465,7 +465,7 @@ class AniListAPI {
         }, 30 * 24 * 60 * 60); // 30 days TTL - removed custom classifier for now
         
         allResults.push(...batchResults);
-      } catch (error) {
+          } catch (error) {
         console.warn(`[AniList] Batch ${Math.floor(i/batchSize) + 1} failed:`, error.message);
         
         // If complexity error, try smaller batches

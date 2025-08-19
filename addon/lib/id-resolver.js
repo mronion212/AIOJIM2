@@ -118,6 +118,10 @@ async function resolveAllIds(stremioId, type, config, animeType = null) {
       
       allIds.imdbId = allIds.imdbId || details.external_ids?.imdb_id;
       allIds.tvdbId = allIds.tvdbId || details.external_ids?.tvdb_id;
+      if(allIds.tvdbId && type === 'series') {
+        const tvdbDetails = await tvdb.getSeriesExtended(allIds.tvdbId, config);
+        allIds.tvmazeId = allIds.tvmazeId || tvdbDetails.remoteIds?.find(id => id.sourceName === "TV Maze")?.id;
+      }
       const mapping= idMapper.getMappingByTmdbId(allIds.tmdbId, type);
       if (mapping) {
         allIds.malId = allIds.malId || mapping.mal_id;

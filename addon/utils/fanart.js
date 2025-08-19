@@ -237,6 +237,26 @@ async function getShowImages(tvdbId, config) {
   }
 }
 
+/**
+ * Selects the best Fanart image by language (user's, then English, then any), using likes as tiebreaker.
+ * @param {Array} images - Array of Fanart image objects (e.g., hdmovielogo, tvposter, etc.)
+ * @param {object} config - The user's configuration object.
+ * @param {string} key - The property for language (default: 'lang').
+ * @returns {object|undefined} The best image object, or undefined if none.
+ */
+function selectFanartImageByLang(images, config, key = 'lang') {
+  if (!Array.isArray(images) || images.length === 0) return undefined;
+  const userLang = config.language?.split('-')[0]?.toLowerCase() || 'en';
+  // Filter by user language, then English, then any
+  let filtered = images.filter(img => img[key] === userLang);
+  if (filtered.length === 0) filtered = images.filter(img => img[key] === 'en');
+  if (filtered.length === 0) filtered = images;
+  console.log(`[selectFanartImageByLang] Filtered images: ${JSON.stringify(filtered)}`);
+  // Sort by likes descending (as int)
+  filtered.sort((a, b) => parseInt(b.likes || '0') - parseInt(a.likes || '0'));
+  return filtered[0];
+}
+
 
 module.exports = {
   getBestSeriesBackground,
@@ -247,4 +267,5 @@ module.exports = {
   getShowImages,
   getBestMovieLogo,
   getBestTVLogo,
+  selectFanartImageByLang,
 };

@@ -13,6 +13,7 @@ const idMapper = require('./id-mapper');
 const fanart = require('../utils/fanart');
 const e = require("express");
 const { resolveAllIds } = require('./id-resolver');
+const { selectTmdbImageByLang } = require('../utils/parseProps');
 
 
 const processLogo = (logoUrl) => {
@@ -377,12 +378,6 @@ async function buildTmdbMovieResponse(movieData, language, config, catalogChoice
   const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w500${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/movie.jpg`;
   const tmdbBackgroundUrl = backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
   let tmdbLogoUrl = null;
-  if (Array.isArray(movieData.logos) && movieData.logos.length > 0) {
-    tmdbLogoUrl =
-      movieData.logos.find(l => l.iso_639_1 === language.split('-')[0])?.file_path ||
-      movieData.logos.find(l => l.iso_639_1 === 'en')?.file_path ||
-      movieData.logos[0].file_path;
-  }
   
   const [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
     Utils.getMoviePoster({ tmdbId, tvdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterUrl }, config),
@@ -438,12 +433,6 @@ async function buildTmdbSeriesResponse(seriesData, language, config, catalogChoi
   const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w500${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
   const tmdbBackgroundUrl = backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
   let tmdbLogoUrl = null;
-  if (Array.isArray(seriesData.logos) && seriesData.logos.length > 0) {
-    tmdbLogoUrl =
-      seriesData.logos.find(l => l.iso_639_1 === language.split('-')[0])?.file_path ||
-      seriesData.logos.find(l => l.iso_639_1 === 'en')?.file_path ||
-      seriesData.logos[0].file_path;
-  }
   const [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
     Utils.getSeriesPoster({ tmdbId, tvdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterUrl }, config),
     Utils.getSeriesBackground({ tmdbId, tvdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbBackgroundUrl }, config),
@@ -825,8 +814,13 @@ async function buildSeriesResponseFromTvmaze(tvmazeShow, language, config, catal
   const tvdbId = externals.thetvdb;
   const castCount = config.castCount === 0 ? undefined : config.castCount;
 
-  const [logoUrl, imdbRatingValue] = await Promise.all([
-    getLogo('series', { tmdbId, tvdbId }, language, tvmazeShow.language, config),
+  const tvmazePosterUrl = image?.original ? `${image.original}` : null;
+  const tvmazeBackgroundUrl = image?.original ? `${image.original}` : null;
+  const tvmazeLogoUrl = image?.original ? `${image.original}` : null;
+  const [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
+    Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, metaProvider: 'tvmaze', fallbackPosterUrl: tvmazePosterUrl }, config),
+    Utils.getSeriesBackground({ tmdbId: tmdbId, tvdbId: tvdbId, metaProvider: 'tvmaze', fallbackBackgroundUrl: tvmazeBackgroundUrl }, config),
+    Utils.getSeriesLogo({ tmdbId: tmdbId, tvdbId: tvdbId, metaProvider: 'tvmaze', fallbackLogoUrl: tvmazeLogoUrl }, config),
     getImdbRating(imdbId, 'series')
   ]);
   const imdbRating = imdbRatingValue || tvmazeShow.rating?.average?.toFixed(1) || "N/A";
@@ -840,7 +834,7 @@ async function buildSeriesResponseFromTvmaze(tvmazeShow, language, config, catal
     }))
   };
 
-  const posterProxyUrl = `${host}/poster/series/${imdbId}?fallback=${encodeURIComponent(image?.original || '')}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(poster || '')}&lang=${language}&key=${config.apiKeys?.rpdb}`;
 
   const videos = (tvmazeShow?._embedded?.episodes || []).map(episode => ({
     id: `${imdbId}:${episode.season}:${episode.number}`,
@@ -856,7 +850,7 @@ async function buildSeriesResponseFromTvmaze(tvmazeShow, language, config, catal
   }));
 
   const meta = {
-    id: imdbId? imdbId : tvdbId ? `tvdb:${tvdbId}` : `tmdb:${tmdbId}`,
+    id: `tvmaze:${tvmazeShow.id}`,
     type: 'series', 
     name: name, 
     imdb_id: imdbId,
@@ -870,7 +864,8 @@ async function buildSeriesResponseFromTvmaze(tvmazeShow, language, config, catal
     status: tvmazeShow.status,
     country: tvmazeShow.network?.country?.name || null,
     imdbRating,
-    poster: config.apiKeys?.rpdb ? posterProxyUrl : image?.original, background: image?.original,
+    poster: config.apiKeys?.rpdb ? posterProxyUrl : poster, 
+    background: background,
     logo: processLogo(logoUrl), videos,
     links: Utils.buildLinks(imdbRating, imdbId, name, 'series', tvmazeShow.genres.map(g => ({ name: g })), tmdbLikeCredits, language, castCount, catalogChoices),
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },

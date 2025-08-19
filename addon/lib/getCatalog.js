@@ -25,7 +25,7 @@ async function getCatalog(type, language, page, id, genre, config, catalogChoice
       const tvdbResults = await getTvdbCatalog(type, id, genre, page, language, config);
       return { metas: tvdbResults };
     } 
-    else if (id.startsWith('tmdb.') || id.startsWith('mdblist.')) {
+    else if (id.startsWith('tmdb.') || id.startsWith('mdblist.') || id.startsWith('streaming.')) {
       console.log(`[getCatalog] Routing to TMDB/MDBList catalog handler for id: ${id}`);
       const tmdbResults = await getTmdbAndMdbListCatalog(type, id, genre, page, language, config, catalogChoices);
       return { metas: tmdbResults };
