@@ -27,14 +27,12 @@ export function Header() {
   const [addonPasswordInput, setAddonPasswordInput] = useState("");
   const [isUUIDTrusted, setIsUUIDTrusted] = useState<boolean | null>(null);
 
-  // Extract UUID from URL if it's a Stremio URL
   useEffect(() => {
     try {
       const pathParts = window.location.pathname.split('/');
       const stremioIndex = pathParts.findIndex(p => p === 'stremio');
       if (stremioIndex !== -1 && pathParts[stremioIndex + 1]) {
         const potentialUUID = pathParts[stremioIndex + 1];
-        // Check if it's a valid UUID format
         if (potentialUUID.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
           setUuidFromUrl(potentialUUID);
           setUuidInput(potentialUUID);
@@ -43,25 +41,18 @@ export function Header() {
     } catch {}
   }, []);
 
-  // If opened from Stremio settings URL, prompt login on first load
   useEffect(() => {
     try {
-      // Check if we came from a Stremio URL (either current or in sessionStorage)
       const isFromStremio = window.location.pathname.includes('/stremio/') || 
                            sessionStorage.getItem('fromStremioSettings') === 'true';
       
       if (!auth.authenticated && isFromStremio) {
-        // Clear the flag
         sessionStorage.removeItem('fromStremioSettings');
-        // defer to ensure dialog mounts after first paint
         setTimeout(() => setIsLoginOpen(true), 100);
       }
     } catch {}
-    // run once
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Set flag when landing on Stremio URL
   useEffect(() => {
     if (window.location.pathname.includes('/stremio/')) {
       sessionStorage.setItem('fromStremioSettings', 'true');
@@ -75,7 +66,6 @@ export function Header() {
       .catch(() => setRequireAddonPassword(false));
   }, []);
 
-  // Watch for uuidInput changes and check trust status
   useEffect(() => {
     if (uuidInput && uuidInput.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
       fetch(`/api/config/is-trusted/${encodeURIComponent(uuidInput)}`)
@@ -180,14 +170,11 @@ export function Header() {
   return (
     <header className="w-full max-w-5xl flex items-center justify-between py-6 sm:py-8">
       <div className="flex items-center space-x-4">
-        {/* The Logo Image */}
         <img 
-          src="/logo.png" // This path is correct because the image is in the `public` folder
+          src="/logo.png"
           alt="AIO-Metadata Addon Logo" 
-          className="h-12 w-12 sm:h-16 sm:w-16" // Responsive size
+          className="h-12 w-12 sm:h-16 sm:w-16"
         />
-        
-        {/* The Title and Subtitle */}
         <div className="text-left">
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
             AIOMetadata <span className="text-sm text-muted-foreground">v{addonVersion}</span>
@@ -198,7 +185,6 @@ export function Header() {
         </div>
       </div>
 
-      {/* Theme Toggle and persistent Install button */}
       <div className="flex items-center gap-3">
         {isLoggedIn ? (
           <Button
@@ -210,7 +196,6 @@ export function Header() {
               toast.success('Signed out and reset configuration');
               setTimeout(() => {
                 setAuthTransitioning(false);
-                // Refresh the page to ensure clean state
                 window.location.reload();
               }, 300);
             }}
@@ -227,8 +212,6 @@ export function Header() {
         )}
         <ThemeToggle />
       </div>
-
-      {/* InstallDialog removed from header; it now lives in Configuration tab */}
 
       <Dialog
         open={isLoginOpen}
@@ -296,7 +279,7 @@ export function Header() {
             )}
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setIsLoginOpen(false)}>Cancel</Button>
-              <Button onClick={handleLogin} disabled={isLoading}>{isLoading ? 'Loading…' : 'Load'}</Button>
+              <Button onClick={handleLogin} disabled={isLoading}>{isLoading ? 'Loading\u2026' : 'Load'}</Button>
             </div>
           </div>
         </DialogContent>

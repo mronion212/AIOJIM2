@@ -33,7 +33,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [addonPassword, setAddonPassword] = useState("");
   const [requireAddonPassword, setRequireAddonPassword] = useState(false);
-  // Add state for load dialog and fields
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [loadPassword, setLoadPassword] = useState("");
   const [loadAddonPassword, setLoadAddonPassword] = useState("");
@@ -48,7 +47,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
       .catch(() => setRequireAddonPassword(false));
   }, []);
 
-  // Add effect to check trust status when savedConfig?.userUUID changes (for load dialog)
   useEffect(() => {
     if (savedConfig?.userUUID && savedConfig.userUUID.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
       fetch(`/api/config/is-trusted/${encodeURIComponent(savedConfig.userUUID)}`)
@@ -67,22 +65,15 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
     }
   }, [savedConfig?.userUUID]);
 
-  // Check if required API keys are provided
   const validateRequiredKeys = () => {
     const requiredKeys = ['tmdb', 'tvdb'];
-    
-    // Check if Fanart is selected as any art provider
     const isFanartSelected = config.artProviders?.movie === 'fanart' || 
                             config.artProviders?.series === 'fanart' || 
                             config.artProviders?.anime === 'fanart';
-    
-    // Add fanart to required keys if it's selected as an art provider
     if (isFanartSelected && !requiredKeys.includes('fanart')) {
       requiredKeys.push('fanart');
     }
-    
     const missingKeys = requiredKeys.filter(key => !config.apiKeys?.[key] || config.apiKeys[key].trim() === '');
-    
     if (missingKeys.length > 0) {
       return {
         valid: false,
@@ -90,24 +81,19 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
         message: `Missing required API keys: ${missingKeys.join(', ')}`
       };
     }
-    
     return { valid: true };
   };
 
   const handleSaveConfiguration = async () => {
     setIsLoading(true);
     setError("");
-
-    // Validate required API keys
     const validation = validateRequiredKeys();
     if (!validation.valid) {
       setError(validation.message);
       setIsLoading(false);
       return;
     }
-
     const isAuthenticated = auth.authenticated && auth.userUUID && auth.password;
-
     try {
       const response = isAuthenticated
         ? await fetch(`/api/config/update/${encodeURIComponent(auth.userUUID!)}`, {
@@ -120,9 +106,7 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ config, password, addonPassword })
           });
-
       if (!response.ok) {
-        // Try JSON first, then fall back to text
         let message = 'Failed to save configuration';
         try {
           const errorData = await response.json();
@@ -133,8 +117,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
         }
         throw new Error(message);
       }
-
-      // Parse success response robustly
       let result: any;
       try {
         result = await response.json();
@@ -143,7 +125,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
         throw new Error(text || 'Invalid JSON response from server');
       }
       setSavedConfig(result);
-      // If this was a new config creation, mark user as authenticated
       if (!isAuthenticated && result?.userUUID) {
         setAuth({ authenticated: true, userUUID: result.userUUID, password });
       }
@@ -151,7 +132,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
       setPassword("");
       setConfirmPassword("");
       setAddonPassword("");
-      
       toast.success("Configuration saved successfully!");
     } catch (err) {
       console.error('Save configuration error:', err);
@@ -191,7 +171,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
       setLoadPassword("");
       setLoadAddonPassword("");
       setLoadError("");
-      // TODO: update config context with loaded config if needed
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Failed to load configuration');
     } finally {
@@ -203,7 +182,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
 
   return (
     <div className="space-y-6">
-      {/* Configuration Status */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -215,7 +193,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* API Keys Validation */}
           <div className="space-y-2">
             <Label>Required API Keys</Label>
             <div className="space-y-2">
@@ -237,7 +214,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
             </div>
           </div>
 
-          {/* Save Configuration Button */}
           <div className="flex justify-between items-center">
             <div>
               {!validation.valid && (
@@ -282,7 +258,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                       </div>
                     </div>
                   )}
-                  
                    <div className="space-y-2">
                     <Label htmlFor="password">Password</Label>
                     <div className="relative">
@@ -305,7 +280,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">Password must be at least 6 characters long.</p>
                   </div>
-                  
                    <div className="space-y-2">
                     <Label htmlFor="confirmPassword">Confirm Password</Label>
                     <div className="relative">
@@ -328,7 +302,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">Must match the password above and be at least 6 characters.</p>
                   </div>
-                  
                   {requireAddonPassword && (
                     <div className="space-y-2">
                       <Label htmlFor="addonPassword">Addon Password</Label>
@@ -343,7 +316,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                       <p className="text-xs text-muted-foreground mt-1">Required by the addon administrator.</p>
                     </div>
                   )}
-
                   <div className="flex justify-end gap-2">
                     <Button 
                       variant="outline" 
@@ -371,8 +343,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
           </div>
         </CardContent>
       </Card>
-
-      {/* Saved Configuration Display */}
       {savedConfig && (
         <Card>
           <CardHeader>
@@ -403,7 +373,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                   </Button>
                 </div>
               </div>
-              
               <div>
                 <Label className="text-sm font-medium">Install URL</Label>
                 <div className="flex items-center gap-2 mt-1">
@@ -422,7 +391,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                 </div>
               </div>
             </div>
-            
             <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
               <div className="flex items-start gap-2">
                 <AlertCircle className="h-4 w-4 text-blue-500 mt-0.5" />
@@ -431,7 +399,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                 </span>
               </div>
             </div>
-            
             <div className="flex gap-2">
               <Dialog open={showLoadDialog} onOpenChange={setShowLoadDialog}>
                 <Button
@@ -519,7 +486,6 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
           </CardContent>
         </Card>
       )}
-
       {children}
       <InstallDialog isOpen={isInstallOpen} onClose={() => setIsInstallOpen(false)} manifestUrl={installUrl} />
     </div>

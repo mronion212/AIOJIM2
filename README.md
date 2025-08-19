@@ -1,112 +1,132 @@
-# TMDB Addon for Stremio
+# <img src="https://raw.githubusercontent.com/cedya77/aiometadata/main/public/logo.png" alt="AIOMetadata Logo" width="48" height="48" style="vertical-align:middle;"> AIOMetadata: The Ultimate Stremio Metadata Addon
 
-![TMDB](https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg)
-
-> A powerful Stremio addon that enhances your streaming experience with TMDB metadata
-
-## 🌟 Features
-
-- **Multi-language Support**: Get metadata in your preferred language
-- **Extended Catalog**: Access titles not available in Stremio's default catalog
-- **Rich Metadata**: High-quality posters, backgrounds, and detailed information
-- **TMDB Integration**: Connect with your TMDB account for personalized experience
-- **Integrations**: Watchlist Sync, Rating Support, Custom Lists
-- **Modern UI**: Beautiful and intuitive configuration interface
-- **IMDb Support**: Full compatibility with IMDb-based addons
-
-## 📥 Installation
-
-### Quick Install
-
-1. Visit the [TMDB Addon Configuration Page](https://94c8cb9f702d-tmdb-addon.baby-beamup.club/)
-2. Configure your preferences
-3. Click "Install"
-4. Approve the installation in Stremio
-
-## ⚙️ Configuration
-
-### Language Settings
-Choose from any language supported by TMDB for your metadata.
-
-### Catalog Options
-Customize which catalogs appear on your Stremio:
-- Movies
-  - Popular
-  - Year
-  - Language
-  - Trending
-- TV Shows
-  - Popular
-  - Year
-  - Language
-  - Trending
-
-### Integration Features
-- TMDB Account Connection
-- Watchlist Sync
-- Rating Posters Support
-- Custom Lists
-
-## 🛠️ Self-Hosting
-
-For detailed instructions on hosting your own instance, check our [Self-Hosting Guide](docs/self-hosting.md).
-
-### Quick Start with Docker
-```bash
-docker run -d \
-  --name tmdb-addon \
-  -p 1337:1337 \
-  -e MONGODB_URI=your_mongodb_uri \
-  -e FANART_API=your_fanart_key \
-  -e TMDB_API=your_tmdb_key \
-  -e HOST_NAME=http://your_domain:1337 \
-  mrcanelas/tmdb-addon:latest
-```
-
-## 📚 Documentation
-
-- [Self-Hosting Guide](docs/self-hosting.md) - Complete instructions for hosting your own instance
-- [Development Guide](docs/development.md) - Guide for developers and contributors
-- [Contributing Guide](docs/contributing.md) - How to contribute to the project
-- [API Documentation](docs/api.md) - Complete API reference
-
-## 🤝 Contributing
-
-We welcome contributions! Please read our [Contributing Guide](docs/contributing.md) to get started.
-
-### Development Setup
-```bash
-# Clone the repository
-git clone https://github.com/mrcanelas/tmdb-addon.git
-
-# Install dependencies
-npm install
-
-# Start development servers
-npm run dev:server  # Backend
-npm run dev         # Frontend
-```
-
-## ⚖️ License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- [TMDB](https://www.themoviedb.org/) for providing the metadata
-- [Fanart.tv](https://fanart.tv/) for additional artwork
-- [Stremio](https://www.stremio.com/) for the amazing streaming platform
-- All our [contributors](https://github.com/mrcanelas/tmdb-addon/graphs/contributors)
-
-## ⚠️ Disclaimer
-
-The metadata is provided by [TMDB](https://themoviedb.org/) and is subject to change. We cannot guarantee data validity and are not responsible for any inconveniences caused by invalid or inappropriate metadata.
+**AIOMetadata** is a next-generation, power-user-focused metadata addon for [Stremio](https://www.stremio.com/). It aggregates and enriches movie, series, and anime metadata from multiple sources (TMDB, TVDB, MyAnimeList, AniList, IMDb, TVmaze, Fanart.tv, MDBList, and more), giving you full control over catalog sources, artwork, and search.
 
 ---
 
-<p align="center">
-Made with ❤️ by the TMDB Addon community
-</p>
+## 🚀 Features
+
+- **Multi-Source Metadata**: Choose your preferred provider for each type (movie, series, anime) — TMDB, TVDB, MAL, AniList, IMDb, TVmaze, etc.
+- **Rich Artwork**: High-quality posters, backgrounds, and logos from TMDB, TVDB, Fanart.tv, AniList, and more, with language-aware selection and fallback.
+- **Anime Power**: Deep anime support with MAL, AniList, Kitsu, AniDB, and TVDB/IMDb mapping, including studio, genre, decade, and schedule catalogs.
+- **Custom Catalogs**: Add, reorder, and delete catalogs (including MDBList, streaming, and custom lists) in a sortable UI.
+- **Streaming Catalogs**: Integrate streaming provider catalogs (Netflix, Disney+, etc.) with region and monetization filters.
+- **Dynamic Search**: Enable/disable search engines per type (movie, series, anime) and use AI-powered search (Gemini) if desired.
+- **User Config & Passwords**: Secure, per-user configuration with password and optional addon password protection. Trusted UUIDs for seamless re-login.
+- **Global & Self-Healing Caching**: Redis-backed, ETag-aware, and self-healing cache for fast, reliable metadata and catalog responses.
+- **Advanced ID Mapping**: Robust mapping between all major ID systems (MAL, TMDB, TVDB, IMDb, AniList, AniDB, Kitsu, TVmaze).
+- **Modern UI**: Intuitive React/Next.js configuration interface with drag-and-drop, tooltips, and instant feedback.
+
+---
+
+## 🛠️ Installation
+
+### 1. Hosted Instance
+
+Visit your hosted instance's `/configure` page.  
+Configure your catalogs, providers, and preferences.  
+Save your config and install the generated Stremio addon URL.
+
+### 2. Self-Hosting (Docker)
+
+```bash
+git clone https://github.com/cedya77/aiometadata.git
+cd aiometadata
+cp .env.example .env   # Edit with your API keys and settings
+docker compose up -d
+```
+
+Or, standalone:
+
+```bash
+docker run -d \
+  --name aiometadata \
+  -p 1337:1337 \
+  -e TMDB_API=your_tmdb_key \
+  -e TVDB_API_KEY=your_tvdb_key \
+  -e FANART_API_KEY=your_fanart_key \
+  -e HOST_NAME=https://your-host:1337 \
+  -e REDIS_URL=redis://your_redis:6379 \
+  cedya77/aiometadata:latest
+```
+
+---
+
+## ⚙️ Configuration
+
+- **Catalogs**: Add, remove, and reorder catalogs (TMDB, TVDB, MAL, AniList, MDBList, streaming, etc.).
+- **Providers**: Set preferred metadata and artwork provider for each type.
+- **Search**: Enable/disable search engines per type; enable AI search with Gemini API key.
+- **Integrations**: Connect MDBList and more for personal lists.
+- **Security**: Set user and (optional) addon password for config protection.
+
+All configuration is managed via the `/configure` UI and saved per-user (UUID) in the database.
+
+---
+
+## 🔌 API & Endpoints
+
+- `/stremio/:userUUID/:compressedConfig/manifest.json` — Stremio manifest (per-user config)
+- `/api/config/save` — Save user config (POST)
+- `/api/config/load/:userUUID` — Load user config (POST)
+- `/api/config/update/:userUUID` — Update user config (PUT)
+- `/api/config/is-trusted/:uuid` — Check if UUID is trusted (GET)
+- `/api/cache/*` — Cache health and admin endpoints
+- `/poster/:type/:id` — Poster proxy with fallback and RPDB support
+- `/resize-image` — Image resize proxy
+- `/api/image/blur` — Image blur proxy
+
+---
+
+## 🧩 Supported Providers
+
+- **Movies/Series**: TMDB, TVDB, IMDb, TVmaze
+- **Anime**: MyAnimeList (MAL), AniList, Kitsu, AniDB, TVDB, IMDb
+- **Artwork**: TMDB, TVDB, Fanart.tv, AniList, RPDB
+- **Personal Lists**: MDBList, MAL, AniList
+- **Streaming**: Netflix, Disney+, Amazon, and more (via TMDB watch providers)
+
+---
+
+## 🧑‍💻 Development
+
+```bash
+# Backend
+npm run dev:server
+
+# Frontend
+npm run dev
+```
+
+- Edit `/addon` for backend, `/configure` for frontend.
+- Uses Redis for caching, SQLite/PostgreSQL for config storage.
+
+---
+
+## 📄 License
+
+Apache 2.0 — see [LICENSE](LICENSE).
+
+---
+
+## 🙏 Credits
+
+- [Stremio](https://www.stremio.com/)
+- [TMDB](https://www.themoviedb.org/)
+- [TVDB](https://thetvdb.com/)
+- [MyAnimeList](https://myanimelist.net/)
+- [AniList](https://anilist.co/)
+- [Fanart.tv](https://fanart.tv/)
+- [MDBList](https://mdblist.com/)
+- [RPDB](https://rpdb.net/)
+
+**Special thanks to [MrCanelas](https://github.com/mrcanelas), the original developer of the TMDB Addon for Stremio, whose work inspired and laid the groundwork for this project.**
+
+---
+
+## ⚠️ Disclaimer
+
+This addon aggregates metadata from third-party sources. Data accuracy and availability are not guaranteed.
 
 
 

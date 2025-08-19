@@ -40,7 +40,6 @@ const tvdbSeasonTypes = [
   { value: 'regional', label: 'Regional Order' },
 ];
 
-// Art provider options
 const movieArtProviders = [
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
   { value: 'tvdb', label: 'TheTVDB' },
@@ -59,7 +58,6 @@ const animeArtProviders = [
   { value: 'tvdb', label: 'TheTVDB' },
   { value: 'fanart', label: 'Fanart.tv' },
 ];
-
 
 export function ProvidersSettings() {
   const { config, setConfig } = useConfig();
@@ -102,7 +100,6 @@ export function ProvidersSettings() {
     }));
   };
 
-  // Check if Fanart is selected as any art provider
   const isFanartSelected = config.artProviders?.movie === 'fanart' || 
                           config.artProviders?.series === 'fanart' || 
                           config.artProviders?.anime === 'fanart';
@@ -111,10 +108,8 @@ export function ProvidersSettings() {
 
   return (
     <div className="space-y-8 animate-fade-in">
-      {/* Page Header */}
       <div>
         <h2 className="text-2xl font-semibold">Metadata Providers</h2>
-        {/* FIX: Use theme-aware muted text color */}
         <p className="text-muted-foreground mt-1">Choose your preferred source for metadata. Different providers may have better data for certain content.</p>
         <p className="text-xs text-amber-400 mt-4 p-3 bg-amber-900/20 border border-amber-400/30 rounded-lg">
           <strong>Smart Fallback:</strong> If metadata for a title can't be found with your preferred provider (e.g., no TVDB entry for a TMDB movie), the addon will automatically use the item's original source to guarantee you get a result.
@@ -123,7 +118,6 @@ export function ProvidersSettings() {
 
       {/* Provider Selection Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* FIX: Removed all hard-coded colors from Cards and Selects */}
         <Card>
           <CardHeader><CardTitle>Movie Provider</CardTitle><CardDescription>Source for movie data.</CardDescription></CardHeader>
           <CardContent>
@@ -165,8 +159,6 @@ export function ProvidersSettings() {
       <div>
         <h3 className="text-xl font-semibold mb-4">Art Providers</h3>
         <p className="text-muted-foreground mb-4">Choose your preferred source for images, thumbnails, and posters.</p>
-        
-        {/* Fanart API Key Warning */}
         {isFanartSelected && !hasFanartKey && (
           <div className="p-4 border border-amber-400/30 bg-amber-900/20 rounded-lg mb-4">
             <div className="flex items-center gap-2 text-amber-400">
@@ -274,7 +266,6 @@ export function ProvidersSettings() {
                 {tvdbSeasonTypes.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
               </SelectContent>
             </Select>
-            {/* FIX: Use theme-aware text color for the helper text */}
             <p className="text-xs text-muted-foreground mt-2">"Aired Order (Default)" or "Official order" are recommended.</p>
         </CardContent>
       </Card>

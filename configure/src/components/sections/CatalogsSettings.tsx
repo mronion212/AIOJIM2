@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { MDBListIntegration } from './MDBListIntegration'; // Ensure this path is correct
+import { MDBListIntegration } from './MDBListIntegration';
 import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -14,7 +14,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { streamingServices, regions } from "@/data/streamings";
 import { allCatalogDefinitions } from '@/data/catalogs';
 
-// Move groupBySource to top-level so it's always defined before use
 const groupBySource = (catalogs: CatalogConfig[]) => {
   return catalogs.reduce((acc, cat) => {
     const key = cat.source || 'Other';
@@ -36,7 +35,7 @@ const CollapsibleSection = ({ title, children }: { title: string, children: Reac
   return (
     <div className="mb-4">
       <button onClick={() => setOpen((o) => !o)} className="font-bold text-lg mb-2">
-        {open ? "▼" : "►"} {title}
+        {open ? "\u25bc" : "\u25ba"} {title}
       </button>
       {open && <div className="pl-4">{children}</div>}
     </div>
@@ -239,7 +238,6 @@ export function CatalogsSettings() {
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>(config.streaming);
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
 
-  // Only show streaming catalogs for enabled providers
   const filteredCatalogs = useMemo(() =>
     config.catalogs.filter(cat => {
       if (cat.source !== "streaming") return true;
@@ -269,13 +267,11 @@ export function CatalogsSettings() {
 
   const handleCloseStreamingDialog = () => {
     setConfig(prev => {
-      // Add missing streaming catalogs for newly selected providers
       const newCatalogs = [...prev.catalogs];
       tempSelectedProviders.forEach(serviceId => {
         ['movie', 'series'].forEach(type => {
           const catalogId = `streaming.${serviceId}`;
           if (!newCatalogs.some(c => c.id === catalogId && c.type === type)) {
-            // Find the catalog definition for this provider/type
             const def = allCatalogDefinitions.find(
               c => c.id === catalogId && c.type === type
             );
@@ -316,7 +312,6 @@ export function CatalogsSettings() {
       );
       const userCatalogKeys = new Set(prev.catalogs.map(c => `${c.id}-${c.type}`));
       const missingCatalogs = defaultCatalogs.filter(def => !userCatalogKeys.has(`${def.id}-${def.type}`) && !(prev.deletedCatalogs || []).includes(`${def.id}-${def.type}`));
-      // Append missing catalogs to the end of the list
       const mergedCatalogs = [
         ...prev.catalogs,
         ...missingCatalogs

@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { allSearchProviders } from '@/data/catalogs';
 
-
 export function SearchSettings() {
   const { config, setConfig } = useConfig();
 
@@ -59,7 +58,6 @@ export function SearchSettings() {
         <p className="text-muted-foreground mt-1">Configure your addon's search functionality.</p>
       </div>
 
-      {/* --- MASTER TOGGLE --- */}
       <Card>
         <CardContent className="p-4 pt-6 flex items-center justify-between">
             <div>
@@ -74,28 +72,8 @@ export function SearchSettings() {
         </CardContent>
       </Card>
       
-      {/* --- All other settings are conditional on the master toggle --- */}
       {config.search.enabled && (
         <div className="space-y-8 pl-4 sm:pl-6 border-l-2 border-border">
-            {/* AI Enhancement Card */}
-            {/*<Card>
-                <CardHeader>
-                  <CardTitle>AI-Powered Search</CardTitle>
-                  <CardDescription>
-                    Use Google Gemini to understand natural language queries (e.g., "movies about time travel"). This requires a Gemini API key.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex items-center justify-between">
-                    <Label htmlFor="ai-enabled" className="text-lg font-medium">Enable AI Enhancement</Label>
-                    <Switch 
-                      id="ai-enabled"
-                      checked={config.search.ai_enabled} 
-                      onCheckedChange={handleAiToggle} 
-                    />
-                </CardContent>
-            </Card>*/}
-            
-            {/* Primary Keyword Engine Card */}
             <Card>
                 <CardHeader>
                     <CardTitle>Primary Keyword Engines</CardTitle>
@@ -104,7 +82,6 @@ export function SearchSettings() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                    {/* Movie Search Provider */}
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                         <Label className="text-lg font-medium">Movies Engine:</Label>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
@@ -121,7 +98,6 @@ export function SearchSettings() {
                             />
                         </div>
                     </div>
-                    {/* Series Search Provider */}
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                         <Label className="text-lg font-medium">Series Engine:</Label>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
@@ -138,7 +114,6 @@ export function SearchSettings() {
                             />
                         </div>
                     </div>
-                    {/* Anime (Series) Search Provider */}
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                         <Label className="text-lg font-medium">Anime (Series) Engine:</Label>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
@@ -152,7 +127,6 @@ export function SearchSettings() {
                             />
                         </div>
                     </div>
-                    {/* Anime (Movies) Search Provider */}
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                         <Label className="text-lg font-medium">Anime (Movies) Engine:</Label>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
