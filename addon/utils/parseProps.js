@@ -4,6 +4,7 @@ const fanart = require('./fanart');
 const anilist = require('../lib/anilist');
 const tvdb = require('../lib/tvdb');
 const tmdb = require('../lib/getTmdb');
+const imdb = require('../lib/imdb');
 const { resolveAllIds } = require('../lib/id-resolver');
 const idMapper = require('../lib/id-mapper');
 const { selectFanartImageByLang } = require('./fanart');
@@ -335,18 +336,6 @@ function parseAnimeRelationsLink(relationsData, type, configString) {
     return [];
   }
 
-  // Extract userUUID and compressedConfig from configString if it contains both
-  let userUUID = null;
-  let compressedConfig = configString;
-  
-  // Check if configString contains both userUUID and compressed config (format: userUUID/compressedConfig)
-  if (configString && configString.includes('/')) {
-    const parts = configString.split('/');
-    if (parts.length >= 2) {
-      userUUID = parts[0];
-      compressedConfig = parts.slice(1).join('/');
-    }
-  }
 
   const relationLinks = relationsData.flatMap(relation => {
     const relationType = relation.relation;
@@ -358,15 +347,7 @@ function parseAnimeRelationsLink(relationsData, type, configString) {
       if (!entry.mal_id || !entry.name) return null;
 
       // Construct meta URL with proper UUID route if available
-      let metaUrl;
-      if (userUUID && compressedConfig) {
-        const host = process.env.HOST_NAME.startsWith('http')
-          ? process.env.HOST_NAME
-          : `https://${process.env.HOST_NAME}`;
-        metaUrl = `${host}/stremio/${userUUID}/${compressedConfig}/meta/${type}/mal:${entry.mal_id}.json`;
-      } else {
-        metaUrl = `stremio:///detail/${type}/mal:${entry.mal_id}`;
-      }
+      const metaUrl = `stremio:///detail/${type}/mal:${entry.mal_id}`;
 
       return {
         name: entry.name,
@@ -756,7 +737,6 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
 
   const mapping = idMapper.getMappingByMalId(malId);
   let id = `mal:${malId}`;
-  const kitsuId = mapping?.kitsu_id;
   if (preferredProvider === 'tvdb') {
     if (mapping && mapping.thetvdb_id) {
       id= `tvdb:${mapping.thetvdb_id}`;
@@ -846,7 +826,7 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
     });
   }
   return {
-    id: `mal:${malId}`,
+    id: id,
     type: stremioType,
     name: anime.title_english || anime.title,
     poster: finalPosterUrl,
@@ -940,7 +920,6 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
 
     const mapping = idMapper.getMappingByMalId(malId);
     let id = `mal:${malId}`;
-    const kitsuId = mapping?.kitsu_id;
     if (preferredProvider === 'tvdb') {
       if (mapping && mapping.thetvdb_id) {
         id= `tvdb:${mapping.thetvdb_id}`;
@@ -1025,7 +1004,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
     }
 
     return {
-      id: `mal:${malId}`,
+      id: id,
       type: stremioType,
       name: anime.title_english || anime.title,
       poster: finalPosterUrl,
@@ -1106,7 +1085,7 @@ function parseTvdbTrailers(tvdbTrailers, defaultTitle = 'Official Trailer') {
 /**
  * Get movie poster with art provider preference
  */
-async function getMoviePoster({ tmdbId, tvdbId, metaProvider, fallbackPosterUrl }, config) {
+async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPosterUrl }, config) {
   const artProvider = resolveArtProvider('movie', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
@@ -1185,6 +1164,23 @@ async function getMoviePoster({ tmdbId, tvdbId, metaProvider, fallbackPosterUrl 
       console.warn(`[getMoviePoster] TMDB ID mapping failed for movie (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
+  else if (artProvider === 'imdb' && metaProvider != 'imdb') {
+    if(imdbId) {
+      const meta = await imdb.getMetaFromImdb(imdbId, 'movie', config);
+
+      if (meta) {
+        return meta.poster;
+      }
+    } else if(tvdbId) {
+      const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
+      if (mappedIds.imdbId) {
+        const meta = await imdb.getMetaFromImdb(mappedIds.imdbId, 'movie', config);
+        if (meta) {
+          return meta.poster;
+        }
+      }
+    }
+  }
 
   return fallbackPosterUrl;
 }
@@ -1192,7 +1188,7 @@ async function getMoviePoster({ tmdbId, tvdbId, metaProvider, fallbackPosterUrl 
 /**
  * Get movie background with art provider preference
  */
-async function getMovieBackground({ tmdbId, tvdbId, metaProvider, fallbackBackgroundUrl }, config) {
+async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallbackBackgroundUrl }, config) {
   const artProvider = resolveArtProvider('movie', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
@@ -1272,15 +1268,21 @@ async function getMovieBackground({ tmdbId, tvdbId, metaProvider, fallbackBackgr
       console.warn(`[getMovieBackground] TMDB ID mapping failed for movie (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
-  
-  
+  else if (artProvider === 'imdb' && metaProvider != 'imdb') {
+    if(imdbId) {
+      const meta = await imdb.getMetaFromImdb(imdbId, 'movie', config);
+      if (meta) {
+        return meta.background;
+      }
+    }
+  }
   return fallbackBackgroundUrl;
 }
 
 /**
  * Get movie logo with art provider preference
  */
-async function getMovieLogo({ tmdbId, tvdbId, metaProvider, fallbackLogoUrl }, config) {
+async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogoUrl }, config) {
   const artProvider = resolveArtProvider('movie', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
@@ -1363,6 +1365,22 @@ async function getMovieLogo({ tmdbId, tvdbId, metaProvider, fallbackLogoUrl }, c
       console.warn(`[getMovieLogo] TMDB logo fetch failed for movie (TMDB ID: ${tmdbId}):`, error.message);
     }
   }
+  else if (artProvider === 'imdb' && metaProvider != 'imdb') {
+    if(imdbId) {
+      const meta = await imdb.getMetaFromImdb(imdbId, 'movie', config);
+      if (meta) {
+        return meta.logo;
+      }
+    } else if(tvdbId) {
+      const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
+      if(mappedIds.imdbId) {
+        const meta = await imdb.getMetaFromImdb(mappedIds.imdbId, 'movie', config);
+        if (meta) {
+          return meta.logo;
+        }
+      }
+    }
+  }
   
   return fallbackLogoUrl;
 }
@@ -1370,15 +1388,14 @@ async function getMovieLogo({ tmdbId, tvdbId, metaProvider, fallbackLogoUrl }, c
 /**
  * Get series poster with art provider preference
  */
-async function getSeriesPoster({ tmdbId, tvdbId, metaProvider, fallbackPosterUrl }, config) {
+async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPosterUrl }, config) {
   const artProvider = resolveArtProvider('series', config);
   
-  if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
+  if (artProvider === 'tvdb') {
     try {
       if(tvdbId) {
         const tvdbPoster = await tvdb.getSeriesPoster(tvdbId, config);
         if (tvdbPoster) {
-        console.log(`[getSeriesPoster] Found TVDB poster for series (TVDB ID: ${tvdbId})`);
         return tvdbPoster;
       }
       else {
@@ -1386,7 +1403,6 @@ async function getSeriesPoster({ tmdbId, tvdbId, metaProvider, fallbackPosterUrl
         const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config);
         if(mappedIds.tvdbId) {
           const tvdbPoster = await tvdb.getSeriesPoster(mappedIds.tvdbId, config);
-          console.log(`[getSeriesPoster] Found TVDB poster via ID mapping for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
           return tvdbPoster;
         }
       }
@@ -1402,7 +1418,6 @@ async function getSeriesPoster({ tmdbId, tvdbId, metaProvider, fallbackPosterUrl
         const images = await fanart.getShowImages(tvdbId, config);
         const poster = selectFanartImageByLang(images?.tvposter, config);
         if (poster) {
-          console.log(`[getSeriesPoster] Found Fanart.tv poster for series (TVDB ID: ${tvdbId}, lang: ${poster.lang})`);
           return poster.url;
         }
       }
@@ -1412,7 +1427,6 @@ async function getSeriesPoster({ tmdbId, tvdbId, metaProvider, fallbackPosterUrl
           const images = await fanart.getShowImages(mappedIds.tvdbId, config);
           const poster = selectFanartImageByLang(images?.tvposter, config);
           if (poster) {
-              console.log(`[getSeriesPoster] Found Fanart.tv poster via ID mapping for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId}, lang: ${poster.lang})`);
               return poster.url;
           }
         }
@@ -1431,7 +1445,6 @@ async function getSeriesPoster({ tmdbId, tvdbId, metaProvider, fallbackPosterUrl
           return img?.file_path;
         });
         if (tmdbPoster) {
-          console.log(`[getSeriesPoster] Found TMDB poster for series (TMDB ID: ${tmdbId})`);
           return `https://image.tmdb.org/t/p/w500${tmdbPoster}`;
         }
       }
@@ -1444,7 +1457,6 @@ async function getSeriesPoster({ tmdbId, tvdbId, metaProvider, fallbackPosterUrl
             return img?.file_path;
           });
           if (tmdbPoster) {
-            console.log(`[getSeriesPoster] Found TMDB poster via ID mapping for series (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
             return `https://image.tmdb.org/t/p/w500${tmdbPoster}`;
           }
         }
@@ -1453,14 +1465,30 @@ async function getSeriesPoster({ tmdbId, tvdbId, metaProvider, fallbackPosterUrl
       console.warn(`[getSeriesPoster] TMDB ID mapping failed for series (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
-  
+  else if (artProvider === 'imdb' && metaProvider != 'imdb') {
+    if(imdbId) {
+      const meta = await imdb.getMetaFromImdb(imdbId, 'series', config);
+      if (meta) {
+        return meta.poster;
+      }
+    } else if(tvdbId) {
+      const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config);
+      if(mappedIds.imdbId) {
+        const meta = await imdb.getMetaFromImdb(mappedIds.imdbId, 'series', config);
+        if (meta) {
+          return meta.poster;
+        }
+      }
+    }
+  }
+  console.log(`[getSeriesPoster] No poster found, returning fallback: ${fallbackPosterUrl}`);
   return fallbackPosterUrl;
 }
 
 /**
  * Get series background with art provider preference
  */
-async function getSeriesBackground({ tmdbId, tvdbId, metaProvider, fallbackBackgroundUrl }, config) {
+async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallbackBackgroundUrl }, config) {
   const artProvider = resolveArtProvider('series', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
@@ -1537,7 +1565,14 @@ async function getSeriesBackground({ tmdbId, tvdbId, metaProvider, fallbackBackg
       console.warn(`[getSeriesBackground] TMDB ID mapping failed for series (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
-  
+  else if (artProvider === 'imdb' && metaProvider != 'imdb') {
+    if(imdbId) {
+      const meta = await imdb.getMetaFromImdb(imdbId, 'series', config);
+      if (meta) {
+        return meta.background;
+      }
+    }
+  }
   // Fallback to meta background
   return fallbackBackgroundUrl;
 }
@@ -1545,7 +1580,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, metaProvider, fallbackBackg
 /**
  * Get series logo with art provider preference
  */
-async function getSeriesLogo({ tmdbId, tvdbId, metaProvider, fallbackLogoUrl }, config) {
+async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogoUrl }, config) {
   const artProvider = resolveArtProvider('series', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
@@ -1631,7 +1666,14 @@ async function getSeriesLogo({ tmdbId, tvdbId, metaProvider, fallbackLogoUrl }, 
       console.warn(`[getSeriesLogo] TMDB logo fetch failed for series (TMDB ID: ${tmdbId}):`, error.message);
     }
   }
-  
+  else if (artProvider === 'imdb' && metaProvider != 'imdb') {
+    if(imdbId) {
+      const meta = await imdb.getMetaFromImdb(imdbId, 'series', config);
+      if (meta) {
+        return meta.logo;
+      }
+    }
+  }
   return fallbackLogoUrl;
 
 }

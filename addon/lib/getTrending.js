@@ -1,5 +1,7 @@
 require("dotenv").config();
 const moviedb = require("./getTmdb");
+const Utils = require('../utils/parseProps');
+const { resolveAllIds } = require('./id-resolver');
 //const { isAnime } = require("../utils/isAnime");
 //const { getGenreList } = require('./getGenreList');
 
@@ -18,20 +20,55 @@ async function getTrending(type, language, page, genre, config, catalogChoices) 
     //const genreList = await getGenreList(language, type);
     const res = await moviedb.trending(parameters, config);
 
-    const metas = res.results.map(item => {
+    const metas = await Promise.all(res.results.map(async item => {
+      // Determine preferred meta provider
+      let preferredProvider;
+      if (type === 'movie') {
+        preferredProvider = config.providers?.movie || 'tmdb';
+      } else {
+        preferredProvider = config.providers?.series || 'tvdb';
+      }
+      const allIds = await resolveAllIds(`tmdb:${item.id}`, type, config);
+      let stremioId;
+      if (preferredProvider === 'tvdb' && allIds.tvdbId) {
+        stremioId = `tvdb:${allIds.tvdbId}`;
+      } else if (preferredProvider === 'tmdb' && allIds.tmdbId) {
+        stremioId = `tmdb:${allIds.tmdbId}`;
+      } else if (preferredProvider === 'imdb' && allIds.imdbId) {
+        stremioId = allIds.imdbId;
+      } else {
+        stremioId = `tmdb:${item.id}`; // fallback
+      }
       const tmdbPosterFullUrl = item.poster_path
-            ? `${TMDB_IMAGE_BASE}${item.poster_path}`
-            : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`; 
-
-    const posterProxyUrl = `${host}/poster/${type}/tmdb:${item.id}?fallback=${encodeURIComponent(tmdbPosterFullUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+        ? `${TMDB_IMAGE_BASE}${item.poster_path}`
+        : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
+      let posterUrl;
+      if (type === 'movie') {
+        posterUrl = await Utils.getMoviePoster({
+          tmdbId: allIds.tmdbId,
+          tvdbId: allIds.tvdbId,
+          imdbId: allIds.imdbId,
+          metaProvider: preferredProvider,
+          fallbackPosterUrl: tmdbPosterFullUrl
+        }, config);
+      } else {
+        posterUrl = await Utils.getSeriesPoster({
+          tmdbId: allIds.tmdbId,
+          tvdbId: allIds.tvdbId,
+          imdbId: allIds.imdbId,
+          metaProvider: preferredProvider,
+          fallbackPosterUrl: tmdbPosterFullUrl
+        }, config);
+      }
+      const posterProxyUrl = `${host}/poster/${type}/${stremioId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
       return {
-        id: `tmdb:${item.id}`,
+        id: stremioId,
         type: type,
         name: item.title || item.name,
         poster: posterProxyUrl,
         year: (item.release_date || item.first_air_date || '').substring(0, 4),
       };
-    });
+    }));
 
     return { metas };
 

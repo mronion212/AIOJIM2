@@ -19,54 +19,111 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
   const [isChecking, setIsChecking] = useState(false);
   const [customListUrl, setCustomListUrl] = useState("");
 
-  const validateApiKey = useCallback(async (key: string, isRefresh: boolean = false): Promise<boolean> => {
-    if (!key) {
-      setIsValid(false);
+  const validateApiKey = useCallback(async (isRefresh = false) => {
+    if (!tempKey) {
+      toast.error("Please enter your MDBList API key.");
       return false;
     }
+
     setIsChecking(true);
     try {
-      const response = await fetch(`https://api.mdblist.com/lists/user?apikey=${key}`);
-      if (!response.ok) throw new Error(`Failed to fetch lists (Status: ${response.status})`);
-      
+      const response = await fetch(`https://api.mdblist.com/lists/user?apikey=${tempKey}`);
+      if (!response.ok) {
+        throw new Error(`API request failed (Status: ${response.status})`);
+      }
+
       const listsFromApi = await response.json();
-      const newCatalogsFromApi = listsFromApi.map((list: any) => ({
-        id: `mdblist.${list.id}`,
-        name: list.name,
-        type: list.mediatype === "movie" ? "movie" : "series",
-        enabled: true,
-        showInHome: true,
-        source: 'mdblist',
-      }));
+      if (!Array.isArray(listsFromApi)) {
+        throw new Error("Invalid response format from MDBList API");
+      }
 
       let newListsAddedCount = 0;
-      
+      let restoredListsCount = 0;
+
       setConfig(prev => {
+        const currentMdbCatalogs = prev.catalogs.filter(c => c.id.startsWith("mdblist."));
+        const existingMdbListIds = new Set(currentMdbCatalogs.map(c => c.id));
         const otherCatalogs = prev.catalogs.filter(c => !c.id.startsWith("mdblist."));
-        const existingMdbListIds = new Set(prev.catalogs.filter(c => c.id.startsWith("mdblist.")).map(c => c.id));
+        
+        let newCatalogs = [...otherCatalogs];
+        let newDeletedCatalogs = [...(prev.deletedCatalogs || [])];
 
-        const updatedMdbCatalogs = [...prev.catalogs.filter(c => c.id.startsWith("mdblist."))];
-
-        newCatalogsFromApi.forEach((apiCatalog: CatalogConfig) => {
-            if (!existingMdbListIds.has(apiCatalog.id)) {
-                updatedMdbCatalogs.push(apiCatalog);
-                newListsAddedCount++;
+        // Process each list from the API
+        listsFromApi.forEach((list: any) => {
+          const type = list.mediatype === "movie" ? "movie" : "series";
+          const catalogId = `mdblist.${list.id}`;
+          const catalogKey = `${catalogId}-${type}`;
+          
+          // Check if this catalog was previously deleted
+          const wasDeleted = newDeletedCatalogs.includes(catalogKey);
+          
+          // Check if catalog already exists
+          const existingCatalog = newCatalogs.find(c => c.id === catalogId && c.type === type);
+          
+          if (!existingCatalog) {
+            // Add new catalog
+            const newCatalog: CatalogConfig = {
+              id: catalogId,
+              type,
+              name: list.name,
+              enabled: true,
+              showInHome: true,
+              source: 'mdblist',
+            };
+            newCatalogs.push(newCatalog);
+            
+            // Remove from deletedCatalogs if it was there
+            if (wasDeleted) {
+              newDeletedCatalogs = newDeletedCatalogs.filter(key => key !== catalogKey);
+              restoredListsCount++;
+            } else {
+              newListsAddedCount++;
             }
+          } else {
+            // Catalog exists, ensure it's enabled and remove from deletedCatalogs
+            if (!existingCatalog.enabled) {
+              existingCatalog.enabled = true;
+              existingCatalog.showInHome = true;
+            }
+            
+            // Always remove from deletedCatalogs if it was there (regardless of whether it was disabled)
+            if (wasDeleted) {
+              newDeletedCatalogs = newDeletedCatalogs.filter(key => key !== catalogKey);
+              restoredListsCount++;
+            }
+          }
+        });
+
+        // Remove any MDBList catalogs from deletedCatalogs that are now active
+        newDeletedCatalogs = newDeletedCatalogs.filter(key => {
+          const [catalogId, type] = key.split('-');
+          if (!catalogId.startsWith('mdblist.')) return true; // Keep non-MDBList deleted catalogs
+          
+          // Check if this MDBList catalog is now active
+          const isActive = newCatalogs.some(c => 
+            c.id === catalogId && c.type === type && c.enabled
+          );
+          return !isActive; // Keep in deletedCatalogs only if not active
         });
 
         return {
           ...prev,
-          catalogs: [...otherCatalogs, ...updatedMdbCatalogs],
+          catalogs: newCatalogs,
+          deletedCatalogs: newDeletedCatalogs,
         };
       });
 
       if (isRefresh) {
-        if (newListsAddedCount > 0) {
+        if (newListsAddedCount > 0 || restoredListsCount > 0) {
+          const message = [];
+          if (newListsAddedCount > 0) message.push(`${newListsAddedCount} new list(s) added`);
+          if (restoredListsCount > 0) message.push(`${restoredListsCount} previously deleted list(s) restored`);
+          
           toast.success("Lists Refreshed", {
-            description: `${newListsAddedCount} new list(s) were found and added to your catalogs.`
+            description: message.join(', ') + " to your catalogs."
           });
         } else {
-          const currentMdbListCount = newCatalogsFromApi.length;
+          const currentMdbListCount = listsFromApi.length;
           toast.info("Lists Up to Date", {
             description: `No new lists found. Your ${currentMdbListCount} MDBList catalog(s) are already synced.`
           });
@@ -75,7 +132,6 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         toast.success(`Successfully imported ${listsFromApi.length} lists from your MDBList account.`);
       }
     
-      
       setIsValid(true);
       return true;
     } catch (error) {
@@ -86,7 +142,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     } finally {
       setIsChecking(false);
     }
-  }, [setConfig]);
+  }, [setConfig, tempKey]);
 
   const handleSave = () => {
     if (isValid) {
@@ -125,7 +181,16 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             toast.info(`List "${list.name}" is already in your catalog list.`);
             return prev;
         }
-        return { ...prev, catalogs: [...prev.catalogs, newCatalog] };
+        
+        // Remove from deletedCatalogs if it was previously deleted
+        const catalogKey = `${newCatalog.id}-${newCatalog.type}`;
+        const newDeletedCatalogs = (prev.deletedCatalogs || []).filter(key => key !== catalogKey);
+        
+        return { 
+          ...prev, 
+          catalogs: [...prev.catalogs, newCatalog],
+          deletedCatalogs: newDeletedCatalogs,
+        };
       });
 
       toast.success("List Added", { description: `The list "${list.name}" has been added to your catalogs.` });
@@ -166,7 +231,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         <DialogFooter className="sm:justify-between">
             <div>
               {isValid && (
-                <Button variant="outline" onClick={() => validateApiKey(tempKey, true)} disabled={isChecking}>
+                <Button variant="outline" onClick={() => validateApiKey(true)} disabled={isChecking}>
                   {isChecking ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Refreshing...</>) : ("Refresh My Lists")}
                 </Button>
               )}
@@ -177,7 +242,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                 {isValid ? (
                   <Button onClick={handleSave}>Save & Close</Button>
                 ) : (
-                  <Button onClick={() => validateApiKey(tempKey, false)} disabled={!tempKey || isChecking}>
+                  <Button onClick={() => validateApiKey(false)} disabled={!tempKey || isChecking}>
                     {isChecking ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Checking...</>) : ("Check Key & Import My Lists")}
                   </Button>
                 )}
@@ -187,3 +252,4 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     </Dialog>
   );
 }
+

@@ -47,20 +47,20 @@ if (ENABLE_CACHE_WARMING && !NO_CACHE) {
 
 const getCacheHeaders = function (opts) {
   opts = opts || {};
-  if (!Object.keys(opts).length) return false;
   let cacheHeaders = {
     cacheMaxAge: "max-age",
     staleRevalidate: "stale-while-revalidate",
     staleError: "stale-if-error",
   };
-  return Object.keys(cacheHeaders)
+  const headerParts = Object.keys(cacheHeaders)
     .map((prop) => {
       const value = opts[prop];
       if (!value) return false;
       return cacheHeaders[prop] + "=" + value;
     })
-    .filter((val) => !!val)
-    .join(", ");
+    .filter((val) => !!val);
+  
+  return headerParts.length > 0 ? headerParts.join(", ") : false;
 };
 
 const respond = function (req, res, data, opts) {
@@ -88,16 +88,23 @@ const respond = function (req, res, data, opts) {
     const etag = `W/"${etagHash}"`;
 
     res.setHeader('ETag', etag);
-    res.setHeader('Cache-Control', 'public'); // It's public, but must be validated
 
     if (req.headers['if-none-match'] === etag) {
+      console.log('[Cache] Browser cache hit - returning 304 for ETag:', etag);
       res.status(304).end(); // The browser's cache is fresh.
       return;
     }
 
     const cacheControl = getCacheHeaders(opts);
     if (cacheControl) {
-      res.setHeader("Cache-Control", `${cacheControl}, public`);
+      const fullCacheControl = `${cacheControl}, public`;
+      res.setHeader("Cache-Control", fullCacheControl);
+      console.log('[Cache] Setting Cache-Control:', fullCacheControl);
+    } else {
+      // Set a reasonable default cache control if none provided
+      const defaultCacheControl = "public, max-age=3600"; // 1 hour default
+      res.setHeader("Cache-Control", defaultCacheControl);
+      console.log('[Cache] Setting default Cache-Control:', defaultCacheControl);
     }
   }
   
@@ -229,37 +236,36 @@ addon.get("/session_id", async function (req, res) { const s = await getSessionI
 // --- UUID-based Manifest Route for Public Instances ---
 addon.get("/stremio/:userUUID/:compressedConfig/manifest.json", async function (req, res) {
     const { userUUID, compressedConfig } = req.params;
-    
     try {
         // Try to load config from database first
         const config = await database.getUserConfig(userUUID);
-        
         if (config) {
-            // Use database config
-            const manifest = await cacheWrap(`manifest:${userUUID}`, async () => {
-                console.log(`[Manifest] Cache miss for user: ${userUUID}. Building fresh manifest.`);
-                return await getManifest(config);
-            }, 12 * 60 * 60, NO_CACHE);
-            
+            console.log(`[Manifest] Building fresh manifest for user: ${userUUID}`);
+            const manifest = await getManifest(config);
             if (!manifest) {
                 return res.status(500).send({ err: "Failed to build manifest." });
             }
-            
-            const cacheOpts = { cacheMaxAge: 1 * 60 * 60 };
+            // Use shorter cache time and add cache-busting for catalog changes
+            const cacheOpts = { 
+                cacheMaxAge: 5 * 60, // 5 minutes instead of 1 hour
+                staleRevalidate: 60 * 60, // 1 hour stale-while-revalidate
+                staleError: 24 * 60 * 60 // 24 hours stale-if-error
+            };
             respond(req, res, manifest, cacheOpts);
         } else {
             // Fallback to compressed config in URL
             const config = parseConfig(compressedConfig) || {};
-            const manifest = await cacheWrap(`manifest:${compressedConfig}`, async () => {
-                console.log(`[Manifest] Cache miss for compressed config. Building fresh manifest.`);
-                return await getManifest(config);
-            }, 12 * 60 * 60, NO_CACHE);
-            
+            console.log(`[Manifest] Building fresh manifest for compressed config`);
+            const manifest = await getManifest(config);
             if (!manifest) {
                 return res.status(500).send({ err: "Failed to build manifest." });
             }
-            
-            const cacheOpts = { cacheMaxAge: 1 * 60 * 60 };
+            // Use shorter cache time and add cache-busting for catalog changes
+            const cacheOpts = { 
+                cacheMaxAge: 5 * 60, // 5 minutes instead of 1 hour
+                staleRevalidate: 60 * 60, // 1 hour stale-while-revalidate
+                staleError: 24 * 60 * 60 // 24 hours stale-if-error
+            };
             respond(req, res, manifest, cacheOpts);
         }
     } catch (error) {
@@ -268,140 +274,7 @@ addon.get("/stremio/:userUUID/:compressedConfig/manifest.json", async function (
     }
 });
 
-// --- Catalog & Search Route (with enhanced caching) ---
-addon.get("/:catalogChoices?/catalog/:type/:id/:extra?.json", async function (req, res) {
-  const { catalogChoices, type, id, extra } = req.params;
-  const config = parseConfig(catalogChoices) || {};
-  const language = config.language || DEFAULT_LANGUAGE;
-  const sessionId = config.sessionId;
 
-  const isStaticCatalog = ['mal.decade80s', 'mal.decade90s', 'mal.decade00s', 'mal.decade10s'].includes(id);
-  const cacheWrapper = isStaticCatalog ? cacheWrapStaticCatalog : cacheWrapCatalog;
-
-  const catalogKey = `${id}:${type}:${JSON.stringify(extra || {})}`;
-  
-  // Enhanced caching options for better error handling
-  const cacheOptions = {
-    enableErrorCaching: true,
-    maxRetries: 2, // Allow retries for temporary failures
-  };
-  
-  try {
-    const responseData = await cacheWrapper(catalogChoices, catalogKey, async () => {
-      let metas = []; 
-      
-      if (id.includes('search')) {
-        const extraArgs = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
-        const searchResult = await getSearch(id, type, language, extraArgs, config);
-        metas = searchResult.metas || [];
-      } else {
-        const { genre: genreName, type_filter,  skip } = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
-        const pageSize = 25;
-        const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
-        const args = [type, language, page];
-        switch (id) {
-          // --- Dynamic Catalogs (will use 1-hour cache) ---
-          case "tmdb.trending":
-            metas = (await getTrending(...args, genreName, config, catalogChoices)).metas;
-            break;
-          case "tmdb.favorites":
-            metas = (await getFavorites(...args, genreName, sessionId, config)).metas;
-            break;
-          case "tmdb.watchlist":
-            metas = (await getWatchList(...args, genreName, sessionId, config)).metas;
-            break;
-          case "tvdb.genres":
-            metas = (await  getCatalog(type, language, page, id, genreName, config, catalogChoices)).metas;
-            break;
-          case 'mal.airing':
-          case 'mal.upcoming':
-          case 'mal.decade20s': {
-            const animeResults = id === 'mal.airing'
-              ? await jikan.getAiringNow(page, config)
-              : id === 'mal.upcoming'
-                ? await jikan.getUpcoming(page, config)
-                : await jikan.getTopAnimeByDateRange('2020-01-01', '2029-12-31', page, config);
-            metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            break;
-          }
-          case 'mal.genres': {
-            const mediaType = type_filter ||'series';
-            const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
-              console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
-              return await jikan.getAnimeGenres();
-             });
-            const genreNameToFetch = genreName || allAnimeGenres[0]?.name;
-            if (genreNameToFetch) {
-              const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
-              if (selectedGenre) {
-                const genreId = selectedGenre.mal_id;
-                const animeResults = await jikan.getAnimeByGenre(genreId, mediaType, page, config);
-                metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-              }
-            }
-            break;
-          }
-
-          case 'mal.schedule': {
-            
-            const dayOfWeek = genreName || 'Monday'; 
-            const animeResults = await jikan.getAiringSchedule(dayOfWeek, page, config);
-            metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            break;
-          }
-
-          case 'mal.studios': {
-            if (genreName) {
-                console.log(`[Catalog] Fetching anime for MAL studio: ${genreName}`);
-                const studios = await cacheWrapJikanApi('mal-studios', () => jikan.getStudios(100));
-                const selectedStudio = studios.find(studio => {
-                    const defaultTitle = studio.titles.find(t => t.type === 'Default');
-                    return defaultTitle && defaultTitle.title === genreName;
-                });
-        
-                if (selectedStudio) {
-                    const studioId = selectedStudio.mal_id;
-                    const animeResults = await jikan.getAnimeByStudio(studioId, page);
-                    metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-                } else {
-                    console.warn(`[Catalog] Could not find a MAL ID for studio name: ${genreName}`);
-                }
-            }
-            break;
-          }
-
-          case 'mal.decade80s':
-          case 'mal.decade90s':
-          case 'mal.decade00s':
-          case 'mal.decade10s':
-            const decadeMap = {
-              'mal.decade80s': ['1980-01-01', '1989-12-31'],
-              'mal.decade90s': ['1990-01-01', '1999-12-31'],
-              'mal.decade00s': ['2000-01-01', '2009-12-31'],
-              'mal.decade10s': ['2010-01-01', '2019-12-31'],
-            };
-            const [startDate, endDate] = decadeMap[id];
-            const animeResults = await jikan.getTopAnimeByDateRange(startDate, endDate, page, config);
-            metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            break;
-          
-          default:
-            metas = (await getCatalog(type, language, page, id, genreName, config, catalogChoices)).metas;
-            break;
-        }
-      }
-      return { metas: metas || [] };
-    }, undefined, cacheOptions);
-    const httpCacheOpts = isStaticCatalog 
-        ? { cacheMaxAge: 24 * 60 * 60 }
-        : { cacheMaxAge: 1 * 60 * 60 }; 
-    respond(req, res, responseData, httpCacheOpts);
-
-  } catch (e) {
-    console.error(`Error in catalog route for id "${id}" and type "${type}":`, e);
-    return res.status(500).send("Internal Server Error");
-  }
-});
 
 // --- Catalog Route under /stremio/:userUUID/:catalogChoices prefix ---
 addon.get("/stremio/:userUUID/:catalogChoices/catalog/:type/:id/:extra?.json", async function (req, res) {
@@ -446,6 +319,12 @@ addon.get("/stremio/:userUUID/:catalogChoices/catalog/:type/:id/:extra?.json", a
           case "tvdb.genres":
             metas = (await  getCatalog(type, language, page, id, genreName, config, catalogChoices)).metas;
             break;
+          case "tvdb.collections": {
+            // TVDB expects 0-based page
+            const tvdbPage = Math.max(0, page - 1);
+            metas = (await getCatalog(type, language, tvdbPage, id, genreName, config, catalogChoices)).metas;
+            break;
+          }
           case 'mal.airing':
           case 'mal.upcoming':
           case 'mal.decade20s': {
@@ -538,7 +417,6 @@ addon.get("/stremio/:userUUID/:catalogChoices/meta/:type/:id.json", async functi
   const config = parseConfig(catalogChoices) || {};
   const language = config.language || DEFAULT_LANGUAGE;
   const fullConfig = config; 
-  
   // Enhanced caching options for better error handling
   const cacheOptions = {
     enableErrorCaching: true,
@@ -571,6 +449,9 @@ addon.get("/stremio/:userUUID/:catalogChoices/meta/:type/:id.json", async functi
     } else if (type === "series") {
       const hasEnded = result.meta.status === 'Ended';
       cacheOpts.cacheMaxAge = (hasEnded ? 7 : 1) * 24 * 60 * 60; // 7 days for ended, 1 day for running
+    } else {
+      // Default cache for other types (anime, etc.)
+      cacheOpts.cacheMaxAge = 7 * 24 * 60 * 60; // 7 days default
     }
     
     respond(req, res, result, cacheOpts);
@@ -694,6 +575,63 @@ addon.get('/api/config/addon-info', (req, res) => {
     requiresAddonPassword: !!process.env.ADDON_PASSWORD,
     addonVersion: ADDON_VERSION
   });
+});
+
+// --- Admin: Prune all ID mappings ---
+addon.post('/api/admin/prune-id-mappings', async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    await database.pruneAllIdMappings();
+    res.json({ success: true, message: 'All id_mappings pruned.' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Debug endpoint to help troubleshoot catalog issues
+addon.get("/api/debug/catalogs/:userUUID", async function (req, res) {
+  const { userUUID } = req.params;
+  try {
+    const config = await database.getUserConfig(userUUID);
+    if (!config) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    const streamingCatalogs = config.catalogs?.filter(c => c.source === 'streaming') || [];
+    const mdblistCatalogs = config.catalogs?.filter(c => c.source === 'mdblist') || [];
+    const deletedCatalogs = config.deletedCatalogs || [];
+    
+    res.json({
+      userUUID,
+      streaming: config.streaming || [],
+      catalogs: {
+        total: config.catalogs?.length || 0,
+        streaming: streamingCatalogs.length,
+        mdblist: mdblistCatalogs.length,
+        other: (config.catalogs?.length || 0) - streamingCatalogs.length - mdblistCatalogs.length
+      },
+      streamingCatalogs: streamingCatalogs.map(c => ({
+        id: c.id,
+        type: c.type,
+        enabled: c.enabled,
+        showInHome: c.showInHome
+      })),
+      mdblistCatalogs: mdblistCatalogs.map(c => ({
+        id: c.id,
+        type: c.type,
+        enabled: c.enabled,
+        showInHome: c.showInHome
+      })),
+      deletedCatalogs,
+      manifest: await getManifest(config)
+    });
+  } catch (error) {
+    console.error(`[Debug] Error for user ${userUUID}:`, error);
+    res.status(500).json({ error: "Failed to get debug info" });
+  }
 });
 
 module.exports = addon;

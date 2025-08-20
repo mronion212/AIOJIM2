@@ -1,5 +1,6 @@
 const axios = require('axios');
 const https = require('https');
+const { cacheWrapGlobal } = require('./getCache');
 
 // Use the same robust agent to ensure network stability
 const robustAgent = new https.Agent({
@@ -54,7 +55,56 @@ async function getMultipleAnimeDetails(ids) {
   }
 }
 
+/**
+ * Fetches episode data for an anime by its Kitsu ID.
+ * @param {string|number} kitsuId - The Kitsu anime ID.
+ * @returns {Promise<Array>} A promise that resolves to an array of episode objects.
+ */
+async function getAnimeEpisodes(kitsuId) {
+  if (!kitsuId) return [];
+  
+  const cacheKey = `kitsu-episodes:${kitsuId}`;
+  const cacheTTL = 3600; // 1 hour cache for episode data
+  
+  return cacheWrapGlobal(cacheKey, async () => {
+    console.log(`[Kitsu Client] Fetching episodes for ID ${kitsuId}`);
+    
+    const allEpisodes = [];
+    let nextUrl = `${KITSU_API_URL}/anime/${kitsuId}/episodes?page[limit]=20`;
+    
+    try {
+      while (nextUrl) {
+        const response = await axios.get(nextUrl, {
+          httpsAgent: robustAgent,
+          timeout: 10000,
+        });
+        
+        const data = response.data;
+        if (data?.data) {
+          allEpisodes.push(...data.data);
+          console.log(`[Kitsu Client] Fetched ${data.data.length} episodes (total so far: ${allEpisodes.length})`);
+        }
+        
+        // Check if there's a next page
+        nextUrl = data?.links?.next || null;
+        
+        // Add a small delay to be respectful to the API
+        if (nextUrl) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+      
+      console.log(`[Kitsu Client] Total episodes fetched: ${allEpisodes.length}`);
+      return allEpisodes;
+    } catch (error) {
+      console.error(`[Kitsu Client] Error fetching episodes for ID ${kitsuId}:`, error.message);
+      return [];
+    }
+  }, cacheTTL);
+}
+
 module.exports = {
   searchByName,
   getMultipleAnimeDetails,
+  getAnimeEpisodes,
 };

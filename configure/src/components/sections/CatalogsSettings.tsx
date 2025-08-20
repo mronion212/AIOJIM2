@@ -260,21 +260,102 @@ export function CatalogsSettings() {
 
   const catalogItemIds = filteredCatalogs.map(c => `${c.id}-${c.type}`);
 
+  // Helper function to get actual selected streaming services from catalogs
+  const getActualSelectedStreamingServices = (): string[] => {
+    const streamingCatalogs = config.catalogs?.filter(c => c.source === 'streaming' && c.enabled) || [];
+    const serviceIds = new Set<string>();
+    
+    streamingCatalogs.forEach(catalog => {
+      const serviceId = catalog.id.replace('streaming.', '');
+      serviceIds.add(serviceId);
+    });
+    
+    return Array.from(serviceIds);
+  };
+
   const handleOpenStreamingDialog = () => {
-    setTempSelectedProviders(config.streaming);
+    // Use actual selected services from catalogs, not just config.streaming
+    const actualSelectedServices = getActualSelectedStreamingServices();
+    setTempSelectedProviders(actualSelectedServices);
     setStreamingDialogOpen(true);
   };
 
   const handleCloseStreamingDialog = () => {
     setConfig(prev => {
-      const newCatalogs = [...prev.catalogs];
-      tempSelectedProviders.forEach(serviceId => {
+      // Get current streaming services
+      const currentStreaming = prev.streaming || [];
+      const newStreaming = tempSelectedProviders;
+      
+      // Find services that were added or removed
+      const addedServices = newStreaming.filter(service => !currentStreaming.includes(service));
+      const removedServices = currentStreaming.filter(service => !newStreaming.includes(service));
+      
+      let newCatalogs = [...prev.catalogs];
+      let newDeletedCatalogs = [...(prev.deletedCatalogs || [])];
+      
+      // Remove catalogs for services that were deselected
+      removedServices.forEach(serviceId => {
         ['movie', 'series'].forEach(type => {
           const catalogId = `streaming.${serviceId}`;
-          if (!newCatalogs.some(c => c.id === catalogId && c.type === type)) {
-            const def = allCatalogDefinitions.find(
-              c => c.id === catalogId && c.type === type
-            );
+          const catalogKey = `${catalogId}-${type}`;
+          
+          // Remove from catalogs
+          newCatalogs = newCatalogs.filter(c => !(c.id === catalogId && c.type === type));
+          
+          // Add to deletedCatalogs if not already there
+          if (!newDeletedCatalogs.includes(catalogKey)) {
+            newDeletedCatalogs.push(catalogKey);
+          }
+        });
+      });
+      
+      // Add catalogs for services that were selected
+      addedServices.forEach(serviceId => {
+        ['movie', 'series'].forEach(type => {
+          const catalogId = `streaming.${serviceId}`;
+          const catalogKey = `${catalogId}-${type}`;
+          
+          // Remove from deletedCatalogs if it was previously deleted
+          newDeletedCatalogs = newDeletedCatalogs.filter(key => key !== catalogKey);
+          
+          // Check if catalog already exists
+          const existingCatalog = newCatalogs.find(c => c.id === catalogId && c.type === type);
+          if (!existingCatalog) {
+            // Find the catalog definition
+            const def = allCatalogDefinitions.find(c => c.id === catalogId && c.type === type);
+            if (def) {
+              newCatalogs.push({
+                id: def.id,
+                name: def.name,
+                type: def.type,
+                source: def.source,
+                enabled: true, // Always enabled by default
+                showInHome: true, // Always shown in home by default
+              });
+            }
+          } else {
+            // If catalog exists but was disabled, re-enable it
+            if (!existingCatalog.enabled) {
+              existingCatalog.enabled = true;
+              existingCatalog.showInHome = true;
+            }
+          }
+        });
+      });
+      
+      // Also handle services that are still selected but might have been deleted before
+      newStreaming.forEach(serviceId => {
+        ['movie', 'series'].forEach(type => {
+          const catalogId = `streaming.${serviceId}`;
+          const catalogKey = `${catalogId}-${type}`;
+          
+          // Remove from deletedCatalogs if it was previously deleted
+          newDeletedCatalogs = newDeletedCatalogs.filter(key => key !== catalogKey);
+          
+          // Ensure catalog exists and is enabled
+          const existingCatalog = newCatalogs.find(c => c.id === catalogId && c.type === type);
+          if (!existingCatalog) {
+            const def = allCatalogDefinitions.find(c => c.id === catalogId && c.type === type);
             if (def) {
               newCatalogs.push({
                 id: def.id,
@@ -288,10 +369,12 @@ export function CatalogsSettings() {
           }
         });
       });
+      
       return {
         ...prev,
-        streaming: tempSelectedProviders,
+        streaming: newStreaming,
         catalogs: newCatalogs,
+        deletedCatalogs: newDeletedCatalogs,
       };
     });
     setStreamingDialogOpen(false);

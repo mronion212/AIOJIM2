@@ -133,19 +133,42 @@ function getOptionsForCatalog(catalogDef, type, showInHome, { years, genres_movi
 }
 
 async function createMDBListCatalog(userCatalog, mdblistKey) {
-  const listId = userCatalog.id.split(".")[1];
-  const genres = await getGenresFromMDBList(listId, mdblistKey);
-  console.log(`[Manifest] Creating MDBList catalog for list ID: ${listId}, Genres: ${genres.length}`);
-  return {
-    id: userCatalog.id,
-    type: userCatalog.type,
-    name: userCatalog.name,
-    pageSize: 20,
-    extra: [
-      { name: "genre", options: genres, isRequired: userCatalog.showInHome ? false : true },
-      { name: "skip" },
-    ],
-  };
+  try {
+    console.log(`[Manifest] Creating MDBList catalog: ${userCatalog.id} (${userCatalog.type})`);
+    const listId = userCatalog.id.split(".")[1];
+    console.log(`[Manifest] MDBList list ID: ${listId}, API key present: ${!!mdblistKey}`);
+    
+    let genres = [];
+    try {
+      genres = await getGenresFromMDBList(listId, mdblistKey);
+      console.log(`[Manifest] MDBList genres fetched: ${genres.length} genres`);
+    } catch (genreError) {
+      console.warn(`[Manifest] Failed to fetch MDBList genres for ${listId}, using fallback:`, genreError.message);
+      // Use fallback genres if API call fails
+      genres = [
+        "Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", 
+        "Drama", "Family", "Fantasy", "History", "Horror", "Music", "Mystery", 
+        "Romance", "Science Fiction", "Thriller", "War", "Western"
+      ];
+    }
+    
+    const catalog = {
+      id: userCatalog.id,
+      type: userCatalog.type,
+      name: userCatalog.name,
+      pageSize: 20,
+      extra: [
+        { name: "genre", options: genres, isRequired: userCatalog.showInHome ? false : true },
+        { name: "skip" },
+      ],
+    };
+    
+    console.log(`[Manifest] MDBList catalog created successfully: ${catalog.id}`);
+    return catalog;
+  } catch (error) {
+    console.error(`[Manifest] Error creating MDBList catalog ${userCatalog.id}:`, error.message);
+    return null; // Return null instead of throwing to prevent manifest failure
+  }
 }
 
 async function getManifest(config) {
@@ -157,12 +180,11 @@ async function getManifest(config) {
   const userCatalogs = (config.catalogs || getDefaultCatalogs()).filter(c => !deletedCatalogs.includes(`${c.id}-${c.type}`));
   const translatedCatalogs = loadTranslations(language);
 
-  /*const stremioAddonsConfig = {
-    issuer: "https://stremio-addons.net",
-    signature: "eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..DTiTHmYyIbuTMPJB35cqsw.S2C6xuCL9OoHJbtX97v-2w3IM4iFqr2Qy4xRRlvyzIY2fZAcwmm6JUMdsc2LSTigIPQeGPomaqX53ECt23cJKuH-IKs4hHLH4sLYRZNL_VC0YefQNrWjMRZ75Yz-bVx3.DJZBtIb1bOCq6Z62AMUGvw"
-  }*/
 
   const enabledCatalogs = userCatalogs.filter(c => c.enabled);
+  console.log(`[Manifest] Total catalogs: ${userCatalogs.length}, Enabled: ${enabledCatalogs.length}`);
+  console.log(`[Manifest] MDBList catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('mdblist.')).map(c => c.id));
+  
   const years = generateArrayOfYears(20);
   const genres_movie = (await getGenreList('tmdb', language, "movie", config)).map(g => g.name).sort();
   const genres_series = (await getGenreList('tmdb', language, "series", config)).map(g => g.name).sort();
@@ -176,24 +198,45 @@ async function getManifest(config) {
   let catalogs = await Promise.all(enabledCatalogs
     .filter(userCatalog => {
       const catalogDef = getCatalogDefinition(userCatalog.id);
-      if (isMDBList(userCatalog.id)) return true;
-      if (!catalogDef) return false;
-      if (catalogDef.requiresAuth && !sessionId) return false;
+      if (isMDBList(userCatalog.id)) {
+        console.log(`[Manifest] MDBList catalog ${userCatalog.id} passed filter`);
+        return true;
+      }
+      if (!catalogDef) {
+        console.log(`[Manifest] Catalog ${userCatalog.id} failed filter: no catalog definition`);
+        return false;
+      }
+      if (catalogDef.requiresAuth && !sessionId) {
+        console.log(`[Manifest] Catalog ${userCatalog.id} failed filter: requires auth but no session`);
+        return false;
+      }
       return true;
     })
     .map(async (userCatalog) => {
       if (isMDBList(userCatalog.id)) {
-          return createMDBListCatalog(userCatalog, config.apiKeys?.mdblist);
+          console.log(`[Manifest] Processing MDBList catalog: ${userCatalog.id}`);
+          const result = await createMDBListCatalog(userCatalog, config.apiKeys?.mdblist);
+          console.log(`[Manifest] MDBList catalog result:`, result ? 'success' : 'failed');
+          return result;
       }
       const catalogDef = getCatalogDefinition(userCatalog.id);
       let catalogOptions = [];
 
-      if (userCatalog.id.startsWith('tvdb.')) {
+      if (userCatalog.id.startsWith('tvdb.') && !userCatalog.id.includes('collections')) {
         console.log('[Manifest] Building TVDB genres catalog options...');
         const excludedGenres = ['awards show', 'podcast', 'game show', 'news'];
         catalogOptions = genres_tvdb_all
           .filter(name => !excludedGenres.includes(name.toLowerCase()))
           .sort();
+      }
+      else if (userCatalog.id === 'tvdb.collections') {
+        return {
+          id: 'tvdb.collections',
+          type: 'series',
+          name: showPrefix ? "AIOMetadata - " + translatedCatalogs['tvdb_collections'] : translatedCatalogs['tvdb_collections'],
+          pageSize: 20,
+          extra: [{ name: 'skip' }]
+        };
       }
       else if (userCatalog.id === 'mal.genres') {
           const animeGenres = await cacheWrapJikanApi('anime-genres', async () => {
@@ -341,7 +384,7 @@ async function getManifest(config) {
     description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source. Also includes an optional AI search powered by Gemini.",
     resources: ["catalog", "meta"],
     types: ["movie", "series", "anime.movie", "anime.series", "anime"],
-    idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:"],
+    idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:", "tvdbc:"],
     //stremioAddonsConfig,
     behaviorHints: {
       configurable: true,
@@ -367,12 +410,14 @@ function getDefaultCatalogs() {
     }))
   );
   const tvdbCatalogs = defaultTvdbCatalogs.flatMap(id =>
-    defaultTypes.map(type => ({
-      id: `tvdb.${id}`,
-      type,
-      showInHome: false,
-      enabled: true 
-    }))
+    id === 'collections'
+      ? [{ id: `tvdb.${id}`, type: 'series', showInHome: false, enabled: true }]
+      : defaultTypes.map(type => ({
+          id: `tvdb.${id}`,
+          type,
+          showInHome: false,
+          enabled: true 
+        }))
   );
   const malCatalogs = defaultMalCatalogs.map(id => ({
     id: `mal.${id}`,
@@ -380,13 +425,14 @@ function getDefaultCatalogs() {
     showInHome: !['genres', 'schedule'].includes(id),
     enabled: true 
   }));
+
   const streamingCatalogs = defaultStreamingCatalogs.flatMap(id =>
     defaultTypes.map(type => ({
-      id: `streaming.${id}`,
-      type,
-      showInHome: false,
-      enabled: true
-    }))
+    id: `streaming.${id}`,
+    type,
+    showInHome: false,
+    enabled: true
+  }))
   );
 
   return [...tmdbCatalogs, ...tvdbCatalogs, ...malCatalogs, ...streamingCatalogs];

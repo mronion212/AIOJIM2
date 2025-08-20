@@ -19,6 +19,7 @@ export const baseCatalogs: CatalogDefinition[] = [
   { id: 'tmdb.language', name: 'TMDB By Language (Series)', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: false },
   { id: 'tvdb.genres', name: 'TVDB Genres (Movies)', type: 'movie', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
   { id: 'tvdb.genres', name: 'TVDB Genres (Series)', type: 'series', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
+  { id: 'tvdb.collections', name: 'TVDB Collections', type: 'series', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
 ];
 
 // --- Catalogs sourced from MyAnimeList ---
@@ -56,8 +57,8 @@ export const streamingCatalogs: StreamingCatalogDefinition[] = streamingServices
     name: `${service.name} (Movies)` ,
     type: 'movie',
     source: 'streaming',
-    isEnabledByDefault: false,
-    showOnHomeByDefault: false,
+    isEnabledByDefault: true,
+    showOnHomeByDefault: true,
     regions: Object.entries(regions)
       .filter(([country, ids]) => ids.includes(service.id))
       .map(([country]) => country),
@@ -68,8 +69,8 @@ export const streamingCatalogs: StreamingCatalogDefinition[] = streamingServices
     name: `${service.name} (Series)` ,
     type: 'series',
     source: 'streaming',
-    isEnabledByDefault: false,
-    showOnHomeByDefault: false,
+    isEnabledByDefault: true,
+    showOnHomeByDefault: true,
     regions: Object.entries(regions)
       .filter(([country, ids]) => ids.includes(service.id))
       .map(([country]) => country),

@@ -287,6 +287,9 @@ class Database {
   async saveIdMapping(contentType, tmdbId = null, tvdbId = null, imdbId = null, tvmazeId = null) {
     // Skip if no IDs provided
     if (!tmdbId && !tvdbId && !imdbId && !tvmazeId) return;
+    // Skip if only one ID is non-null
+    const ids = [tmdbId, tvdbId, imdbId, tvmazeId].filter(Boolean);
+    if (ids.length <= 1) return;
 
     if (this.type === 'sqlite') {
       await this.runQuery(
@@ -402,6 +405,15 @@ class Database {
       ? 'DELETE FROM trusted_uuids WHERE user_uuid = ?'
       : 'DELETE FROM trusted_uuids WHERE user_uuid = $1';
     await this.runQuery(query, [userUUID]);
+  }
+
+  // Prune all id_mappings (delete all rows)
+  async pruneAllIdMappings() {
+    const query = this.type === 'sqlite'
+      ? 'DELETE FROM id_mappings'
+      : 'DELETE FROM id_mappings';
+    await this.runQuery(query);
+    console.log('[Database] Pruned all id_mappings.');
   }
 
   async close() {

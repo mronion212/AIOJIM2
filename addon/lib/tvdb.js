@@ -193,7 +193,6 @@ async function findByImdbId(imdbId, config) {
     const match = data.data?.[0]; 
 
     if (match) {
-        console.log(`[TVDB] Found match for remote ID ${imdbId}: TVDB ID ${match.id} (Type: ${match.type})`);
         return match;
     }
     return null;
@@ -424,6 +423,64 @@ async function getMovieLogo(tvdbId, config) {
   }
 }
 
+/**
+ * Fetch all TVDB collections (lists)
+ */
+async function getCollectionsList(config, page = 0) {
+  const token = await getAuthToken(config.apiKeys?.tvdb);
+  if (!token) return [];
+  try {
+    const url = `${TVDB_API_URL}/lists?page=${page}`;
+    const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    console.error(`[TVDB] Error fetching collections list:`, error.message);
+    return [];
+  }
+}
+
+/**
+ * Fetch details for a specific TVDB collection (list)
+ */
+async function getCollectionDetails(collectionId, config) {
+  return cacheWrapTvdbApi(`collection-details:${collectionId}`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb);
+    if (!token) return null;
+    try {
+      const url = `${TVDB_API_URL}/lists/${collectionId}/extended`;
+      const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.data;
+    } catch (error) {
+      console.error(`[TVDB] Error fetching collection details for ID ${collectionId}:`, error.message);
+      return null;
+    }
+  });
+}
+
+/**
+ * Fetch translations for a specific TVDB collection (list)
+ */
+async function getCollectionTranslations(collectionId, language, config) {
+  return cacheWrapTvdbApi(`collection-translations:${collectionId}:${language}`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb);
+    if (!token) return null;
+    try {
+      const url = `${TVDB_API_URL}/lists/${collectionId}/translations/${language}`;
+      const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.data;
+    } catch (error) {
+      console.error(`[TVDB] Error fetching collection translations for ID ${collectionId}, lang ${language}:`, error.message);
+      return null;
+    }
+  });
+}
+
 module.exports = {
   searchSeries,
   searchMovies,
@@ -441,5 +498,8 @@ module.exports = {
   getMoviePoster,
   getMovieBackground,
   getSeriesLogo,
-  getMovieLogo
+  getMovieLogo,
+  getCollectionsList,
+  getCollectionDetails,
+  getCollectionTranslations
 };

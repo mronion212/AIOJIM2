@@ -48,6 +48,53 @@ const SELF_HEALING_CONFIG = {
 const inFlightRequests = new Map();
 const cacheValidator = require('./cacheValidator');
 
+/**
+ * Truncate long cache keys for better log readability
+ */
+function truncateCacheKey(key, maxLength = 80) {
+  if (key.length <= maxLength) return key;
+  
+  // Try to preserve the most important parts: version, cache type, and catalog info
+  const parts = key.split(':');
+  if (parts.length >= 4) {
+    const version = parts[0];
+    const cacheType = parts[1];
+    const catalogInfo = parts.slice(2).join(':');
+    
+    // If we have catalog info (like tmdb.top:series:{}), try to preserve it
+    if (catalogInfo.includes('.') && catalogInfo.includes(':')) {
+      const catalogParts = catalogInfo.split(':');
+      const catalogProvider = catalogParts[0]; // e.g., "tmdb.top"
+      const catalogType = catalogParts[1]; // e.g., "series"
+      const catalogParams = catalogParts.slice(2).join(':'); // e.g., "{}"
+      
+      const availableLength = maxLength - version.length - cacheType.length - catalogProvider.length - catalogType.length - catalogParams.length - 6; // 6 for colons and "..."
+      
+      if (availableLength > 10) {
+        // We have enough space to show some of the config string
+        return `${version}:${cacheType}:${catalogProvider}:${catalogType}:${catalogParams.substring(0, availableLength)}...`;
+      } else {
+        // Not enough space, just show the essential parts
+        return `${version}:${cacheType}:${catalogProvider}:${catalogType}:...`;
+      }
+    }
+  }
+  
+  // Fallback: preserve version and cache type, truncate the rest
+  if (parts.length >= 3) {
+    const version = parts[0];
+    const cacheType = parts[1];
+    const remaining = parts.slice(2).join(':');
+    
+    if (remaining.length > maxLength - version.length - cacheType.length - 10) {
+      const truncated = remaining.substring(0, maxLength - version.length - cacheType.length - 10);
+      return `${version}:${cacheType}:${truncated}...`;
+    }
+  }
+  
+  return key.substring(0, maxLength - 3) + '...';
+}
+
 function safeParseConfigString(configString) {
   try {
     if (!configString) return null;
@@ -325,19 +372,19 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
           if (parsed.error && parsed.type === 'TEMPORARY_ERROR') {
             const errorAge = Date.now() - new Date(parsed.timestamp).getTime();
             if (errorAge > ERROR_TTL_STRATEGIES.TEMPORARY_ERROR * 1000) {
-              console.log(`[Global Cache] Retrying expired temporary error for ${versionedKey}`);
+              console.log(`🔄 [Global Cache] Retrying expired temporary error for ${truncateCacheKey(versionedKey)}`);
               await redis.del(versionedKey);
             } else {
-              console.log(`[Global Cache] HIT (cached error) for ${versionedKey}`);
+              console.log(`❌ [Global Cache] HIT (cached error) for ${truncateCacheKey(versionedKey)}`);
               updateCacheHealth(versionedKey, 'hit', true);
               return parsed;
             }
           } else if (parsed.error) {
-            console.log(`[Global Cache] HIT (cached error) for ${versionedKey}`);
+            console.log(`❌ [Global Cache] HIT (cached error) for ${truncateCacheKey(versionedKey)}`);
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           } else {
-            console.log(`[Global Cache] HIT for ${versionedKey}`);
+            console.log(`✅ [Global Cache] HIT for ${truncateCacheKey(versionedKey)}`);
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           }
@@ -356,7 +403,7 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
 
   try {
     const result = await promise;
-      console.log(`[Global Cache] MISS for ${versionedKey}`);
+      console.log(`❌ [Global Cache] MISS for ${truncateCacheKey(versionedKey)}`);
       updateCacheHealth(versionedKey, 'miss', true);
 
       const classification = resultClassifier(result);
@@ -364,7 +411,7 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
 
       // Skip caching if result classifier says so
       if (classification.type === 'SKIP_CACHE') {
-        console.log(`[Global Cache] Skipping cache for ${versionedKey} as requested by classifier`);
+        console.log(`⏭️ [Global Cache] Skipping cache for ${truncateCacheKey(versionedKey)} as requested by classifier`);
         return result;
       }
 
@@ -402,7 +449,7 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
       // Retry logic for temporary errors
       if (retries < maxRetries && (error.status >= 500 || error.message?.includes('timeout'))) {
         retries++;
-        console.log(`[Global Cache] Retrying ${versionedKey} (attempt ${retries}/${maxRetries})`);
+        console.log(`🔄 [Global Cache] Retrying ${truncateCacheKey(versionedKey)} (attempt ${retries}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, SELF_HEALING_CONFIG.retryDelay));
         continue;
       }
@@ -546,6 +593,25 @@ function clearCacheHealth() {
   console.log('[Cache Health] Statistics cleared');
 }
 
+/**
+ * Clear a specific cache key from Redis
+ */
+async function clearCache(key) {
+  if (!redis) {
+    console.warn('[Cache] Redis not available, cannot clear cache');
+    return;
+  }
+  
+  try {
+    const result = await redis.del(key);
+    console.log(`[Cache] Cleared key: ${key} (${result} keys removed)`);
+    return result;
+  } catch (error) {
+    console.error(`[Cache] Failed to clear key ${key}:`, error.message);
+    throw error;
+  }
+}
+
 module.exports = {
   redis,
   cacheWrap,
@@ -556,6 +622,7 @@ module.exports = {
   cacheWrapMeta,
   getCacheHealth,
   clearCacheHealth,
+  clearCache,
   logCacheHealth,
   cacheWrapTvdbApi,
   cacheWrapTvmazeApi

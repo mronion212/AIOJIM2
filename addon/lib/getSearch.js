@@ -44,13 +44,35 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
                    || overviewTranslations.find(t => t.language === 'eng')?.overview
                    || extendedRecord.overview;
   
-  const tmdbId = extendedRecord.remoteIds?.find(id => id.sourceName === 'TheMovieDB')?.id;
+  const tmdbId = extendedRecord.remoteIds?.find(id => id.sourceName === 'TheMovieDB.com')?.id;
+  const imdbId = extendedRecord.remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
+  const tvmazeId = extendedRecord.remoteIds?.find(id => id.sourceName === 'TV Maze')?.id;
   const tvdbId = extendedRecord.id;
+  // found the following ids
+  console.log(JSON.stringify({tmdbId, imdbId, tvmazeId, tvdbId}));
   var fallbackImage = extendedRecord.image === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : extendedRecord.image;
-  const posterUrl = await Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, metaProvider: 'tvdb', fallbackPosterUrl: fallbackImage }, config);
+  const posterUrl = type === 'movie' ? await Utils.getMoviePoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: fallbackImage }, config) : await Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: fallbackImage }, config);
   const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  
+  let preferredProvider;
+  if (type === 'movie') {
+    preferredProvider = config.providers?.movie || 'tmdb';
+  } else {
+    preferredProvider = config.providers?.series || 'tvdb';
+  }
+  let stremioId;
+  if (preferredProvider === 'tvmaze') {
+    stremioId = `tvmaze:${tvmazeId}`;
+  }
+   else if (preferredProvider === 'tmdb' && tmdbId) {
+    stremioId = `tmdb:${tmdbId}`;
+  } else if (preferredProvider === 'imdb' && imdbId) {
+    stremioId = imdbId;
+  } else {
+    stremioId = `tvdb:${extendedRecord.id}`; // fallback
+  }
   return {
-    id: `tvdb:${extendedRecord.id}`,
+    id: stremioId,
     type: type,
     name: translatedName, 
     poster: config.apiKeys?.rpdb ? posterProxyUrl : posterUrl,
@@ -64,11 +86,11 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
   let searchResults = [];
   switch(type){
     case 'movie':
-      searchResults = await jikan.searchAnime('movie', query, 25, config);
+      searchResults = await jikan.searchAnime('movie', query, 25, config, page);
       break;
     case 'series':
       const desiredTvTypes = new Set(['tv', 'ova', 'ona']);
-      searchResults = await jikan.searchAnime('anime', query, 25, config);
+      searchResults = await jikan.searchAnime('anime', query, 25, config, page);
       searchResults = searchResults.filter(item => {
         return typeof item?.type === 'string' && desiredTvTypes.has(item.type.toLowerCase());
       });
@@ -129,16 +151,42 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         
         const parsed = Utils.parseMedia(media, media.media_type, genreList); 
         if (!parsed) return null;
+        const imdbId = media.external_ids?.imdb_id;
+        const tvdbId = media.external_ids?.thetvdb_id;
 
         const tmdbPosterFullUrl = media.poster_path
             ? `https://image.tmdb.org/t/p/w500${media.poster_path}`
             : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`; 
-        const posterUrl = await Utils.getSeriesPoster({ tmdbId: media.id, tvdbId: null, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterFullUrl }, config);
+        const posterUrl = await Utils.getSeriesPoster({ tmdbId: media.id, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterFullUrl }, config);
 
         const posterProxyUrl = `${host}/poster/${mediaType}/tmdb:${media.id}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
 
         parsed.poster = config.apiKeys?.rpdb ? posterProxyUrl : posterUrl;
         parsed.popularity = media.popularity;
+        let preferredProvider;
+        if (type === 'movie') {
+          preferredProvider = config.providers?.movie || 'tmdb';
+        } else {
+          preferredProvider = config.providers?.series || 'tvdb';
+        }
+        let stremioId;
+        if (preferredProvider === 'tvdb' && tvdbId) {
+          stremioId = `tvdb:${tvdbId}`;
+        } else if (preferredProvider === 'tvmaze') {
+          if(tvdbId) {
+            const allIds = await resolveAllIds(`tvdb:${tvdbId}`, type, config);
+            if(allIds.tvmazeId) {
+              stremioId = `tvmaze:${allIds.tvmazeId}`;
+            }
+          }
+        } else if (preferredProvider === 'tmdb' && media.id) {
+          stremioId = `tmdb:${media.id}`;
+        } else if (preferredProvider === 'imdb' && imdbId) {
+          stremioId = imdbId;
+        } else {
+          stremioId = `tmdb:${media.id}`; 
+        }
+        parsed.id = stremioId;
         return parsed;
     });
 
@@ -344,10 +392,24 @@ function parseTvmazeResult(show, config) {
   if (!show || !show.id || !show.name) return null;
 
   const imdbId = show.externals?.imdb;
+  const tvdbId = show.externals?.thetvdb;
+  const tmdbId = show.externals?.themoviedb;
+  // use preferred provider id as id. tvmaze are type series only.
+  const preferredProvider = config.providers?.series || 'tvdb';
+  let stremioId;
+  if (preferredProvider === 'tvdb' && tvdbId) {
+    stremioId = `tvdb:${tvdbId}`;
+  } else if (preferredProvider === 'tmdb' && tmdbId) {
+    stremioId = `tmdb:${tmdbId}`;
+  } else if (preferredProvider === 'imdb' && imdbId) {
+    stremioId = imdbId;
+  } else {
+    stremioId = `tvmaze:${show.id}`;
+  }
   var fallbackImage = show.image === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : show.image.original;
   const posterProxyUrl = `${host}/poster/series/${imdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`;
   return {
-    id: `tvmaze:${show.id}`,
+    id: stremioId,
     type: 'series',
     name: show.name,
     poster: show.image ? show.image.medium : null,

@@ -22,6 +22,10 @@
     "genres": {
       "nameKey": "tvdb_genres",
       "extraSupported": ["genre", "skip"]
+    },
+    "collections": {
+      "nameKey": "tvdb_collections",
+      "extraSupported": ["skip"]
     }
   },
   "mal": {

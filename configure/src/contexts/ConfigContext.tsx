@@ -204,7 +204,6 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
         const envResponse = await fetch('/api/config');
         if (!isMounted) return;
         const envApiKeys = await envResponse.json();
-        console.log('[Config] Server API keys loaded:', envApiKeys);
         setAddonVersion(envApiKeys.addonVersion || ' ');
 
         // Layer in the server keys with the correct priority.
