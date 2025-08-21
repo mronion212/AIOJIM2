@@ -1,7 +1,6 @@
-const database = require('./database');
-const { compressToEncodedURIComponent, decompressFromEncodedURIComponent } = require('lz-string');
 const crypto = require('crypto');
-const { clearCache } = require('./getCache');
+const { compressToEncodedURIComponent } = require('lz-string');
+const database = require('./database');
 
 class ConfigApi {
   constructor() {
@@ -76,14 +75,6 @@ class ConfigApi {
       // Always trust the UUID after creation
       await database.trustUUID(userUUID);
       
-      // Clear any cached manifest for this user to ensure fresh manifest on next request
-      try {
-        await clearCache(`manifest:${userUUID}`);
-        console.log(`[ConfigApi] Cleared cached manifest for user: ${userUUID}`);
-      } catch (cacheError) {
-        console.warn(`[ConfigApi] Failed to clear cached manifest for user ${userUUID}:`, cacheError.message);
-      }
-      
       // Create compressed config for URL
       const compressedConfig = compressToEncodedURIComponent(JSON.stringify(config));
       
@@ -92,9 +83,7 @@ class ConfigApi {
         ? (hostEnv.startsWith('http') ? hostEnv : `https://${hostEnv}`)
         : `https://${req.get('host')}`;
 
-      // Add timestamp to bust browser cache for catalog changes
-      const timestamp = Date.now();
-      const installUrl = `${baseUrl}/stremio/${userUUID}/${compressedConfig}/manifest.json?t=${timestamp}`;
+      const installUrl = `${baseUrl}/stremio/${userUUID}/${compressedConfig}/manifest.json`;
 
       res.json({
         success: true,
@@ -240,6 +229,7 @@ class ConfigApi {
       await database.trustUUID(userUUID);
 
       const config = await database.getUserConfig(userUUID);
+      
       const compressedConfig = compressToEncodedURIComponent(JSON.stringify(config));
 
       const hostEnv3 = process.env.HOST_NAME;

@@ -46,16 +46,11 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         const otherCatalogs = prev.catalogs.filter(c => !c.id.startsWith("mdblist."));
         
         let newCatalogs = [...otherCatalogs];
-        let newDeletedCatalogs = [...(prev.deletedCatalogs || [])];
 
         // Process each list from the API
         listsFromApi.forEach((list: any) => {
           const type = list.mediatype === "movie" ? "movie" : "series";
           const catalogId = `mdblist.${list.id}`;
-          const catalogKey = `${catalogId}-${type}`;
-          
-          // Check if this catalog was previously deleted
-          const wasDeleted = newDeletedCatalogs.includes(catalogKey);
           
           // Check if catalog already exists
           const existingCatalog = newCatalogs.find(c => c.id === catalogId && c.type === type);
@@ -71,45 +66,20 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               source: 'mdblist',
             };
             newCatalogs.push(newCatalog);
-            
-            // Remove from deletedCatalogs if it was there
-            if (wasDeleted) {
-              newDeletedCatalogs = newDeletedCatalogs.filter(key => key !== catalogKey);
-              restoredListsCount++;
-            } else {
-              newListsAddedCount++;
-            }
+            newListsAddedCount++;
           } else {
-            // Catalog exists, ensure it's enabled and remove from deletedCatalogs
+            // Catalog exists, ensure it's enabled
             if (!existingCatalog.enabled) {
               existingCatalog.enabled = true;
               existingCatalog.showInHome = true;
-            }
-            
-            // Always remove from deletedCatalogs if it was there (regardless of whether it was disabled)
-            if (wasDeleted) {
-              newDeletedCatalogs = newDeletedCatalogs.filter(key => key !== catalogKey);
               restoredListsCount++;
             }
           }
         });
 
-        // Remove any MDBList catalogs from deletedCatalogs that are now active
-        newDeletedCatalogs = newDeletedCatalogs.filter(key => {
-          const [catalogId, type] = key.split('-');
-          if (!catalogId.startsWith('mdblist.')) return true; // Keep non-MDBList deleted catalogs
-          
-          // Check if this MDBList catalog is now active
-          const isActive = newCatalogs.some(c => 
-            c.id === catalogId && c.type === type && c.enabled
-          );
-          return !isActive; // Keep in deletedCatalogs only if not active
-        });
-
         return {
           ...prev,
           catalogs: newCatalogs,
-          deletedCatalogs: newDeletedCatalogs,
         };
       });
 
@@ -182,14 +152,9 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             return prev;
         }
         
-        // Remove from deletedCatalogs if it was previously deleted
-        const catalogKey = `${newCatalog.id}-${newCatalog.type}`;
-        const newDeletedCatalogs = (prev.deletedCatalogs || []).filter(key => key !== catalogKey);
-        
         return { 
           ...prev, 
           catalogs: [...prev.catalogs, newCatalog],
-          deletedCatalogs: newDeletedCatalogs,
         };
       });
 

@@ -74,8 +74,17 @@ const respond = function (req, res, data, opts) {
     const configString = req.params.catalogChoices || '';
     let etagContent = ADDON_VERSION + JSON.stringify(data) + configString;
     
+    // For manifest routes, include catalog information in ETag for immediate cache invalidation
+    if (req.route && req.route.path && req.route.path.includes('/manifest.json')) {
+      const config = parseConfig(configString) || {};
+      const catalogInfo = {
+        catalogs: config.catalogs || [],
+        streaming: config.streaming || []
+      };
+      etagContent += JSON.stringify(catalogInfo);
+    }
     // For meta routes, include provider-specific info in ETag for immediate cache invalidation
-    if (req.route && req.route.path && req.route.path.includes('/meta/')) {
+    else if (req.route && req.route.path && req.route.path.includes('/meta/')) {
       const config = parseConfig(configString) || {};
       const providerInfo = {
         providers: config.providers || {},
@@ -602,7 +611,6 @@ addon.get("/api/debug/catalogs/:userUUID", async function (req, res) {
     
     const streamingCatalogs = config.catalogs?.filter(c => c.source === 'streaming') || [];
     const mdblistCatalogs = config.catalogs?.filter(c => c.source === 'mdblist') || [];
-    const deletedCatalogs = config.deletedCatalogs || [];
     
     res.json({
       userUUID,
@@ -625,7 +633,6 @@ addon.get("/api/debug/catalogs/:userUUID", async function (req, res) {
         enabled: c.enabled,
         showInHome: c.showInHome
       })),
-      deletedCatalogs,
       manifest: await getManifest(config)
     });
   } catch (error) {

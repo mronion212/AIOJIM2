@@ -1,4 +1,4 @@
-# ![AIOMETADATA](https://github.com/cedya77/aiometadata/blob/dev/public/logo.png) AIOMetadata: The Ultimate Stremio Metadata Addon
+# <img src="https://raw.githubusercontent.com/cedya77/aiometadata/main/public/logo.png" alt="AIOMetadata Logo" width="48" height="48" style="vertical-align:middle;"> AIOMetadata: The Ultimate Stremio Metadata Addon
 
 **AIOMetadata** is a next-generation, power-user-focused metadata addon for [Stremio](https://www.stremio.com/). It aggregates and enriches movie, series, and anime metadata from multiple sources (TMDB, TVDB, MyAnimeList, AniList, IMDb, TVmaze, Fanart.tv, MDBList, and more), giving you full control over catalog sources, artwork, and search.
 

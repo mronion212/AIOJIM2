@@ -287,7 +287,7 @@ async function getMeta(type, language, stremioId, config = {}, catalogChoices) {
     let meta;
     console.log(`[Meta] Starting process for ${stremioId} (type: ${type}, language: ${language})`);
     const allIds = await resolveAllIds(stremioId, type, config);
-    const isAnime = allIds.malId || allIds.kitsuId || allIds.anidbId || allIds.anilistId;
+    const isAnime = stremioId.startsWith('mal:') || stremioId.startsWith('kitsu:') || stremioId.startsWith('anidb:') || stremioId.startsWith('anilist:');
     const finalType = isAnime ? 'anime' : type;
     switch (finalType) {
       case 'movie':
@@ -551,10 +551,10 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
 
 async function buildTvdbMovieResponse(stremioId, movieData, language, config, catalogChoices, enrichmentData = {}) {
   const tvdbId = movieData.id;
-  const imdbId = movieData.remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
-  const tmdbId = movieData.remoteIds?.find(id => id.sourceName === 'TheMovieDB.com')?.id;
   const { allIds } = enrichmentData;
   const kitsuId = allIds?.kitsuId;
+  const imdbId = allIds?.imdbId;
+  const tmdbId = allIds?.tmdbId;
 
   const { year, image: tvdbPosterPath, remoteIds, characters } = movieData;
   const langCode = language.split('-')[0];
@@ -626,7 +626,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, ca
 async function buildTmdbMovieResponse(stremioId, movieData, language, config, catalogChoices, enrichmentData = {}) {
   const { allIds } = enrichmentData;
   const { id: tmdbId, title, external_ids, poster_path, backdrop_path, credits } = movieData;
-  const imdbId = external_ids?.imdb_id;
+  const imdbId = allIds?.imdbId;
   const tvdbId = allIds?.tvdbId;
   const castCount = config.castCount === 0 ? undefined : config.castCount;
   
@@ -884,8 +884,8 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const overview = overviewTranslations.find(t => t.language === langCode3)?.overview
                    || overviewTranslations.find(t => t.language === 'eng')?.overview
                    || tvdbShow.overview;
-  const imdbId = remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
-  const tmdbId = remoteIds?.find(id => id.sourceName === 'TheMovieDB.com')?.id;
+  const imdbId = allIds?.imdbId;
+  const tmdbId = allIds?.tmdbId;
   const tvdbId = tvdbShow.id;
   const malId = allIds?.malId;
   const castCount = config.castCount === 0 ? undefined : config.castCount;

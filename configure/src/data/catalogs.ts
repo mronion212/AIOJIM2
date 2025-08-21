@@ -57,8 +57,8 @@ export const streamingCatalogs: StreamingCatalogDefinition[] = streamingServices
     name: `${service.name} (Movies)` ,
     type: 'movie',
     source: 'streaming',
-    isEnabledByDefault: true,
-    showOnHomeByDefault: true,
+    isEnabledByDefault: false,
+    showOnHomeByDefault: false,
     regions: Object.entries(regions)
       .filter(([country, ids]) => ids.includes(service.id))
       .map(([country]) => country),
@@ -69,8 +69,8 @@ export const streamingCatalogs: StreamingCatalogDefinition[] = streamingServices
     name: `${service.name} (Series)` ,
     type: 'series',
     source: 'streaming',
-    isEnabledByDefault: true,
-    showOnHomeByDefault: true,
+    isEnabledByDefault: false,
+    showOnHomeByDefault: false,
     regions: Object.entries(regions)
       .filter(([country, ids]) => ids.includes(service.id))
       .map(([country]) => country),
