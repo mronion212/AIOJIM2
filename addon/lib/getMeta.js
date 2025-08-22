@@ -585,13 +585,41 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, ca
   const fallbackPosterUrl = poster || tvdbPosterUrl || `https://artworks.thetvdb.com/banners/images/missing/movie.jpg`;
   const posterProxyUrl = `${host}/poster/movie/tvdb:${movieData.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   const tmdbLikeCredits = {
-    cast: (characters || []).map(c => ({
+    cast: (characters || []).filter(c => c.peopleType === 'Actor').map(c => ({
       name: c.personName,
       character: c.name,
-      profile_path: c.image 
+      photo: c.personImgURL 
     })),
     crew: []
   };
+
+  const directors = (characters || []).filter(c => c.peopleType === 'Director').map(c => c.personName);
+  const writers = (characters || []).filter(c => c.peopleType === 'Writer').map(c => c.personName);
+
+
+  const directorLinks = directors.map(d => ({
+    name: d,
+    category: 'Directors',
+    url: `stremio:///search?search=${d}`
+  }));
+
+  const directorDetails = (characters || []).filter(c => c.peopleType === 'Director').map(d => ({
+    name: d.personName,
+    character: d.name,
+    photo: d.personImgURL 
+  }));
+
+  const writerDetails = (characters || []).filter(c => c.peopleType === 'Writer').map(w => ({
+    name: w.personName,
+    character: w.name,
+    photo: w.personImgURL 
+  }));
+
+  const writerLinks = writers.map(w => ({
+    name: w,
+    category: 'Writers',
+    url: `stremio:///search?search=${w}`
+  }));
   
   const { trailers, trailerStreams } = Utils.parseTvdbTrailers(movieData.trailers, translatedName);
  console.log(`[TvdbMovieMeta] Stremio ID: ${stremioId}`);
@@ -603,6 +631,8 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, ca
     slug: Utils.parseSlug('movie', translatedName, null, stremioId),
     genres: movieData.genres?.map(g => g.name) || [],
     description: overview,
+    director: directors.join(', '),
+    writer: writers.join(', '),
     year: year,
     releaseInfo: year,
     released: movieData.first_release.Date ? new Date(movieData.first_release.Date).toISOString() : null,
@@ -618,8 +648,8 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, ca
       defaultVideoId: kitsuId ? `kitsu:${kitsuId}` : imdbId || stremioId,
       hasScheduledVideos: false
     },
-    links: Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, tmdbLikeCredits, language, castCount, catalogChoices, true),
-    app_extras: { cast: Utils.parseCast(tmdbLikeCredits, castCount) }
+    links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, tmdbLikeCredits, language, castCount, catalogChoices, true), ...directorLinks, ...writerLinks],
+    app_extras: { cast: Utils.parseCast(tmdbLikeCredits, castCount), directors: directorDetails, writers: writerDetails }
   };
 }
 
@@ -646,7 +676,32 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, ca
   const posterProxyUrl = `${host}/poster/movie/tmdb:${movieData.id}?fallback=${encodeURIComponent(poster)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   const kitsuId = allIds?.kitsuId;
   const idProvider = config.providers?.movie || 'imdb';
+
+  const directorLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
+    name: d.name,
+    category: 'Directors',
+    url: `stremio:///search?search=${d.name}`
+  }));
+
+  const writerLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
+    name: w.name,
+    category: 'Writers',
+    url: `stremio:///search?search=${w}`
+  }));
   
+  const directorDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
+    name: d.name,
+    character: d.name,
+    photo: d.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${d.profile_path}` : null
+  }));
+
+  const writerDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
+    name: w.name,
+    character: w.name,
+    photo: w.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${w.profile_path}` : null
+  }));
+
+
   return {
     id: stremioId,
     type: 'movie',
@@ -668,9 +723,9 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, ca
     logo: processLogo(logoUrl),
     trailers: Utils.parseTrailers(movieData.videos),
     trailerStreams: Utils.parseTrailerStream(movieData.videos),
-    links: Utils.buildLinks(imdbRating, imdbId, title, 'movie', movieData.genres, credits, language, castCount, catalogChoices),
+    links: [ ...Utils.buildLinks(imdbRating, imdbId, title, 'movie', movieData.genres, credits, language, castCount, catalogChoices), ...directorLinks, ...writerLinks],
     behaviorHints: { defaultVideoId: kitsuId && idProvider === 'kitsu' ? `kitsu:${kitsuId}` : imdbId || stremioId, hasScheduledVideos: false },
-    app_extras: { cast: Utils.parseCast(credits, castCount) }
+    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails }
   };
 }
 
@@ -718,6 +773,30 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     await Promise.all(kitsuMapPromises);
     console.log(`[ID Builder] Built Season-to-Kitsu map for tmdb:${tmdbId}:`, seasonToKitsuIdMap);
   }
+  console.log(`[TmdbSeriesMeta] credits: ${JSON.stringify(credits)}`);
+  const directorLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
+    name: d.name,
+    category: 'Directors',
+    url: `stremio:///search?search=${d.name}`
+  }));
+
+  const writerLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
+    name: w.name,
+    category: 'Writers',
+    url: `stremio:///search?search=${w}`
+  }));
+  
+  const directorDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
+    name: d.name,
+    character: d.name,
+    photo: d.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${d.profile_path}` : null
+  }));
+
+  const writerDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
+    name: w.name,
+    character: w.name,
+    photo: w.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${w.profile_path}` : null
+  }));
   
   // Fetch Cinemeta videos data for IMDB episode mapping (once per IMDB series)
   let cinemetaVideos = null;
@@ -830,13 +909,13 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     background: background,
     logo: logoUrl,
     trailers: Utils.parseTrailers(trailers),
-    links: Utils.buildLinks(imdbRating, imdbId, name, 'series', seriesData.genres, credits, language, castCount, catalogChoices),
+    links: [ ...Utils.buildLinks(imdbRating, imdbId, name, 'series', seriesData.genres, credits, language, castCount, catalogChoices), ...directorLinks, ...writerLinks],
     videos: videos,
     behaviorHints: {
       defaultVideoId: null,
       hasScheduledVideos: true,
     },
-    app_extras: { cast: Utils.parseCast(credits, castCount) }
+    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails }
   };
 }
 
@@ -904,13 +983,40 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const fallbackPosterUrl = poster || tvdbPosterUrl || `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
   const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbShow.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   const tmdbLikeCredits = {
-    cast: (characters || []).map(c => ({
+    cast: (characters || []).filter(c => c.peopleType === 'Actor').map(c => ({
       name: c.personName,
       character: c.name,
-      profile_path: c.image 
+      photo: c.personImgURL 
     })),
     crew: []
   };
+
+  const directors = (characters || []).filter(c => c.peopleType === 'Director').map(c => c.personName);
+  const writers = (characters || []).filter(c => c.peopleType === 'Writer').map(c => c.personName);
+
+  const directorDetails = (characters || []).filter(c => c.peopleType === 'Director').map(d => ({
+    name: d.personName,
+    character: d.name,
+    photo: d.personImgURL 
+  }));
+
+  const writerDetails = (characters || []).filter(c => c.peopleType === 'Writer').map(w => ({
+    name: w.personName,
+    character: w.name,
+    photo: w.personImgURL 
+  }));
+
+  const directorLinks = directors.map(d => ({
+    name: d,
+    category: 'Directors',
+    url: `stremio:///search?search=${d}`
+  }));
+
+  const writerLinks = writers.map(w => ({
+    name: w,
+    category: 'Writers',
+    url: `stremio:///search?search=${w}`
+  }));
 
   const { trailers, trailerStreams } = Utils.parseTvdbTrailers(tvdbShow.trailers, translatedName);
 
@@ -1039,6 +1145,8 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     type: 'series',
     name: translatedName,
     imdb_id: imdbId,
+    director: directors.join(', '),
+    writer: writers.join(', '),
     slug: Utils.parseSlug('series', translatedName, imdbId, stremioId),
     genres: tvdbShow.genres?.map(g => g.name) || [],
     description: overview,
@@ -1055,9 +1163,9 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     videos: videos,
     trailers: trailers,
     trailerStreams: trailerStreams,
-    links: Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tmdbLikeCredits, language, castCount, catalogChoices, true),
+    links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tmdbLikeCredits, language, castCount, catalogChoices, true), ...directorLinks, ...writerLinks],
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-    app_extras: { cast: Utils.parseCast(tmdbLikeCredits, castCount) }
+    app_extras: { cast: Utils.parseCast(tmdbLikeCredits, castCount), directors: directorDetails, writers: writerDetails }
   };
   //console.log(Utils.parseCast(tmdbLikeCredits, castCount));
   return meta;
@@ -1083,12 +1191,36 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, co
 
   const tmdbLikeCredits = {
     cast: (tvmazeShow?._embedded?.cast || []).map(c => ({
-      name: c.person.name, character: c.character.name, profile_path: c.person.image?.medium.replace('https://static.tvmaze.com/uploads/images/', '')
+      name: c.person.name, character: c.character.name, photo: c.person.image?.medium.replace('https://static.tvmaze.com/uploads/images/', '')
     })),
     crew: (tvmazeShow?._embedded?.cast || []).filter(c => c.type === 'Creator').map(c => ({
         name: c.person.name, job: 'Creator'
     }))
   };
+
+  const producerLinks = (tvmazeShow?._embedded?.crew || []).filter(c => c.type === 'Executive Producer').map(d => ({
+    name: d.person.name,
+    category: 'Executive Producers',
+    url: `stremio:///search?search=${d.person.name}`
+  }));
+
+  const writerLinks = (tvmazeShow?._embedded?.crew || []).filter(c => c.type === 'Creator').map(w => ({
+    name: w.person.name,
+    category: 'Writers',
+    url: `stremio:///search?search=${w.person.name}`
+  }));
+
+  const producerDetails = (tvmazeShow?._embedded?.crew || []).filter(c => c.type === 'Executive Producer').map(d => ({
+    name: d.person.name,
+    character: d.person.name,
+    photo: d.person.image?.medium
+  }));
+
+  const writerDetails = (tvmazeShow?._embedded?.crew || []).filter(c => c.type === 'Creator').map(w => ({
+    name: w.person.name,
+    character: w.person.name,
+    photo: w.person.image?.medium
+  }));
 
   const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(poster || '')}&lang=${language}&key=${config.apiKeys?.rpdb}`;
 
@@ -1123,9 +1255,10 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, co
     poster: config.apiKeys?.rpdb ? posterProxyUrl : poster, 
     background: background,
     logo: processLogo(logoUrl), videos,
-    links: Utils.buildLinks(imdbRating, imdbId, name, 'series', tvmazeShow.genres.map(g => ({ name: g })), tmdbLikeCredits, language, castCount, catalogChoices),
+    links: [...Utils.buildLinks(imdbRating, imdbId, name, 'series', tvmazeShow.genres.map(g => ({ name: g })), tmdbLikeCredits, language, castCount, catalogChoices), ...producerLinks, ...writerLinks],
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-  };8
+    app_extras: { cast: Utils.parseCast(tmdbLikeCredits, castCount), producers: producerDetails, writers: writerDetails }
+  };
 
   return meta;
 }
@@ -1242,17 +1375,17 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
               }
             }
             
-            return {
+          return {
               id: episodeId,
               title: episodeTitle,
-              season: 1,
-              episode: ep.mal_id,
-              released: ep.aired? new Date(ep.aired) : null,
-              thumbnail: config.blurThumbs? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
+            season: 1,
+            episode: ep.mal_id,
+            released: ep.aired? new Date(ep.aired) : null,
+            thumbnail: config.blurThumbs? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
               available: ep.aired ? new Date(ep.aired) < new Date() : false,
               overview: episodeSynopsis
-            };
-          });
+          };
+        });
       if (idProvider === 'imdb' && kitsuId) {
         const imdbSeasonInfo = await idMapper.resolveImdbSeasonFromKitsu(kitsuId);
 
@@ -1294,7 +1427,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
               
               return {
                 id: `${imdbSeasonInfo.imdbId}:${imdbSeasonInfo.seasonNumber}:${ep.mal_id}`,
-                title: ep.title, 
+                title: ep.title,
                 season: 1,
                 episode: ep.mal_id,
                 overview: episodeSynopsis,
@@ -1314,7 +1447,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
           if (!voiceActor) return null;
           return {
             name: voiceActor.person.name.replace(",", ""),
-            profile_path: voiceActor.person.images.jpg.image_url,
+            photo: voiceActor.person.images.jpg.image_url,
             character: charEntry.character.name.replace(",", ""),
           };
         })

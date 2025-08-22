@@ -19,6 +19,11 @@
     "decade00s": "MAL Best of the 2000s",
     "decade10s": "MAL Best of the 2010s",
     "decade20s": "MAL Best of the 2020s",
+    "top_movies": "MAL Top Movies",
+    "top_series": "MAL Top Series",
+    "most_favorites": "MAL Most Favorites",
+    "most_popular": "MAL Most Popular",
+    "top_anime": "MAL Top Anime",
     "nfx": "Netflix",
     "nfk": "Netflix Kids",
     "hbm": "HBO Max",
@@ -68,6 +73,11 @@
     "decade00s": "MAL Melhor dos Anos 2000",
     "decade10s": "MAL Melhor dos Anos 2010",
     "decade20s": "MAL Melhor dos Anos 2020",
+    "top_movies": "MAL Melhores Filmes",
+    "top_series": "MAL Melhores Séries",
+    "most_favorites": "MAL Mais Favoritados",
+    "most_popular": "MAL Mais Popular",
+    "top_anime": "MAL Melhores Animes",
     "added_date": "Data de Adição",
     "popularity": "Popularidade",
     "release_date": "Data de Lançamento",
@@ -93,7 +103,12 @@
     "decade90s": "MAL Lo Mejor de los 90",
     "decade00s": "MAL Lo Mejor de los 2000",
     "decade10s": "MAL Lo Mejor de los 2010",
-    "decade20s": "MAL Lo Mejor de los 2020"
+    "decade20s": "MAL Lo Mejor de los 2020",
+    "top_movies": "MAL Mejores Películas",
+    "top_series": "MAL Mejores Series",
+    "most_favorites": "MAL Más Favoritos",
+    "most_popular": "MAL Más Popular",
+    "top_anime": "MAL Mejores Animes"
   },
   "fr-FR": {
     "popular": "Populaire",
@@ -113,7 +128,12 @@
     "decade90s": "MAL Le Meilleur des Années 90",
     "decade00s": "MAL Le Meilleur des Années 2000",
     "decade10s": "MAL Le Meilleur des Années 2010",
-    "decade20s": "MAL Le Meilleur des Années 2020"
+    "decade20s": "MAL Le Meilleur des Années 2020",
+    "top_movies": "MAL Meilleurs Films",
+    "top_series": "MAL Meilleures Séries",
+    "most_favorites": "MAL Les Plus Favoris",
+    "most_popular": "MAL Les Plus Populaires",
+    "top_anime": "MAL Meilleurs Animes"
   },
   "de-DE": {
     "popular": "Beliebt",
@@ -133,7 +153,12 @@
     "decade90s": "MAL Das Beste der 90er",
     "decade00s": "MAL Das Beste der 2000er",
     "decade10s": "MAL Das Beste der 2010er",
-    "decade20s": "MAL Das Beste der 2020er"
+    "decade20s": "MAL Das Beste der 2020er",
+    "top_movies": "MAL Beste Filme",
+    "top_series": "MAL Beste Serien",
+    "most_favorites": "MAL Beliebteste",
+    "most_popular": "MAL Beliebteste",
+    "top_anime": "MAL Beste Anime"
   },
   "it-IT": {
     "popular": "Popolare",
@@ -153,7 +178,12 @@
     "decade90s": "MAL Il Meglio degli Anni '90",
     "decade00s": "MAL Il Meglio degli Anni 2000",
     "decade10s": "MAL Il Meglio degli Anni 2010",
-    "decade20s": "MAL Il Meglio degli Anni 2020"
+    "decade20s": "MAL Il Meglio degli Anni 2020",
+    "top_movies": "MAL Migliori Film",
+    "top_series": "MAL Migliori Serie",
+    "most_favorites": "MAL Più Favoriti",
+    "most_popular": "MAL Più Popolari",
+    "top_anime": "MAL Migliori Anime"
   },
   "ru-RU": {
     "popular": "Популярное",
@@ -173,7 +203,12 @@
     "decade90s": "MAL Лучшее 90-х",
     "decade00s": "MAL Лучшее 2000-х",
     "decade10s": "MAL Лучшее 2010-х",
-    "decade20s": "MAL Лучшее 2020-х"
+    "decade20s": "MAL Лучшее 2020-х",
+    "top_movies": "MAL Лучшие Фильмы",
+    "top_series": "MAL Лучшие Сериалы",
+    "most_favorites": "MAL Лучшие",
+    "most_popular": "MAL Лучшие",
+    "top_anime": "MAL Лучшие Аниме"
   },
   "ja-JP": {
     "popular": "人気",
@@ -193,7 +228,12 @@
     "decade90s": "MAL 90年代のベスト",
     "decade00s": "MAL 2000年代のベスト",
     "decade10s": "MAL 2010年代のベスト",
-    "decade20s": "MAL 2020年代のベスト"
+    "decade20s": "MAL 2020年代のベスト",
+    "top_movies": "MAL トップ映画",
+    "top_series": "MAL トップシリーズ",
+    "most_favorites": "MAL 人気",
+    "most_popular": "MAL 人気",
+    "top_anime": "MAL トップアニメ"
   },
   "zh-CN": {
     "popular": "热门",
@@ -213,7 +253,12 @@
     "decade90s": "MAL 90年代精选",
     "decade00s": "MAL 2000年代精选",
     "decade10s": "MAL 2010年代精选",
-    "decade20s": "MAL 2020年代精选"
+    "decade20s": "MAL 2020年代精选",
+    "top_movies": "MAL 热门电影",
+    "top_series": "MAL 热门电视剧",
+    "most_favorites": "MAL 热门",
+    "most_popular": "MAL 热门",
+    "top_anime": "MAL 热门动漫"
   },
   "ko-KR": {
     "popular": "인기",
@@ -233,7 +278,12 @@
     "decade90s": "MAL 90년대 최고작",
     "decade00s": "MAL 2000년대 최고작",
     "decade10s": "MAL 2010년대 최고작",
-    "decade20s": "MAL 2020년대 최고작"
+    "decade20s": "MAL 2020년대 최고작",
+    "top_movies": "MAL 인기 영화",
+    "top_series": "MAL 인기 시리즈",
+    "most_favorites": "MAL 인기",
+    "most_popular": "MAL 인기",
+    "top_anime": "MAL 인기 애니메이션"
   },
   "hi-IN": {
     "popular": "लोकप्रिय",
@@ -253,7 +303,12 @@
     "decade90s": "MAL 90 के दशक के सर्वश्रेष्ठ",
     "decade00s": "MAL 2000 के दशक के सर्वश्रेष्ठ",
     "decade10s": "MAL 2010 के दशक के सर्वश्रेष्ठ",
-    "decade20s": "MAL 2020 के दशक के सर्वश्रेष्ठ"
+    "decade20s": "MAL 2020 के दशक के सर्वश्रेष्ठ",
+    "top_movies": "MAL टॉप फिल्में",
+    "top_series": "MAL टॉप सीरीज़",
+    "most_favorites": "MAL पसंदीदा",
+    "most_popular": "MAL पसंदीदा",
+    "top_anime": "MAL टॉप एनिमे"
   },
   "ar-SA": {
     "popular": "شائع",
@@ -273,7 +328,12 @@
     "decade90s": "MAL أفضل أعمال التسعينات",
     "decade00s": "MAL أفضل أعمال الألفينات",
     "decade10s": "MAL أفضل أعمال 2010",
-    "decade20s": "MAL أفضل أعمال 2020"
+    "decade20s": "MAL أفضل أعمال 2020",
+    "top_movies": "MAL أفضل فيلم",
+    "top_series": "MAL أفضل سلسلة",
+    "most_favorites": "MAL أفضل",
+    "most_popular": "MAL أفضل",
+    "top_anime": "MAL أفضل أنمي"
   },
   "sr-RS": {
     "popular": "Популарно",
@@ -293,7 +353,12 @@
     "decade90s": "MAL Најбоље из 90-их",
     "decade00s": "MAL Најбоље из 2000-их",
     "decade10s": "MAL Најбоље из 2010-их",
-    "decade20s": "MAL Најбоље из 2020-их"
+    "decade20s": "MAL Најбоље из 2020-их",
+    "top_movies": "MAL Најбољи филмови",
+    "top_series": "MAL Најбоље серије",
+    "most_favorites": "MAL Најбољи",
+    "most_popular": "MAL Најбољи",
+    "top_anime": "MAL Најбољи аниме"
   },
   "pl-PL": {
     "popular": "Popularne",
@@ -313,7 +378,12 @@
     "decade90s": "MAL Najlepsze z lat 90.",
     "decade00s": "MAL Najlepsze z lat 2000.",
     "decade10s": "MAL Najlepsze z lat 2010.",
-    "decade20s": "MAL Najlepsze z lat 2020."
+    "decade20s": "MAL Najlepsze z lat 2020.",
+    "top_movies": "MAL Najlepsze filmy",
+    "top_series": "MAL Najlepsze seriale",
+    "most_favorites": "MAL Najlepsze",
+    "most_popular": "MAL Najlepsze",
+    "top_anime": "MAL Najlepsze anime"
   },
   "he-IL": {
     "popular": "פופולרי",
@@ -335,6 +405,11 @@
     "decade00s": "MAL הטובים של שנות ה-2000",
     "decade10s": "MAL הטובים של שנות ה-2010",
     "decade20s": "MAL הטובים של שנות ה-2020",
+    "top_movies": "MAL טופ סרטים",
+    "top_series": "MAL טופ סריקות",
+    "most_favorites": "MAL טופ מועדפים",
+    "most_popular": "MAL טופ מועדפים",
+    "top_anime": "MAL טופ אנימה",
     "nfx": "נטפליקס",
     "nfk": "נטפליקס ילדים",
     "dnp": "דיסני פלוס",

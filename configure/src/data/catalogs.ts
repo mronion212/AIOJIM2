@@ -34,6 +34,11 @@ export const animeCatalogs: CatalogDefinition[] = [
   { id: 'mal.decade20s', name: 'MAL Best of 2020s', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'mal.genres', name: 'MAL Genres', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: false }, 
   { id: 'mal.studios', name: 'MAL By Studio', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: false },
+  { id: 'mal.top_movies', name: 'MAL Top Movies', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
+  { id: 'mal.top_series', name: 'MAL Top Series', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
+  { id: 'mal.most_favorites', name: 'MAL Most Favorites', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
+  { id: 'mal.most_popular', name: 'MAL Most Popular', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
+  { id: 'mal.top_anime', name: 'MAL Top Anime', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
 ]
 
 // --- Catalogs requiring TMDB Authentication ---

@@ -98,7 +98,8 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
     type,
     name: `${showPrefix ? "AIOMetadata - " : ""}${translatedCatalogs[catalogDef.nameKey]}`,
     pageSize: pageSize,
-    extra
+    extra,
+    showInHome: showInHome 
   };
 }
 
@@ -128,6 +129,10 @@ function getOptionsForCatalog(catalogDef, type, showInHome, { years, genres_movi
     case 'popular':
       return type === 'movie' ? movieGenres : seriesGenres;
     default:
+      // For anime type, return empty array since most anime catalogs don't need genre options
+      if (type === 'anime') {
+        return [];
+      }
       return type === 'movie' ? movieGenres : seriesGenres;
   }
 }
@@ -161,6 +166,7 @@ async function createMDBListCatalog(userCatalog, mdblistKey) {
         { name: "genre", options: genres, isRequired: userCatalog.showInHome ? false : true },
         { name: "skip" },
       ],
+      showInHome: userCatalog.showInHome
     };
     
     console.log(`[Manifest] MDBList catalog created successfully: ${catalog.id}`);
@@ -229,13 +235,16 @@ async function getManifest(config) {
           .sort();
       }
       else if (userCatalog.id === 'tvdb.collections') {
-        return {
-          id: 'tvdb.collections',
-          type: 'series',
-          name: showPrefix ? "AIOMetadata - " + translatedCatalogs['tvdb_collections'] : translatedCatalogs['tvdb_collections'],
-          pageSize: 20,
-          extra: [{ name: 'skip' }]
-        };
+        const genres = ['None'];
+        return createCatalog(
+          userCatalog.id,
+          userCatalog.type,
+          catalogDef,
+          genres,
+          showPrefix,
+          translatedCatalogs,
+          userCatalog.showInHome
+        );
       }
       else if (userCatalog.id === 'mal.genres') {
           const animeGenres = await cacheWrapJikanApi('anime-genres', async () => {
@@ -256,11 +265,25 @@ async function getManifest(config) {
       else if (userCatalog.id === 'mal.schedule') {
         catalogOptions = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
       } 
+      else if (userCatalog.id === 'mal.airing' || userCatalog.id === 'mal.upcoming' || 
+               userCatalog.id === 'mal.top_movies' || userCatalog.id === 'mal.top_series' || 
+               userCatalog.id === 'mal.most_favorites' || userCatalog.id === 'mal.most_popular' || 
+               userCatalog.id === 'mal.top_anime') {
+        // Provide "None" option to work around Stremio's genre requirement
+        catalogOptions = ['None'];
+      }
+      else if (userCatalog.id.startsWith('mal.') && !['mal.airing', 'mal.upcoming', 'mal.schedule', 'mal.top_movies', 'mal.top_series', 'mal.most_favorites', 'mal.top_anime', 'mal.most_popular'].includes(userCatalog.id)) {
+        const animeGenres = await cacheWrapJikanApi('anime-genres', async () => {
+          console.log('[Cache Miss] Fetching fresh anime genre list in manifest from Jikan...');
+          return await jikan.getAnimeGenres();
+        });
+        catalogOptions = animeGenres.filter(Boolean).map(genre => genre.name).sort();
+      }
       else {
         catalogOptions = getOptionsForCatalog(catalogDef, userCatalog.type, userCatalog.showInHome, options);
       }
 
-      return createCatalog(
+      const catalog = createCatalog(
           userCatalog.id,
           userCatalog.type,
           catalogDef,
@@ -268,7 +291,9 @@ async function getManifest(config) {
           showPrefix,
           translatedCatalogs,
           userCatalog.showInHome
-      );   
+      );
+      console.log(`[Manifest] Created catalog ${userCatalog.id} with showInHome: ${userCatalog.showInHome}`);
+      return catalog;   
     }));
   
   catalogs = catalogs.filter(Boolean);

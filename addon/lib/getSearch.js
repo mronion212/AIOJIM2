@@ -86,6 +86,7 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
   let searchResults = [];
   switch(type){
     case 'movie':
+      console.log('performing anime search for movie', query);
       searchResults = await jikan.searchAnime('movie', query, 25, config, page);
       break;
     case 'series':

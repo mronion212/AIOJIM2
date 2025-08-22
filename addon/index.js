@@ -311,7 +311,7 @@ addon.get("/stremio/:userUUID/:catalogChoices/catalog/:type/:id/:extra?.json", a
         metas = searchResult.metas || [];
       } else {
         const { genre: genreName, type_filter,  skip } = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
-        const pageSize = 25;
+        const pageSize = id.includes(`mal.`) ? 25 : 20;
         const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
         const args = [type, language, page];
         switch (id) {
@@ -325,9 +325,11 @@ addon.get("/stremio/:userUUID/:catalogChoices/catalog/:type/:id/:extra?.json", a
           case "tmdb.watchlist":
             metas = (await getWatchList(...args, genreName, sessionId, config)).metas;
             break;
-          case "tvdb.genres":
-            metas = (await  getCatalog(type, language, page, id, genreName, config, catalogChoices)).metas;
+          case "tvdb.genres": {
+            // Call getCatalog directly - it will handle caching and pagination internally
+            metas = (await getCatalog(type, language, page, id, genreName, config, catalogChoices)).metas;
             break;
+          }
           case "tvdb.collections": {
             // TVDB expects 0-based page
             const tvdbPage = Math.max(0, page - 1);
@@ -336,13 +338,51 @@ addon.get("/stremio/:userUUID/:catalogChoices/catalog/:type/:id/:extra?.json", a
           }
           case 'mal.airing':
           case 'mal.upcoming':
+          case 'mal.top_movies':
+          case 'mal.top_series':
+          case 'mal.most_favorites':
+          case 'mal.most_popular':
+          case 'mal.top_anime':
           case 'mal.decade20s': {
-            const animeResults = id === 'mal.airing'
-              ? await jikan.getAiringNow(page, config)
-              : id === 'mal.upcoming'
-                ? await jikan.getUpcoming(page, config)
-                : await jikan.getTopAnimeByDateRange('2020-01-01', '2029-12-31', page, config);
-            metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+            // change to if else structure
+            if (id === 'mal.airing') {
+              const animeResults = await jikan.getAiringNow(page, config);
+              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+            } else if (id === 'mal.upcoming') {
+              const animeResults = await jikan.getUpcoming(page, config);
+              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+            } else if (id === 'mal.top_movies') {
+              const animeResults = await jikan.getTopAnimeByType('movie', page, config);
+              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+            } else if (id === 'mal.top_series') {
+              const animeResults = await jikan.getTopAnimeByType('tv', page, config);
+              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+            } else if (id === 'mal.most_popular') {
+              console.log(`[CATALOG ROUTE 2] mal.most_popular called with type=${type}, language=${language}, page=${page}`);
+              const animeResults = await jikan.getTopAnimeByFilter('bypopularity', page, config);
+              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+            } else if (id === 'mal.most_favorites') {
+              const animeResults = await jikan.getTopAnimeByFilter('favorite', page, config);
+              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+            } else if (id === 'mal.top_anime') {
+              const animeResults = await jikan.getTopAnimeByType('anime', page, config);
+              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+            } else {
+              const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
+                console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
+                return await jikan.getAnimeGenres();
+              });
+              const genreNameToFetch = genreName && genreName !== 'None' ? genreName : allAnimeGenres[0]?.name;
+              if (genreNameToFetch) {
+                const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
+                if (selectedGenre) {
+                  const genreId = selectedGenre.mal_id;
+                  const animeResults = await jikan.getTopAnimeByDateRange('2020-01-01', '2029-12-31', page, genreId, config);
+                  metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+                }
+              }
+              
+            }
             break;
           }
           case 'mal.genres': {
@@ -399,8 +439,21 @@ addon.get("/stremio/:userUUID/:catalogChoices/catalog/:type/:id/:extra?.json", a
               'mal.decade10s': ['2010-01-01', '2019-12-31'],
             };
             const [startDate, endDate] = decadeMap[id];
-            const animeResults = await jikan.getTopAnimeByDateRange(startDate, endDate, page, config);
-            metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+
+            const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
+              console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
+              return await jikan.getAnimeGenres();
+            });
+            const genreNameToFetch = genreName || allAnimeGenres[0]?.name;
+            if (genreNameToFetch) {
+              const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
+              if (selectedGenre) {
+                const genreId = selectedGenre.mal_id;
+                const animeResults = await jikan.getTopAnimeByDateRange(startDate, endDate, page, genreId, config);
+                metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+              }
+            }
+            
             break;
           }
           default:

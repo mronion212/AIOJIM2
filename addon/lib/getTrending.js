@@ -13,6 +13,7 @@ const host = process.env.HOST_NAME.startsWith('http')
 
 async function getTrending(type, language, page, genre, config, catalogChoices) {
   try {
+    console.log(`[getTrending] Fetching trending for type=${type}, language=${language}, page=${page}, genre=${genre}`);
     const media_type = type === "series" ? "tv" : type;
     const time_window = genre && ['day', 'week'].includes(genre.toLowerCase()) ? genre.toLowerCase() : "day";
     

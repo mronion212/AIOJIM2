@@ -25,17 +25,17 @@
     },
     "collections": {
       "nameKey": "tvdb_collections",
-      "extraSupported": ["skip"]
+      "extraSupported": ["genre", "skip"]
     }
   },
   "mal": {
     "airing": {
       "nameKey": "airing",
-      "extraSupported": ["skip"]
+      "extraSupported": ["genre", "skip"]
     },
     "upcoming": {
       "nameKey": "upcoming",
-      "extraSupported": ["skip"]
+      "extraSupported": ["genre", "skip"]
     },
     "genres": {
       "nameKey": "genres",
@@ -49,11 +49,16 @@
       "nameKey": "studios",
       "extraSupported": ["genre", "skip"]
     },
-    "decade80s": { "nameKey": "decade80s", "extraSupported": ["skip"] },
-    "decade90s": { "nameKey": "decade90s", "extraSupported": ["skip"] },
-    "decade00s": { "nameKey": "decade00s", "extraSupported": ["skip"] },
-    "decade10s": { "nameKey": "decade10s", "extraSupported": ["skip"] },
-    "decade20s": { "nameKey": "decade20s", "extraSupported": ["skip"] }
+    "decade80s": { "nameKey": "decade80s", "extraSupported": ["genre", "skip"] },
+    "decade90s": { "nameKey": "decade90s", "extraSupported": ["genre", "skip"] },
+    "decade00s": { "nameKey": "decade00s", "extraSupported": ["genre", "skip"] },
+    "decade10s": { "nameKey": "decade10s", "extraSupported": ["genre", "skip"] },
+    "decade20s": { "nameKey": "decade20s", "extraSupported": ["genre", "skip"] },
+    "top_movies": { "nameKey": "top_movies", "extraSupported": ["genre", "skip"] },
+    "top_series": { "nameKey": "top_series", "extraSupported": ["genre", "skip"] },
+    "most_favorites": { "nameKey": "most_favorites", "extraSupported": ["genre", "skip"] },
+    "most_popular": { "nameKey": "most_popular", "extraSupported": ["genre", "skip"] },
+    "top_anime": { "nameKey": "top_anime", "extraSupported": ["genre", "skip"] }
   },
   "auth": {
     "favorites": {

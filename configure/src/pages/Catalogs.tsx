@@ -133,6 +133,7 @@ const Catalogs = () => {
   }, {});
 
   const handleCatalogChange = (catalogId, type, enabled, showInHome) => {
+    console.log(`🔗 [Catalog Change] ${catalogId} (${type}): enabled=${enabled}, showInHome=${showInHome}`);
     setConfig((prev) => ({
       ...prev,
       catalogs: prev.catalogs.map((c) =>

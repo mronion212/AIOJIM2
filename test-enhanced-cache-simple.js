@@ -92,7 +92,7 @@ async function testEnhancedCacheSimple() {
   console.log('  • NOT_FOUND (404): 1 hour cache (prevents repeated 404 requests)');
   console.log('  • RATE_LIMITED (429): 15 minutes cache (respects rate limits)');
   console.log('  • TEMPORARY_ERROR (500s, timeouts): 2 minutes cache (allows quick retry)');
-  console.log('  • EMPTY_RESULT: 5 minutes cache (prevents repeated empty queries)');
+  console.log('  • EMPTY_RESULT: No cache (prevents caching of empty results)');
   console.log('  • PERMANENT_ERROR (400s): 30 minutes cache (prevents repeated bad requests)');
   console.log('  • CACHE_CORRUPTED: 1 minute cache (allows immediate retry)');
   

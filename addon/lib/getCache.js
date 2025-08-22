@@ -17,7 +17,7 @@ const TVMAZE_API_TTL = 12 * 60 * 60;
 
 // Enhanced error caching strategy with self-healing
 const ERROR_TTL_STRATEGIES = {
-  EMPTY_RESULT: 5 * 60,        // 5 minutes for empty results
+  EMPTY_RESULT: 0,             // Don't cache empty results at all
   RATE_LIMITED: 15 * 60,       // 15 minutes for rate limit errors
   TEMPORARY_ERROR: 2 * 60,     // 2 minutes for temporary errors
   PERMANENT_ERROR: 30 * 60,    // 30 minutes for permanent errors
@@ -202,20 +202,21 @@ function classifyResult(result, error = null) {
   }
   
   if (!result) {
+    console.log(`[Cache Classification] Result is null/undefined, classifying as EMPTY_RESULT`);
     return { type: 'EMPTY_RESULT', ttl: ERROR_TTL_STRATEGIES.EMPTY_RESULT };
   }
   
-  // Check for empty/meaningless results
-  if (Array.isArray(result.metas) && result.metas.length === 0) {
-    return { type: 'EMPTY_RESULT', ttl: ERROR_TTL_STRATEGIES.EMPTY_RESULT };
+  
+  const hasMetaData = (result.meta && typeof result.meta === 'object' && Object.keys(result.meta).length > 0);
+  const hasMetasData = (Array.isArray(result.metas) && result.metas.length > 0);
+  
+  if (hasMetaData || hasMetasData) {
+    console.log(`[Cache Classification] Has data (meta: ${hasMetaData}, metas: ${hasMetasData}), classifying as SUCCESS`);
+    return { type: 'SUCCESS', ttl: null };
   }
   
-  if (result.meta === null || result.meta === undefined) {
-    return { type: 'EMPTY_RESULT', ttl: ERROR_TTL_STRATEGIES.EMPTY_RESULT };
-  }
-  
-  // Good result
-  return { type: 'SUCCESS', ttl: null };
+  console.log(`[Cache Classification] No data in meta or metas, classifying as EMPTY_RESULT`);
+  return { type: 'EMPTY_RESULT', ttl: ERROR_TTL_STRATEGIES.EMPTY_RESULT };
 }
 
 /**
@@ -293,17 +294,24 @@ async function cacheWrap(key, method, ttl, options = {}) {
         }
         
         const classification = resultClassifier(result);
-        const finalTtl = classification.ttl || ttl;
+        const finalTtl = classification.ttl !== null ? classification.ttl : ttl;
         
-        if (classification.type !== 'SUCCESS') {
-          console.warn(`[Cache] Caching ${classification.type} result for ${versionedKey} for ${finalTtl}s`);
-        }
+        console.log(`[Cache] Classification: ${classification.type}, TTL: ${finalTtl}s`);
         
-        try {
-          await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
-      } catch (err) {
-        console.warn(`[Cache] Failed to write to Redis for key ${versionedKey}:`, err);
-          updateCacheHealth(versionedKey, 'error', false);
+        // Skip caching if TTL is 0 (e.g., empty results)
+        if (finalTtl > 0) {
+          if (classification.type !== 'SUCCESS') {
+            console.warn(`[Cache] Caching ${classification.type} result for ${versionedKey} for ${finalTtl}s`);
+          }
+          
+          try {
+            await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
+          } catch (err) {
+            console.warn(`[Cache] Failed to write to Redis for key ${versionedKey}:`, err);
+            updateCacheHealth(versionedKey, 'error', false);
+          }
+        } else {
+          console.log(`[Cache] Skipping cache for ${versionedKey} (TTL: 0)`);
         }
     }
     return result;
@@ -407,7 +415,9 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
       updateCacheHealth(versionedKey, 'miss', true);
 
       const classification = resultClassifier(result);
-      const finalTtl = classification.ttl || ttl;
+      const finalTtl = classification.ttl !== null ? classification.ttl : ttl;
+      
+      console.log(`[Global Cache] Classification: ${classification.type}, TTL: ${finalTtl}s`);
 
       // Skip caching if result classifier says so
       if (classification.type === 'SKIP_CACHE') {
@@ -415,13 +425,18 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
         return result;
       }
 
-      if (classification.type !== 'SUCCESS') {
-        console.warn(`[Global Cache] Caching ${classification.type} result for ${versionedKey} for ${finalTtl}s`);
-    }
+      // Skip caching if TTL is 0 (e.g., empty results)
+      if (finalTtl > 0) {
+        if (classification.type !== 'SUCCESS') {
+          console.warn(`[Global Cache] Caching ${classification.type} result for ${versionedKey} for ${finalTtl}s`);
+        }
 
-    if (result !== null && result !== undefined) {
-      await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
-    }
+        if (result !== null && result !== undefined) {
+          await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
+        }
+      } else {
+        console.log(`[Global Cache] Skipping cache for ${versionedKey} (TTL: 0)`);
+      }
     return result;
   } catch (error) {
     console.error(`[Global Cache] Method failed for cache key ${versionedKey}:`, error);
@@ -472,13 +487,14 @@ function cacheWrapCatalog(configString, catalogKey, method, options = {}) {
 
   const idOnly = catalogKey.split(':')[0];
 
-  // Globalize known config-independent catalogs
+  // Disable caching for trending catalogs since they change frequently
   if (trendingIds.has(idOnly)) {
-    // For trending catalogs, include the type in the cache key to avoid conflicts between movie/series
-    const type = catalogKey.split(':')[1]; // Extract type from catalogKey (e.g., "tmdb.trending:movie:{}")
-    const globalKey = `catalog-global:${idOnly}:${type}:${language}`;
-    return cacheWrapGlobal(globalKey, method, CATALOG_TTL, options);
+    console.log(`[Cache] Skipping cache for trending catalog: ${idOnly}`);
+    return method(); // Execute without caching
   }
+  
+
+  
   // MAL catalogs should use full config cache since they depend on art providers, meta providers, etc.
   // But exclude search IDs which should use their own caching strategy
   if (genresIds.has(idOnly) || scheduleIds.has(idOnly) || 

@@ -47,9 +47,16 @@ async function getCatalog(type, language, page, id, genre, config, catalogChoice
 async function getTvdbCatalog(type, catalogId, genreName, page, language, config) {
   console.log(`[getCatalog] Fetching TVDB catalog: ${catalogId}, Genre: ${genreName}, Page: ${page}`);
   
+  // Cache the raw TVDB API response using a cache key that doesn't include page
+  const cacheKey = `tvdb-filter:${type}:${genreName}:${language}`;
+  
   const allTvdbGenres = await getGenreList('tvdb', language, type, config);
+  console.log(`[getCatalog] TVDB genres fetched: ${allTvdbGenres.length} genres available`);
+  
   const genre = allTvdbGenres.find(g => g.name === genreName);
-   const langParts = language.split('-');
+  console.log(`[getCatalog] Genre lookup for "${genreName}":`, genre ? `Found ID ${genre.id}` : 'NOT FOUND');
+  
+  const langParts = language.split('-');
   const langCode2 = langParts[0];
   const countryCode2 = langParts[1] || langCode2; 
   const langCode3 = await to3LetterCode(langCode2, config);
@@ -63,17 +70,42 @@ async function getTvdbCatalog(type, catalogId, genreName, page, language, config
 
   if (genre) {
     params.genre = genre.id;
+    console.log(`[getCatalog] Using genre ID ${genre.id} for TVDB filter`);
+  } else {
+    console.log(`[getCatalog] WARNING: No genre found for "${genreName}", proceeding without genre filter`);
   }
   
   const tvdbType = type === 'movie' ? 'movies' : 'series';
   if(tvdbType === 'series'){
     params.sortType = 'desc';
   }
-  const results = await tvdb.filter(tvdbType, params, language, config);
-  if (!results || results.length === 0) return [];
+  
+  console.log(`[getCatalog] TVDB filter params:`, JSON.stringify(params));
+  
+  // Use cacheWrapTvdbApi to cache the raw API response
+  const results = await cacheWrapTvdbApi(cacheKey, async () => {
+    return await tvdb.filter(tvdbType, params, language, config);
+  });
+  
+  console.log(`[getCatalog] TVDB filter results: ${results ? results.length : 0} items returned`);
+  
+  if (!results || results.length === 0) {
+    console.log(`[getCatalog] No results from TVDB filter, returning empty array`);
+    return [];
+  }
 
+  // Sort results by score (highest first)
+  const sortedResults = results.sort((a, b) => b.score - a.score);
+  
+  // Apply client-side pagination
+  const pageSize = 20;
+  const startIndex = (page - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedResults = sortedResults.slice(startIndex, endIndex);
+  
+  console.log(`[getCatalog] Pagination: page ${page}, showing items ${startIndex + 1}-${Math.min(endIndex, sortedResults.length)} of ${sortedResults.length} total results`);
 
-  const metas = await Promise.all(results.sort((a, b) => b.score - a.score).map(async item => {
+  const metas = await Promise.all(paginatedResults.map(async item => {
     const tvdbId = item.tvdb_id || item.id;
     if (!tvdbId) return null;
     const fallbackPosterUrl = item.image ? (item.image.startsWith('http') ? item.image : `${TVDB_IMAGE_BASE}${item.image}`) : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
@@ -96,9 +128,12 @@ async function getTvdbCatalog(type, catalogId, genreName, page, language, config
 async function getTvdbCollectionsCatalog(type, id, page, language, config) {
   const langCode = language.split('-')[0];
   if (id === 'tvdb.collections') {
-    // Cache the collections list
+    // Cache the collections list for this specific page
     const collections = await cacheWrapTvdbApi(`collections-list:${page}`, () => tvdb.getCollectionsList(config, page));
     if (!collections || !collections.length) return [];
+    
+    console.log(`[getTvdbCollectionsCatalog] Page ${page}: fetched ${collections.length} collections from TVDB API`);
+    
     // Fetch extended details and translations for each collection in parallel
     const metas = await Promise.all(collections.map(async col => {
       const extended = await cacheWrapTvdbApi(`collection-extended:${col.id}`, () => tvdb.getCollectionDetails(col.id, config));

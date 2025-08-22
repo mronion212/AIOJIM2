@@ -165,13 +165,34 @@ async function getSeasonExtended(seasonId, config) {
 
 async function getAllGenres(config) {
   const token = await getAuthToken(config.apiKeys?.tvdb);
-  if (!token) return [];
+  if (!token) {
+    console.error(`[TVDB] No auth token available for genres request`);
+    return [];
+  }
+  
   try {
+    console.log(`[TVDB] Fetching genres from: ${TVDB_API_URL}/genres`);
     const response = await fetch(`${TVDB_API_URL}/genres`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    if (!response.ok) return [];
+    
+    console.log(`[TVDB] Genres response status: ${response.status}`);
+    
+    if (!response.ok) {
+      console.error(`[TVDB] Genres request failed with status: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`[TVDB] Genres error response:`, errorText);
+      return [];
+    }
+    
     const data = await response.json();
+    console.log(`[TVDB] Genres response data structure:`, Object.keys(data));
+    console.log(`[TVDB] Genres count: ${data.data ? data.data.length : 0}`);
+    
+    if (data.data && data.data.length > 0) {
+      console.log(`[TVDB] First few genres:`, data.data.slice(0, 5).map(g => ({ id: g.id, name: g.name })));
+    }
+    
     return data.data || [];
   } catch (error) {
     console.error(`[TVDB] Error fetching genres:`, error.message);
@@ -274,12 +295,16 @@ async function getSeriesEpisodes(tvdbId, language = 'en-US', seasonType = 'defau
 
 async function filter(type, params, config) {
   const token = await getAuthToken(config.apiKeys?.tvdb);
-  if (!token) return [];
+  if (!token) {
+    console.error(`[TVDB] No auth token available for filter request`);
+    return [];
+  }
 
   try {
     const queryParams = new URLSearchParams(params);
     const url = `${TVDB_API_URL}/${type}/filter?${queryParams.toString()}`;
-    console.log(`[TVDB] request to: ${url}`);
+    console.log(`[TVDB] Filter request to: ${url}`);
+    console.log(`[TVDB] Filter params:`, JSON.stringify(params));
     
     const response = await fetch(url, {
       method: 'GET',
@@ -288,12 +313,20 @@ async function filter(type, params, config) {
         'Content-Type': 'application/json'
       }
     });
+    
+    console.log(`[TVDB] Filter response status: ${response.status}`);
+    
     if (!response.ok) {
       console.error(`[TVDB] Filter request failed with status: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`[TVDB] Filter error response:`, errorText);
       return [];
     }
 
     const data = await response.json();
+    console.log(`[TVDB] Filter response data structure:`, Object.keys(data));
+    console.log(`[TVDB] Filter response data.data length:`, data.data ? data.data.length : 'undefined');
+    
     return data.data || [];
   } catch (error) {
     console.error(`[TVDB] Error in filter for ${type}:`, error.message);

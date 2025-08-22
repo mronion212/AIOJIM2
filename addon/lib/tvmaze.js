@@ -33,7 +33,7 @@ async function getShowByImdbId(imdbId) {
  * Gets the full show details, including all episodes and cast, using a TVmaze ID.
  */
 async function getShowDetails(tvmazeId) {
-  const url = `${TVMAZE_API_URL}/shows/${tvmazeId}?embed[]=episodes&embed[]=cast`;
+  const url = `${TVMAZE_API_URL}/shows/${tvmazeId}?embed[]=episodes&embed[]=cast&embed[]=crew`;
   try {
     const response = await axios.get(url, { timeout: DEFAULT_TIMEOUT });
     return response.data;

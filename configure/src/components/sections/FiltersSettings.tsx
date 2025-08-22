@@ -1,5 +1,6 @@
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { useConfig } from '@/contexts/ConfigContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 
@@ -20,6 +21,10 @@ export function FiltersSettings() {
     setConfig(prev => ({ ...prev, ageRating: value }));
   };
 
+  const handleSfwChange = (checked: boolean) => {
+    setConfig(prev => ({ ...prev, sfw: checked }));
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Page Header */}
@@ -29,19 +34,16 @@ export function FiltersSettings() {
         <p className="text-muted-foreground mt-1">Filter the content displayed in catalogs and search results based on age ratings.</p>
       </div>
 
-      {/* Settings Card */}
-      {/* FIX: Remove hard-coded colors. The Card component is already themed. */}
+      {/* Content Rating Card */}
       <Card className="max-w-lg">
         <CardHeader>
           <CardTitle>Content Rating</CardTitle>
-          {/* The CardDescription component is already themed. */}
           <CardDescription>
-            Select the maximum content rating to display. All content rated higher than your selection will be hidden.
+            Select the maximum content rating to display. All content rated higher than your selection will be hidden. For movies and series only.
           </CardDescription>
         </CardHeader>
         <CardContent>
             <Select value={config.ageRating} onValueChange={handleAgeRatingChange}>
-              {/* FIX: Remove hard-coded colors. The Select components are already themed. */}
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select a rating" />
               </SelectTrigger>
@@ -49,6 +51,26 @@ export function FiltersSettings() {
                 {ageRatingOptions.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
               </SelectContent>
             </Select>
+        </CardContent>
+      </Card>
+
+      {/* SFW Filter Card */}
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle>Anime Content Filter</CardTitle>
+          <CardDescription>
+            Enable to show only safe for work anime content. This will filter out adult content, some ecchi content, and other mature themes.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center space-x-2">
+            <Switch
+              id="sfw-mode"
+              checked={config.sfw}
+              onCheckedChange={handleSfwChange}
+            />
+            <Label htmlFor="sfw-mode">Safe for Work (SFW) Mode</Label>
+          </div>
         </CardContent>
       </Card>
     </div>

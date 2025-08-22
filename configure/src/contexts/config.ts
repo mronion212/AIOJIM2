@@ -45,6 +45,7 @@ export interface AppConfig {
     mdblist: string;
   };
   ageRating: string;
+  sfw: boolean;
   searchEnabled: boolean;
   sessionId: string;
   catalogs: CatalogConfig[];
