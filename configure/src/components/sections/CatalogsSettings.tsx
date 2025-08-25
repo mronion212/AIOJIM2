@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { streamingServices, regions } from "@/data/streamings";
@@ -85,6 +85,38 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
     }));
   };
 
+  const handleMoveToTop = () => {
+    setConfig(prev => {
+      const currentIndex = prev.catalogs.findIndex(c => c.id === catalog.id && c.type === catalog.type);
+      if (currentIndex <= 0) return prev; // Already at top or not found
+      
+      const newCatalogs = [...prev.catalogs];
+      const [movedCatalog] = newCatalogs.splice(currentIndex, 1);
+      newCatalogs.unshift(movedCatalog);
+      
+      return {
+        ...prev,
+        catalogs: newCatalogs,
+      };
+    });
+  };
+
+  const handleMoveToBottom = () => {
+    setConfig(prev => {
+      const currentIndex = prev.catalogs.findIndex(c => c.id === catalog.id && c.type === catalog.type);
+      if (currentIndex === -1 || currentIndex === prev.catalogs.length - 1) return prev; // Not found or already at bottom
+      
+      const newCatalogs = [...prev.catalogs];
+      const [movedCatalog] = newCatalogs.splice(currentIndex, 1);
+      newCatalogs.push(movedCatalog);
+      
+      return {
+        ...prev,
+        catalogs: newCatalogs,
+      };
+    });
+  };
+
   return (
     <Card
       ref={setNodeRef}
@@ -138,6 +170,26 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </TooltipTrigger>
             <TooltipContent><p>{catalog.showInHome && catalog.enabled ? 'Featured on Home Board' : 'Not on Home Board'}</p></TooltipContent>
           </Tooltip>
+
+          <div className="flex flex-col">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={handleMoveToTop} aria-label="Move to Top" className="h-8 w-8">
+                  <ArrowUp className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Move to top of list</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={handleMoveToBottom} aria-label="Move to Bottom" className="h-8 w-8">
+                  <ArrowDown className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Move to bottom of list</TooltipContent>
+            </Tooltip>
+          </div>
+
           {(catalog.source === 'mdblist' || catalog.source === 'streaming') && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -403,13 +455,17 @@ export function CatalogsSettings() {
             </div>
           </div>
         </div>
-        <div className="flex-shrink-0 flex gap-2">
-          <Button onClick={handleOpenStreamingDialog}>Manage Streaming Providers</Button>
-          <Button onClick={() => setIsMdbListOpen(true)}>Manage MDBList Integration</Button>
+        <div className="flex-shrink-0 flex flex-wrap gap-2">
+          <Button onClick={handleOpenStreamingDialog} className="flex-1 sm:flex-none min-w-0">
+            <span className="truncate">Manage Streaming Providers</span>
+          </Button>
+          <Button onClick={() => setIsMdbListOpen(true)} className="flex-1 sm:flex-none min-w-0">
+            <span className="truncate">Manage MDBList Integration</span>
+          </Button>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={handleReloadCatalogs} aria-label="Reload Catalogs">
+                <Button variant="ghost" size="icon" onClick={handleReloadCatalogs} aria-label="Reload Catalogs" className="flex-shrink-0">
                   <RefreshCw className="w-5 h-5" />
                 </Button>
               </TooltipTrigger>

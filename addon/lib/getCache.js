@@ -2,6 +2,8 @@
 
 const packageJson = require('../../package.json');
 const redis = require('./redisClient');
+const { loadConfigFromDatabase } = require('./configApi');
+
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const GLOBAL_NO_CACHE = process.env.NO_CACHE === 'true';
@@ -184,7 +186,7 @@ async function attemptSelfHealing(key, originalError) {
 /**
  * Enhanced result classification with self-healing awareness
  */
-function classifyResult(result, error = null) {
+function classifyResult(result, error = null, cacheKey = null) {
   if (error) {
     const errorMessage = error.message?.toLowerCase() || '';
     const errorCode = error.status || error.code;
@@ -202,20 +204,40 @@ function classifyResult(result, error = null) {
   }
   
   if (!result) {
-    console.log(`[Cache Classification] Result is null/undefined, classifying as EMPTY_RESULT`);
     return { type: 'EMPTY_RESULT', ttl: ERROR_TTL_STRATEGIES.EMPTY_RESULT };
   }
   
+  // Check if this is an external API response (TVDB, TMDB, etc.)
+  const isExternalApi = cacheKey && (
+    cacheKey.includes('tvdb-api:') || 
+    cacheKey.includes('tmdb-api:') || 
+    cacheKey.includes('tvmaze-api:') ||
+    cacheKey.includes('jikan-api:')
+  );
   
+  if (isExternalApi) {
+    // For external APIs, any non-null result is valid
+    const hasValidData = (typeof result === 'object' && result !== null && Object.keys(result).length > 0) ||
+                        (Array.isArray(result) && result.length > 0) ||
+                        (typeof result === 'string' && result.length > 0) ||
+                        (typeof result === 'number');
+    
+    if (hasValidData) {
+      return { type: 'SUCCESS', ttl: null };
+    } else {
+      return { type: 'EMPTY_RESULT', ttl: ERROR_TTL_STRATEGIES.EMPTY_RESULT };
+    }
+  }
+  
+  // For internal responses (meta, catalog, etc.)
   const hasMetaData = (result.meta && typeof result.meta === 'object' && Object.keys(result.meta).length > 0);
   const hasMetasData = (Array.isArray(result.metas) && result.metas.length > 0);
+  const hasArrayData = (Array.isArray(result) && result.length > 0);
   
-  if (hasMetaData || hasMetasData) {
-    console.log(`[Cache Classification] Has data (meta: ${hasMetaData}, metas: ${hasMetasData}), classifying as SUCCESS`);
+  if (hasMetaData || hasMetasData || hasArrayData) {
     return { type: 'SUCCESS', ttl: null };
   }
   
-  console.log(`[Cache Classification] No data in meta or metas, classifying as EMPTY_RESULT`);
   return { type: 'EMPTY_RESULT', ttl: ERROR_TTL_STRATEGIES.EMPTY_RESULT };
 }
 
@@ -284,7 +306,16 @@ async function cacheWrap(key, method, ttl, options = {}) {
       
     if (result !== null && result !== undefined) {
         // Validate data before caching to prevent bad data from being cached
-        const contentType = key.startsWith('meta') ? 'meta' : key.startsWith('catalog') ? 'catalog' : 'unknown';
+        let contentType = 'unknown';
+        if (key.startsWith('meta')) {
+          contentType = 'meta';
+        } else if (key.startsWith('catalog')) {
+          contentType = 'catalog';
+        } else if (key.startsWith('search')) {
+          contentType = 'search';
+        } else if (key.startsWith('genre')) {
+          contentType = 'genre';
+        }
         const validation = cacheValidator.validateBeforeCache(result, contentType);
         
         if (!validation.isValid) {
@@ -293,7 +324,7 @@ async function cacheWrap(key, method, ttl, options = {}) {
           throw new Error(`Bad data detected: ${validation.issues.join(', ')}`);
         }
         
-        const classification = resultClassifier(result);
+        const classification = resultClassifier(result, null, key);
         const finalTtl = classification.ttl !== null ? classification.ttl : ttl;
         
         console.log(`[Cache] Classification: ${classification.type}, TTL: ${finalTtl}s`);
@@ -414,7 +445,7 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
       console.log(`❌ [Global Cache] MISS for ${truncateCacheKey(versionedKey)}`);
       updateCacheHealth(versionedKey, 'miss', true);
 
-      const classification = resultClassifier(result);
+      const classification = resultClassifier(result, null, key);
       const finalTtl = classification.ttl !== null ? classification.ttl : ttl;
       
       console.log(`[Global Cache] Classification: ${classification.type}, TTL: ${finalTtl}s`);
@@ -478,14 +509,15 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
 
 // --- Helper Functions ---
 
-function cacheWrapCatalog(configString, catalogKey, method, options = {}) {
-  const parsed = safeParseConfigString(configString);
-  const language = parsed?.language || 'en-US';
-  const trendingIds = new Set(['tmdb.trending']);
-  const genresIds = new Set(['mal.genres']);
-  const scheduleIds = new Set(['mal.schedule']);
-
+async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
+  // Load config from database
+  const config = await loadConfigFromDatabase(userUUID);
+  if (!config) {
+    throw new Error('User configuration not found');
+  }
+  
   const idOnly = catalogKey.split(':')[0];
+  const trendingIds = new Set(['tmdb.trending']);
 
   // Disable caching for trending catalogs since they change frequently
   if (trendingIds.has(idOnly)) {
@@ -493,52 +525,603 @@ function cacheWrapCatalog(configString, catalogKey, method, options = {}) {
     return method(); // Execute without caching
   }
   
+  // Create context-aware catalog config (only relevant parameters for catalogs)
+  const catalogConfig = {
+    // Language (affects all catalogs)
+    language: config.language || 'en-US',
+    
+    // Provider settings (affect catalog content)
+    providers: config.providers || {},
+    artProviders: config.artProviders || {},
+    
+    // Content filtering (affects catalog results)
+    sfw: config.sfw || false,
+    includeAdult: config.includeAdult || false,
+    ageRating: config.ageRating || null,
+    showPrefix: config.showPrefix || false,
+    
 
+    
+    // Anime-specific settings (for MAL catalogs)
+    mal: config.mal || {}
+  };
   
-  // MAL catalogs should use full config cache since they depend on art providers, meta providers, etc.
-  // But exclude search IDs which should use their own caching strategy
-  if (genresIds.has(idOnly) || scheduleIds.has(idOnly) || 
-      (idOnly.startsWith('mal.') && !idOnly.includes('search'))) {
-    // Use full config cache for MAL catalogs since they depend on configuration
-    const key = `catalog:${configString}:${catalogKey}`;
-    
-    // Debug: Log the cache key and parsed config for MAL catalogs
-    const parsed = safeParseConfigString(configString);
-    console.log(`[Cache Debug] MAL catalog cache key: ${key}`);
-    console.log(`[Cache Debug] Art provider: ${parsed?.artProviders?.anime || 'not set'}`);
-    console.log(`[Cache Debug] Config string length: ${configString?.length || 0}`);
-    
-    return cacheWrap(key, method, CATALOG_TTL, options);
-  }
-
-  const key = `catalog:${configString}:${catalogKey}`;
+  const catalogConfigString = JSON.stringify(catalogConfig);
+  const key = `catalog:${catalogConfigString}:${catalogKey}`;
+  
+  console.log(`[Cache] Catalog cache key (${idOnly}): ${key.substring(0, 120)}...`);
+  
   return cacheWrap(key, method, CATALOG_TTL, options);
 }
 
-function cacheWrapMeta(configString, metaId, method, ttl = META_TTL, options = {}) {
-   // Some metas can be shared globally when independent of config
-   const parsed = safeParseConfigString(configString);
-   const language = parsed?.language || 'en-US';
-   const globalMetaPrefixes = ['tmdb:', 'tvdb:', 'imdb:', 'kitsu:', 'anilist:', 'anidb:', 'mal:', 'tvmaze:'];
-   const isGlobalEligible = globalMetaPrefixes.some(p => metaId.startsWith(p));
-   
-   if (isGlobalEligible) {
-     // For global meta, we need to include both metadata and art provider settings in the cache key
-     // because both the data source and artwork can change based on provider preferences
-     const artProviderKey = parsed?.artProviders ? 
-       `${parsed.artProviders.movie || 'tmdb'}-${parsed.artProviders.series || 'tvdb'}-${parsed.artProviders.anime || 'mal'}` : 
-       'tmdb-tvdb-mal';
-     
-     const metaProviderKey = parsed?.providers ?
-       `${parsed.providers.movie || 'tmdb'}-${parsed.providers.series || 'tvdb'}-${parsed.providers.anime || 'mal'}` :
-       'tmdb-tvdb-mal';
-     
-     const globalKey = `meta-global:${metaId}:${language}:${metaProviderKey}:${artProviderKey}`;
-     return cacheWrapGlobal(globalKey, method, ttl, options);
+/**
+ * Search-specific cache wrapper with context-aware cache keys
+ * Search results depend on different config parameters than catalogs
+ */
+async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
+  // Load config from database
+  const config = await loadConfigFromDatabase(userUUID);
+  if (!config) {
+    throw new Error('User configuration not found');
+  }
+  
+  // Search-specific config (only relevant parameters for search results)
+  const searchConfig = {
+    language: config.language || 'en-US',
+    searchProviders: config.search?.providers || {},
+    engineEnabled: config.search?.engineEnabled || {},
+    sfw: config.sfw || false,
+    includeAdult: config.includeAdult || false,
+    ageRating: config.ageRating || null
+  };
+  
+  const searchConfigString = JSON.stringify(searchConfig);
+  const key = `search:${searchConfigString}:${searchKey}`;
+  
+  console.log(`[Cache] Search cache key: ${key.substring(0, 120)}...`);
+  
+  // Shorter TTL for search results since they're more dynamic
+  const SEARCH_TTL = 10 * 60; // 10 minutes (vs 1 hour for catalogs)
+  
+  return cacheWrap(key, method, SEARCH_TTL, options);
+}
+
+async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
+   // Load config from database
+   const config = await loadConfigFromDatabase(userUUID);
+   if (!config) {
+     throw new Error('User configuration not found');
    }
    
-   const key = `meta:${configString}:${metaId}`;
+   // Parse metaId to determine context (fallback if type not provided)
+   const [prefix, sourceId] = metaId.split(':');
+   const metaType = type;
+   
+   // Create context-aware meta config object
+   const metaConfig = {
+     // Language (affects all meta)
+     language: config.language || 'en-US',
+     
+     // Display settings (affect all meta)
+     castCount: config.castCount || 0,
+     blurThumbs: config.blurThumbs || false,
+     
+   };
+   
+   // Add context-specific settings based on meta type
+   if (metaType === 'movie') {
+     metaConfig.metaProvider = config.providers?.movie || 'tmdb';
+     metaConfig.artProvider = config.artProviders?.movie || 'tmdb';
+   } else if (metaType === 'series') {
+     metaConfig.metaProvider = config.providers?.series || 'tvdb';
+     metaConfig.artProvider = config.artProviders?.series || 'tvdb';
+     // TVDB season type only matters for TVDB series
+     if (prefix === 'tvdb') {
+       metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
+     }
+
+   } else if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
+     metaConfig.metaProvider = config.providers?.anime || 'mal';
+     metaConfig.artProvider = config.artProviders?.anime || 'mal';
+     metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
+     metaConfig.mal = {
+      skipFiller: config.mal?.skipFiller || false,
+      skipRecap: config.mal?.skipRecap || false
+    };
+   }
+   
+   // Create cache key from context-aware meta config (no UUID for shared caching)
+   const metaConfigString = JSON.stringify(metaConfig);
+   const key = `meta:${metaConfigString}:${metaId}`;
+   
+   console.log(`[Cache] Meta cache key (${prefix}/${metaType}): ${key.substring(0, 120)}...`);
+   
    return cacheWrap(key, method, ttl, options);
+}
+
+/**
+ * Granular component caching for meta objects
+ * Caches individual components separately to prevent one bad component from affecting everything
+ */
+async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
+   // Load config from database
+   const config = await loadConfigFromDatabase(userUUID);
+   if (!config) {
+     throw new Error('User configuration not found');
+   }
+   
+   // Parse metaId to determine context
+   const [prefix, sourceId] = metaId.split(':');
+   const metaType = type;
+   
+   // Create context-aware meta config object (same as cacheWrapMeta)
+   const metaConfig = {
+     language: config.language || 'en-US',
+     castCount: config.castCount || 0,
+     blurThumbs: config.blurThumbs || false,
+     showPrefix: config.showPrefix || false,
+   };
+   
+   // Add context-specific settings
+   if (metaType === 'movie') {
+     metaConfig.metaProvider = config.providers?.movie || 'tmdb';
+     metaConfig.artProvider = config.artProviders?.movie || 'tmdb';
+   } else if (metaType === 'series') {
+     metaConfig.metaProvider = config.providers?.series || 'tvdb';
+     metaConfig.artProvider = config.artProviders?.series || 'tvdb';
+     if (prefix === 'tvdb') {
+       metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
+     }
+   } else if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
+     metaConfig.metaProvider = config.providers?.anime || 'mal';
+     metaConfig.artProvider = config.artProviders?.anime || 'mal';
+     metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
+     metaConfig.mal = {
+       skipFiller: config.mal?.skipFiller || false,
+       skipRecap: config.mal?.skipRecap || false
+     };
+   }
+   
+   const metaConfigString = JSON.stringify(metaConfig);
+   
+   // Define component cache keys
+   const componentCacheKeys = {
+     basic: `meta-basic:${metaConfigString}:${metaId}`,
+     poster: `meta-poster:${metaConfigString}:${metaId}`,
+     background: `meta-background:${metaConfigString}:${metaId}`,
+     logo: `meta-logo:${metaConfigString}:${metaId}`,
+     videos: `meta-videos:${metaConfigString}:${metaId}`,
+     cast: `meta-cast:${metaConfigString}:${metaId}`,
+     director: `meta-director:${metaConfigString}:${metaId}`,
+     writer: `meta-writer:${metaConfigString}:${metaId}`,
+     links: `meta-links:${metaConfigString}:${metaId}`,
+     trailers: `meta-trailers:${metaConfigString}:${metaId}`,
+     extras: `meta-extras:${metaConfigString}:${metaId}`
+   };
+   
+   console.log(`[Cache] Granular meta cache keys (${prefix}/${metaType}):`, Object.keys(componentCacheKeys));
+   
+   // Execute the method to get the full meta object
+   const result = await method();
+   
+   // Handle both direct meta objects and wrapped { meta: ... } objects
+   const meta = result?.meta || result;
+   
+   console.log(`[Cache] Method returned for ${metaId}:`, {
+     hasResult: !!result,
+     hasMeta: !!meta,
+     hasId: !!meta?.id,
+     hasName: !!meta?.name,
+     hasType: !!meta?.type,
+     id: meta?.id,
+     name: meta?.name,
+     type: meta?.type
+   });
+   
+   if (!meta || !meta.id || !meta.name || !meta.type) {
+     console.warn(`[Cache] No valid meta object returned for ${metaId}`);
+     return { meta: null };
+   }
+   
+   // Extract and cache individual components
+   const componentPromises = [];
+   
+   // Basic meta info (id, name, type, description, etc.)
+   const basicMeta = {
+     id: meta.id,
+     name: meta.name,
+     type: meta.type,
+     description: meta.description,
+     imdb_id: meta.imdb_id,
+     slug: meta.slug,
+     genres: meta.genres,
+     director: meta.director,
+     writer: meta.writer,
+     year: meta.year,
+     releaseInfo: meta.releaseInfo,
+     released: meta.released,
+     runtime: meta.runtime,
+     country: meta.country,
+     imdbRating: meta.imdbRating,
+     behaviorHints: meta.behaviorHints
+   };
+   
+   componentPromises.push(
+     cacheComponent(componentCacheKeys.basic, basicMeta, ttl)
+   );
+   
+   // Poster
+   if (meta.poster) {
+     componentPromises.push(
+       cacheComponent(componentCacheKeys.poster, { poster: meta.poster }, ttl)
+     );
+   }
+   
+   // Background
+   if (meta.background) {
+     componentPromises.push(
+       cacheComponent(componentCacheKeys.background, { background: meta.background }, ttl)
+     );
+   }
+   
+   // Logo
+   if (meta.logo) {
+     componentPromises.push(
+       cacheComponent(componentCacheKeys.logo, { logo: meta.logo }, ttl)
+     );
+   }
+   
+   // Videos (episodes for series)
+   if (meta.videos && Array.isArray(meta.videos)) {
+     componentPromises.push(
+       cacheComponent(componentCacheKeys.videos, { videos: meta.videos }, ttl)
+     );
+   }
+   
+   // Cast - only cache if castCount is not configured (unlimited cast)
+   // When castCount is configured, we don't cache cast to avoid serving wrong cast count
+   if (meta.app_extras?.cast && (!config.castCount || config.castCount === 0)) {
+     componentPromises.push(
+       cacheComponent(componentCacheKeys.cast, { cast: meta.app_extras.cast }, ttl)
+     );
+   }
+   
+   // Director details
+   if (meta.app_extras?.directors) {
+     componentPromises.push(
+       cacheComponent(componentCacheKeys.director, { directors: meta.app_extras.directors }, ttl)
+     );
+   }
+   
+   // Writer details
+   if (meta.app_extras?.writers) {
+     componentPromises.push(
+       cacheComponent(componentCacheKeys.writer, { writers: meta.app_extras.writers }, ttl)
+     );
+   }
+   
+   // Links
+   if (meta.links && Array.isArray(meta.links)) {
+     componentPromises.push(
+       cacheComponent(componentCacheKeys.links, { links: meta.links }, ttl)
+     );
+   }
+   
+   // Trailers
+   if (meta.trailers) {
+     componentPromises.push(
+       cacheComponent(componentCacheKeys.trailers, { trailers: meta.trailers }, ttl)
+     );
+   }
+   
+   // Trailer streams
+   if (meta.trailerStreams) {
+     componentPromises.push(
+       cacheComponent(componentCacheKeys.trailers, { trailerStreams: meta.trailerStreams }, ttl)
+     );
+   }
+   
+   // App extras (combined)
+   if (meta.app_extras) {
+     componentPromises.push(
+       cacheComponent(componentCacheKeys.extras, { app_extras: meta.app_extras }, ttl)
+     );
+   }
+   
+     // Cache all components in parallel
+  await Promise.all(componentPromises);
+   
+   // Return the meta object wrapped in the expected format
+   return { meta };
+}
+
+/**
+ * Reconstruct meta object from cached components
+ * This allows for partial cache hits and graceful degradation
+ */
+async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, options = {}, type = null) {
+   // Load config from database
+   const config = await loadConfigFromDatabase(userUUID);
+   if (!config) {
+     throw new Error('User configuration not found');
+   }
+   
+   // Parse metaId to determine context
+   const [prefix, sourceId] = metaId.split(':');
+   const metaType = type;
+   
+   // Create context-aware meta config object (same as cacheWrapMeta)
+   const metaConfig = {
+     language: config.language || 'en-US',
+     castCount: config.castCount || 0,
+     blurThumbs: config.blurThumbs || false,
+     showPrefix: config.showPrefix || false,
+   };
+   
+   // Add context-specific settings
+   if (metaType === 'movie') {
+     metaConfig.metaProvider = config.providers?.movie || 'tmdb';
+     metaConfig.artProvider = config.artProviders?.movie || 'tmdb';
+   } else if (metaType === 'series') {
+     metaConfig.metaProvider = config.providers?.series || 'tvdb';
+     metaConfig.artProvider = config.artProviders?.series || 'tvdb';
+     if (prefix === 'tvdb') {
+       metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
+     }
+   } else if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
+     metaConfig.metaProvider = config.providers?.anime || 'mal';
+     metaConfig.artProvider = config.artProviders?.anime || 'mal';
+     metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
+     metaConfig.mal = {
+       skipFiller: config.mal?.skipFiller || false,
+       skipRecap: config.mal?.skipRecap || false
+     };
+   }
+   
+   const metaConfigString = JSON.stringify(metaConfig);
+   
+   // Define component cache keys
+   const componentCacheKeys = {
+     basic: `meta-basic:${metaConfigString}:${metaId}`,
+     poster: `meta-poster:${metaConfigString}:${metaId}`,
+     background: `meta-background:${metaConfigString}:${metaId}`,
+     logo: `meta-logo:${metaConfigString}:${metaId}`,
+     videos: `meta-videos:${metaConfigString}:${metaId}`,
+     cast: `meta-cast:${metaConfigString}:${metaId}`,
+     director: `meta-director:${metaConfigString}:${metaId}`,
+     writer: `meta-writer:${metaConfigString}:${metaId}`,
+     links: `meta-links:${metaConfigString}:${metaId}`,
+     trailers: `meta-trailers:${metaConfigString}:${metaId}`,
+     extras: `meta-extras:${metaConfigString}:${metaId}`
+   };
+   
+   // Try to fetch all components from cache
+   const componentPromises = Object.entries(componentCacheKeys).map(async ([componentName, cacheKey]) => {
+     try {
+       const cached = await redis.get(cacheKey);
+       if (cached) {
+         const parsed = JSON.parse(cached);
+         console.log(`[Cache] Component HIT: ${componentName} for ${metaId}`);
+         return { componentName, data: parsed };
+       } else {
+         console.log(`[Cache] Component MISS: ${componentName} for ${metaId}`);
+         return { componentName, data: null };
+       }
+     } catch (error) {
+       console.warn(`[Cache] Error fetching component ${componentName}:`, error);
+       return { componentName, data: null };
+     }
+   });
+   
+   const componentResults = await Promise.all(componentPromises);
+   const availableComponents = componentResults.filter(result => result.data !== null);
+   
+     if (availableComponents.length === 0) {
+    return null;
+  }
+   
+   // Reconstruct meta object from available components
+   const reconstructedMeta = {};
+   
+   // Start with basic meta
+   const basicComponent = availableComponents.find(c => c.componentName === 'basic');
+   if (basicComponent) {
+     Object.assign(reconstructedMeta, basicComponent.data);
+   }
+   
+   // Add other components
+   availableComponents.forEach(({ componentName, data }) => {
+     if (componentName === 'basic') return; // Already handled
+     
+     if (componentName === 'poster') {
+       reconstructedMeta.poster = data.poster;
+     } else if (componentName === 'background') {
+       reconstructedMeta.background = data.background;
+     } else if (componentName === 'logo') {
+       reconstructedMeta.logo = data.logo;
+     } else if (componentName === 'videos') {
+       reconstructedMeta.videos = data.videos;
+     } else if (componentName === 'cast') {
+       if (!reconstructedMeta.app_extras) reconstructedMeta.app_extras = {};
+       // Cast is only cached when castCount is unlimited, so use it directly
+       reconstructedMeta.app_extras.cast = data.cast;
+     } else if (componentName === 'director') {
+       if (!reconstructedMeta.app_extras) reconstructedMeta.app_extras = {};
+       reconstructedMeta.app_extras.directors = data.directors;
+     } else if (componentName === 'writer') {
+       if (!reconstructedMeta.app_extras) reconstructedMeta.app_extras = {};
+       reconstructedMeta.app_extras.writers = data.writers;
+     } else if (componentName === 'links') {
+       reconstructedMeta.links = data.links;
+     } else if (componentName === 'trailers') {
+       if (data.trailers) reconstructedMeta.trailers = data.trailers;
+       if (data.trailerStreams) reconstructedMeta.trailerStreams = data.trailerStreams;
+     } else if (componentName === 'extras') {
+       reconstructedMeta.app_extras = data.app_extras;
+     }
+   });
+   
+   // Validate the reconstructed meta
+   if (!reconstructedMeta.id || !reconstructedMeta.name || !reconstructedMeta.type) {
+     console.warn(`[Cache] Reconstructed meta missing required fields for ${metaId}`);
+     return null;
+   }
+   
+   console.log(`[Cache] Successfully reconstructed meta for ${metaId} from ${availableComponents.length} components`);
+   
+   return { meta: reconstructedMeta };
+}
+
+/**
+ * meta cache wrapper that tries component reconstruction first, then falls back to full generation
+ * This provides granular caching with graceful degradation
+ */
+async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
+   console.log(`[Cache] Smart meta caching for ${metaId} (type: ${type})`);
+   
+   // First, try to reconstruct from cached components
+   const reconstructedMeta = await reconstructMetaFromComponents(userUUID, metaId, ttl, options, type);
+   
+     if (reconstructedMeta && reconstructedMeta.meta) {
+    return reconstructedMeta;
+  }
+   
+   // If reconstruction failed, generate full meta and cache components
+   console.log(`[Cache] Component reconstruction failed for ${metaId}, generating full meta`);
+   return await cacheWrapMetaComponents(userUUID, metaId, method, ttl, options, type);
+}
+
+/**
+ * Simple component caching without validation
+ * Used for individual meta components that don't need meta validation
+ */
+async function cacheComponent(cacheKey, componentData, ttl) {
+  if (!redis || !componentData) return;
+  
+  try {
+    await redis.set(cacheKey, JSON.stringify(componentData), 'EX', ttl);
+  } catch (error) {
+    console.warn(`[Cache] Failed to cache component for ${cacheKey}:`, error);
+  }
+}
+
+/**
+ * Cache individual meta components during meta generation
+ * This is used within getMeta functions to cache expensive components like videos, cast, etc.
+ */
+async function cacheMetaComponent(userUUID, metaId, componentName, componentData, ttl = META_TTL, type = null) {
+  if (!redis || !componentData) return;
+  
+  try {
+    // Load config from database
+    const config = await loadConfigFromDatabase(userUUID);
+    if (!config) return;
+    
+    // Parse metaId to determine context
+    const [prefix, sourceId] = metaId.split(':');
+    const metaType = type;
+    
+    // Create context-aware meta config object
+    const metaConfig = {
+      language: config.language || 'en-US',
+      castCount: config.castCount || 0,
+      blurThumbs: config.blurThumbs || false,
+      showPrefix: config.showPrefix || false,
+    };
+    
+    // Add context-specific settings
+    if (metaType === 'movie') {
+      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
+      metaConfig.artProvider = config.artProviders?.movie || 'tmdb';
+    } else if (metaType === 'series') {
+      metaConfig.metaProvider = config.providers?.series || 'tvdb';
+      metaConfig.artProvider = config.artProviders?.series || 'tvdb';
+      if (prefix === 'tvdb') {
+        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
+      }
+    } else if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
+      metaConfig.metaProvider = config.providers?.anime || 'mal';
+      metaConfig.artProvider = config.artProviders?.anime || 'mal';
+      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
+      metaConfig.mal = {
+        skipFiller: config.mal?.skipFiller || false,
+        skipRecap: config.mal?.skipRecap || false
+      };
+    }
+    
+    const metaConfigString = JSON.stringify(metaConfig);
+    const cacheKey = `meta-${componentName}:${metaConfigString}:${metaId}`;
+    
+    // Cache the component
+    await redis.set(cacheKey, JSON.stringify(componentData), 'EX', ttl);
+    
+  } catch (error) {
+    console.warn(`[Cache] Failed to cache component ${componentName} for ${metaId}:`, error);
+  }
+}
+
+/**
+ * Get cached meta component
+ * This is used within getMeta functions to retrieve cached components
+ */
+async function getCachedMetaComponent(userUUID, metaId, componentName, type = null) {
+  if (!redis) return null;
+  
+  try {
+    // Load config from database
+    const config = await loadConfigFromDatabase(userUUID);
+    if (!config) return null;
+    
+    // Parse metaId to determine context
+    const [prefix, sourceId] = metaId.split(':');
+    const metaType = type;
+    
+    // Create context-aware meta config object
+    const metaConfig = {
+      language: config.language || 'en-US',
+      castCount: config.castCount || 0,
+      blurThumbs: config.blurThumbs || false,
+      showPrefix: config.showPrefix || false,
+    };
+    
+    // Add context-specific settings
+    if (metaType === 'movie') {
+      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
+      metaConfig.artProvider = config.artProviders?.movie || 'tmdb';
+    } else if (metaType === 'series') {
+      metaConfig.metaProvider = config.providers?.series || 'tvdb';
+      metaConfig.artProvider = config.artProviders?.series || 'tvdb';
+      if (prefix === 'tvdb') {
+        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
+      }
+    } else if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
+      metaConfig.metaProvider = config.providers?.anime || 'mal';
+      metaConfig.artProvider = config.artProviders?.anime || 'mal';
+      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
+      metaConfig.mal = {
+        skipFiller: config.mal?.skipFiller || false,
+        skipRecap: config.mal?.skipRecap || false
+      };
+    }
+    
+    const metaConfigString = JSON.stringify(metaConfig);
+    const cacheKey = `meta-${componentName}:${metaConfigString}:${metaId}`;
+    
+    // Get the cached component
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      console.log(`[Cache] Component HIT: ${componentName} for ${metaId}`);
+      return parsed;
+    } else {
+      console.log(`[Cache] Component MISS: ${componentName} for ${metaId}`);
+      return null;
+    }
+    
+  } catch (error) {
+    console.warn(`[Cache] Failed to get cached component ${componentName} for ${metaId}:`, error);
+    return null;
+  }
 }
 
 function cacheWrapJikanApi(key, method) {
@@ -633,9 +1216,15 @@ module.exports = {
   cacheWrap,
   cacheWrapGlobal,
   cacheWrapCatalog,
+  cacheWrapSearch,
   cacheWrapJikanApi,
   cacheWrapStaticCatalog,
   cacheWrapMeta,
+  cacheWrapMetaComponents,
+  reconstructMetaFromComponents,
+  cacheWrapMetaSmart,
+  cacheMetaComponent,
+  getCachedMetaComponent,
   getCacheHealth,
   clearCacheHealth,
   clearCache,

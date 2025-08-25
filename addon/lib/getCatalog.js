@@ -11,12 +11,13 @@ const { to3LetterCode, to3LetterCountryCode } = require('./language-map');
 const Utils = require('../utils/parseProps');
 const { resolveAllIds } = require('./id-resolver');
 const { cacheWrapTvdbApi } = require('./getCache');
+const { getTVDBContentRatingId } = require('../utils/tvdbContentRating');
 
 const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
-async function getCatalog(type, language, page, id, genre, config, catalogChoices) {
+async function getCatalog(type, language, page, id, genre, config, userUUID) {
   try {
     if (id === 'tvdb.collections') {
       console.log(`[getCatalog] Fetching TVDB collections catalog: ${id}`);
@@ -30,7 +31,7 @@ async function getCatalog(type, language, page, id, genre, config, catalogChoice
     } 
     else if (id.startsWith('tmdb.') || id.startsWith('mdblist.') || id.startsWith('streaming.')) {
       console.log(`[getCatalog] Routing to TMDB/MDBList catalog handler for id: ${id}`);
-      const tmdbResults = await getTmdbAndMdbListCatalog(type, id, genre, page, language, config, catalogChoices);
+      const tmdbResults = await getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID);
       return { metas: tmdbResults };
     }
 
@@ -39,7 +40,7 @@ async function getCatalog(type, language, page, id, genre, config, catalogChoice
       return { metas: [] };
     }
   } catch (error) {
-    console.error(`Error in getCatalog router for id=${id}, type=${type}:`, error.message);
+    console.warn(`[getCatalog] Error in getCatalog router for id=${id}, type=${type}:`, error.message);
     return { metas: [] };
   }
 }
@@ -61,12 +62,18 @@ async function getTvdbCatalog(type, catalogId, genreName, page, language, config
   const countryCode2 = langParts[1] || langCode2; 
   const langCode3 = await to3LetterCode(langCode2, config);
   const countryCode3 = to3LetterCountryCode(countryCode2);
+  const tvdbContentRatingId = getTVDBContentRatingId(config.ageRating, countryCode3, type === 'movie' ? 'movie' : 'episode');
   
   const params = {
     country: countryCode3 || 'usa',
     lang: langCode3 || 'eng',
     sort: 'score'
   };
+
+  if (tvdbContentRatingId) {
+    console.log(`[getCatalog] Using TVDB content rating ID ${tvdbContentRatingId} for TVDB filter`);
+    params.contentRating = tvdbContentRatingId;
+  }
 
   if (genre) {
     params.genre = genre.id;
@@ -106,15 +113,18 @@ async function getTvdbCatalog(type, catalogId, genreName, page, language, config
   console.log(`[getCatalog] Pagination: page ${page}, showing items ${startIndex + 1}-${Math.min(endIndex, sortedResults.length)} of ${sortedResults.length} total results`);
 
   const metas = await Promise.all(paginatedResults.map(async item => {
-    const tvdbId = item.tvdb_id || item.id;
+    const tvdbId = item.id;
+    const allIds = await resolveAllIds(`tvdb:${tvdbId}`, type, config);
     if (!tvdbId) return null;
     const fallbackPosterUrl = item.image ? (item.image.startsWith('http') ? item.image : `${TVDB_IMAGE_BASE}${item.image}`) : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
-    const posterUrl = type === 'movie' ? await Utils.getMoviePoster({ tmdbId: null, tvdbId: tvdbId, imdbId: null, metaProvider: 'tvdb', fallbackPosterUrl: fallbackPosterUrl }, config) : await Utils.getSeriesPoster({ tmdbId: null, tvdbId: tvdbId, imdbId: null, metaProvider: 'tvdb', fallbackPosterUrl: fallbackPosterUrl }, config);
-    const posterProxyUrl = `${host}/poster/${type}/tvdb:${tvdbId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+    const posterUrl = type === 'movie' ? await Utils.getMoviePoster({ tmdbId: allIds?.tmdbId, tvdbId: tvdbId, imdbId: null, metaProvider: 'tvdb', fallbackPosterUrl: fallbackPosterUrl }, config) : await Utils.getSeriesPoster({ tmdbId: null, tvdbId: tvdbId, imdbId: null, metaProvider: 'tvdb', fallbackPosterUrl: fallbackPosterUrl }, config);
+    const posterProxyUrl = `${host}/poster/${type}/${type === 'movie' && allIds?.tmdbId ? `tmdb:${allIds?.tmdbId}` : `tvdb:${tvdbId}`}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
     return {
       id: `tvdb:${tvdbId}`,
+      imdb_id: allIds?.imdbId,
       type: type,
       name: item.name,
+      description: item.overview,
       poster: posterProxyUrl,
       year: item.year || null,
       runtime: Utils.parseRunTime(item.runtime),
@@ -161,7 +171,7 @@ async function getTvdbCollectionsCatalog(type, id, page, language, config) {
   return [];
 }
 
-async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config, catalogChoices) {
+async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID) {
   if (id.startsWith("mdblist.")) {
     console.log(`[getCatalog] Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
     const listId = id.split(".")[1];
@@ -201,10 +211,10 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
 
     // Poster and background with art provider logic
     const tmdbPosterFullUrl = item.poster_path
-      ? `${TMDB_IMAGE_BASE}${item.poster_path}`
+      ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${item.poster_path}`
       : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
     const tmdbBackgroundFullUrl = item.backdrop_path
-      ? `https://image.tmdb.org/t/p/original${item.backdrop_path}`
+      ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` 
       : undefined;
 
     let posterUrl, backgroundUrl;
@@ -240,6 +250,7 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
       }, config);
     }
     const posterProxyUrl = `${host}/poster/${type}/${stremioId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+    console.log(`[getCatalog] Stremio ID: ${stremioId}`);
     return {
       id: stremioId,
       type: type,

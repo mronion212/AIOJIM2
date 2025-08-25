@@ -223,6 +223,20 @@ async function findByImdbId(imdbId, config) {
   }
 }
 
+async function findByTmdbId(tmdbId, config) {
+  const token = await getAuthToken(config.apiKeys?.tvdb);
+  if (!token) return null;
+  try {
+    const response = await fetch(`${TVDB_API_URL}/search/remoteid/${tmdbId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.data;
+  } catch (error) {
+    console.warn(`[TVDB] Error in findByTmdbId for ${tmdbId}:`, error.message);
+    return null;
+  }
+}
+
 async function getPersonExtended(personId, config) {
   const token = await getAuthToken(config.apiKeys?.tvdb);
   if (!token) return null;
@@ -523,6 +537,7 @@ module.exports = {
   getPersonExtended,
   getSeriesEpisodes,
   findByImdbId,
+  findByTmdbId,
   getAllGenres,
   filter,
   getSeasonExtended,

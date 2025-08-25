@@ -11,7 +11,7 @@ const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
-async function getTrending(type, language, page, genre, config, catalogChoices) {
+async function getTrending(type, language, page, genre, config, userUUID) {
   try {
     console.log(`[getTrending] Fetching trending for type=${type}, language=${language}, page=${page}, genre=${genre}`);
     const media_type = type === "series" ? "tv" : type;

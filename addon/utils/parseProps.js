@@ -134,25 +134,14 @@ function parseShareLink(title, imdb_id, type) {
   };
 }
 
-function parseAnimeGenreLink(genres, type, configString) {
+function parseAnimeGenreLink(genres, type, userUUID) {
   if (!Array.isArray(genres) || !process.env.HOST_NAME) return [];
   
-  // Extract userUUID and compressedConfig from configString if it contains both
-  let userUUID = null;
-  let compressedConfig = configString;
-  
-  // Check if configString contains both userUUID and compressed config (format: userUUID/compressedConfig)
-  if (configString && configString.includes('/')) {
-    const parts = configString.split('/');
-    if (parts.length >= 2) {
-      userUUID = parts[0];
-      compressedConfig = parts.slice(1).join('/');
-    }
-  }
-  
-  const manifestPath = userUUID && compressedConfig 
-    ? `stremio/${userUUID}/${compressedConfig}/manifest.json` 
-    : configString ? `${configString}/manifest.json` : 'manifest.json';
+  const host = process.env.HOST_NAME.startsWith('http')
+    ? process.env.HOST_NAME
+    : `https://${process.env.HOST_NAME}`;
+    
+  const manifestPath = userUUID ? `stremio/${userUUID}/manifest.json` : 'manifest.json';
   const manifestUrl = `${host}/${manifestPath}`;  
 
   return genres.map((genre) => {
@@ -179,29 +168,14 @@ function parseAnimeGenreLink(genres, type, configString) {
   }).filter(Boolean);
 }
 
-function parseGenreLink(genres, type, configString, isTvdb = false) {
+function parseGenreLink(genres, type, userUUID, isTvdb = false) {
   if (!Array.isArray(genres) || !process.env.HOST_NAME) return [];
   
   const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
     
-  // Extract userUUID and compressedConfig from configString if it contains both
-  let userUUID = null;
-  let compressedConfig = configString;
-  
-  // Check if configString contains both userUUID and compressed config (format: userUUID/compressedConfig)
-  if (configString && configString.includes('/')) {
-    const parts = configString.split('/');
-    if (parts.length >= 2) {
-      userUUID = parts[0];
-      compressedConfig = parts.slice(1).join('/');
-    }
-  }
-  
-  const manifestPath = userUUID && compressedConfig 
-    ? `stremio/${userUUID}/${compressedConfig}/manifest.json` 
-    : configString ? `${configString}/manifest.json` : 'manifest.json';
+  const manifestPath = userUUID ? `stremio/${userUUID}/manifest.json` : 'manifest.json';
   const manifestUrl = `${host}/${manifestPath}`;
 
   return genres.map((genre) => {
@@ -246,7 +220,7 @@ function parseCreditsLink(credits, castCount) {
 
 
 
-function buildLinks(imdbRating, imdbId, title, type, genres, credits, language, castCount, catalogChoices, isTvdb = false) {
+function buildLinks(imdbRating, imdbId, title, type, genres, credits, language, castCount, userUUID, isTvdb = false) {
   const links = [];
 
   if (imdbId) {
@@ -254,7 +228,7 @@ function buildLinks(imdbRating, imdbId, title, type, genres, credits, language, 
     links.push(parseShareLink(title, imdbId, type));
   }
 
-  const genreLinks = parseGenreLink(genres, type, catalogChoices, isTvdb);
+  const genreLinks = parseGenreLink(genres, type, userUUID, isTvdb);
   if (genreLinks.length > 0) {
     links.push(...genreLinks);
   }
@@ -285,29 +259,14 @@ function parseYear(status, first_air_date, last_air_date) {
 }
 
 
-function parseAnimeCreditsLink(characterData, configString, castCount) {
+function parseAnimeCreditsLink(characterData, userUUID, castCount) {
   if (!characterData || !characterData.length === 0) return [];
 
   const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
     
-  // Extract userUUID and compressedConfig from configString if it contains both
-  let userUUID = null;
-  let compressedConfig = configString;
-  
-  // Check if configString contains both userUUID and compressed config (format: userUUID/compressedConfig)
-  if (configString && configString.includes('/')) {
-    const parts = configString.split('/');
-    if (parts.length >= 2) {
-      userUUID = parts[0];
-      compressedConfig = parts.slice(1).join('/');
-    }
-  }
-  
-  const manifestPath = userUUID && compressedConfig 
-    ? `stremio/${userUUID}/${compressedConfig}/manifest.json` 
-    : configString ? `${configString}/manifest.json` : 'manifest.json';
+  const manifestPath = userUUID ? `stremio/${userUUID}/manifest.json` : 'manifest.json';
   const manifestUrl = `${host}/${manifestPath}`;
 
   const voiceActorLinks = characterData.slice(0, castCount).map(charEntry => {
@@ -331,7 +290,7 @@ function parseAnimeCreditsLink(characterData, configString, castCount) {
 }
 
 
-function parseAnimeRelationsLink(relationsData, type, configString) {
+function parseAnimeRelationsLink(relationsData, type, userUUID) {
   if (!Array.isArray(relationsData) || relationsData.length === 0) {
     return [];
   }
@@ -1666,7 +1625,7 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
       console.warn(`[getSeriesLogo] TMDB logo fetch failed for series (TMDB ID: ${tmdbId}):`, error.message);
     }
   }
-  else if (artProvider === 'imdb' && metaProvider != 'imdb') {
+  else if ((artProvider === 'imdb' || fallbackLogoUrl === null) && metaProvider != 'imdb') {
     if(imdbId) {
       const meta = await imdb.getMetaFromImdb(imdbId, 'series', config);
       if (meta) {
@@ -1676,6 +1635,120 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
   }
   return fallbackLogoUrl;
 
+}
+
+/**
+ * Convert banner image to background image using the image processing API
+ * @param {string} bannerUrl - Original banner image URL
+ * @param {Object} options - Processing options
+ * @param {number} options.width - Target width (default: 1920)
+ * @param {number} options.height - Target height (default: 1080)
+ * @param {number} options.blur - Blur amount (default: 0)
+ * @param {number} options.brightness - Brightness adjustment (default: 1)
+ * @param {number} options.contrast - Contrast adjustment (default: 1)
+ * @param {boolean} options.addGradient - Whether to add gradient overlay (default: false)
+ * @param {string} options.gradientType - Gradient type: 'dark' or 'light' (default: 'dark')
+ * @param {number} options.gradientOpacity - Gradient opacity 0-1 (default: 0.6)
+ * @returns {string} Processed background image URL
+ */
+function convertBannerToBackgroundUrl(bannerUrl, options = {}) {
+  if (!bannerUrl) return null;
+  
+  const {
+    width = 1920,
+    height = 1080,
+    blur = 0,
+    brightness = 1,
+    contrast = 1,
+    addGradient = false,
+    gradientType = 'dark',
+    gradientOpacity = 0.6
+  } = options;
+
+  const host = process.env.HOST_NAME.startsWith('http')
+    ? process.env.HOST_NAME
+    : `https://${process.env.HOST_NAME}`;
+
+  // Build the query parameters
+  const params = new URLSearchParams({
+    url: bannerUrl,
+    width: width.toString(),
+    height: height.toString(),
+    blur: blur.toString(),
+    brightness: brightness.toString(),
+    contrast: contrast.toString()
+  });
+
+  let endpoint = '/api/image/banner-to-background';
+  
+  // If gradient is requested, use the gradient overlay endpoint
+  if (addGradient) {
+    endpoint = '/api/image/gradient-overlay';
+    params.delete('width', 'height', 'blur', 'brightness', 'contrast');
+    params.set('gradient', gradientType);
+    params.set('opacity', gradientOpacity.toString());
+  }
+
+  return `${host}${endpoint}?${params.toString()}`;
+}
+
+/**
+ * Smart background image processor that automatically converts banners to backgrounds
+ * @param {string} imageUrl - Original image URL
+ * @param {string} imageType - Type of image: 'banner', 'poster', 'background'
+ * @param {Object} options - Processing options
+ * @returns {string} Processed image URL
+ */
+function processBackgroundImage(imageUrl, imageType = 'background', options = {}) {
+  if (!imageUrl) return null;
+
+  // If it's already a background image, return as is
+  if (imageType === 'background') {
+    return imageUrl;
+  }
+
+  // If it's a banner, convert to background
+  if (imageType === 'banner') {
+    return convertBannerToBackgroundUrl(imageUrl, {
+      blur: 2, // Slight blur for better text readability
+      brightness: 0.9, // Slightly darker
+      addGradient: true, // Add dark gradient overlay
+      gradientOpacity: 0.5,
+      ...options
+    });
+  }
+
+  // If it's a poster, convert to background with more processing
+  if (imageType === 'poster') {
+    return convertBannerToBackgroundUrl(imageUrl, {
+      blur: 3, // More blur for posters
+      brightness: 0.8, // Darker for better contrast
+      addGradient: true,
+      gradientOpacity: 0.6,
+      ...options
+    });
+  }
+
+  return imageUrl;
+}
+
+/**
+ * Convert AniList banner image to background image
+ * @param {string} bannerUrl - AniList banner image URL
+ * @param {Object} options - Processing options
+ * @returns {string} Processed background image URL
+ */
+function convertAnilistBannerToBackground(bannerUrl, options = {}) {
+  if (!bannerUrl) return null;
+  
+  return convertBannerToBackgroundUrl(bannerUrl, {
+    width: 1920,
+    height: 1080,
+    blur: 0.5, // Minimal blur to preserve image quality
+    brightness: 0.98, // Keep original brightness
+    contrast: 1.05, // Very slight contrast boost
+    ...options
+  });
 }
 
 // Helper for language fallback selection from TMDB images
@@ -1730,5 +1803,7 @@ module.exports = {
   getSeriesPoster,
   getSeriesBackground,
   getSeriesLogo,
-  selectTmdbImageByLang
+  selectTmdbImageByLang,
+  processBackgroundImage,
+  convertAnilistBannerToBackground
 };

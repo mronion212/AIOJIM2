@@ -16,7 +16,7 @@ class CacheValidator {
         /:undefined:\d+$/,           // e.g., "tt21975436:undefined:1"
         /:undefined:undefined$/,     // e.g., "tt21975436:undefined:undefined"
         /^undefined:/,               // e.g., "undefined:123:1"
-        /:undefined$/,               // e.g., "mal:123:undefined"
+        /^[^:]+:[^:]+:undefined$/,   // e.g., "mal:123:undefined" (but not "tmdb:123:1:undefined")
       ],
       // Meta patterns that indicate bad data
       metaFields: [
@@ -30,6 +30,13 @@ class CacheValidator {
         /"id":\s*"undefined"/,      // undefined catalog IDs
         /"name":\s*"undefined"/,    // undefined names
         /"type":\s*"undefined"/,    // undefined types
+      ],
+      // Genre patterns that indicate bad data
+      genreFields: [
+        /"id":\s*"undefined"/,      // undefined genre IDs
+        /"name":\s*"undefined"/,    // undefined genre names
+        /"id":\s*null/,             // null genre IDs
+        /"name":\s*null/,           // null genre names
       ]
     };
     
@@ -62,55 +69,7 @@ class CacheValidator {
     };
   }
 
-  /**
-   * Validate a meta response for bad data patterns
-   */
-  validateMetaResponse(meta, contentType = 'series') {
-    const issues = [];
-    
-    if (!meta) {
-      issues.push('Meta response is null or undefined');
-      return { isValid: false, issues };
-    }
 
-    // Check for undefined in ID
-    if (meta.id && typeof meta.id === 'string' && meta.id.includes('undefined')) {
-      issues.push(`Bad episode ID pattern: ${meta.id}`);
-    }
-
-    // Check for undefined in title
-    if (meta.name && meta.name === 'undefined') {
-      issues.push('Title is undefined');
-    }
-
-    // Check for undefined in type
-    if (meta.type && meta.type === 'undefined') {
-      issues.push('Type is undefined');
-    }
-
-    // Validate episodes for series
-    if (contentType === 'series' && meta.videos) {
-      const episodeIssues = this.validateEpisodes(meta.videos);
-      issues.push(...episodeIssues);
-    }
-
-    // Check for required fields
-    const rules = this.validationRules[contentType];
-    if (rules) {
-      for (const field of rules.required) {
-        if (!meta[field]) {
-          issues.push(`Missing required field: ${field}`);
-        }
-      }
-    }
-
-    return {
-      isValid: issues.length === 0,
-      issues,
-      metaId: meta.id,
-      contentType
-    };
-  }
 
   /**
    * Validate episodes array for bad data
@@ -187,6 +146,142 @@ class CacheValidator {
   }
 
   /**
+   * Validate search results before caching
+   */
+  validateSearchBeforeCache(data) {
+    const issues = [];
+    
+    if (!data || !data.metas) {
+      issues.push('Search response is missing or has no metas');
+      return { isValid: false, issues };
+    }
+
+    if (!Array.isArray(data.metas)) {
+      issues.push('Search metas is not an array');
+      return { isValid: false, issues };
+    }
+
+    // Check for empty search results (this is valid, but log it)
+    if (data.metas.length === 0) {
+      console.log('[Search Validation] Empty search results (this is valid)');
+    }
+
+    data.metas.forEach((meta, index) => {
+      // Check for bad IDs
+      if (meta.id && typeof meta.id === 'string' && meta.id.includes('undefined')) {
+        issues.push(`Search item ${index + 1} has bad ID: ${meta.id}`);
+      }
+
+      // Check for undefined names
+      if (meta.name === 'undefined' || meta.name === undefined) {
+        issues.push(`Search item ${index + 1} has undefined name`);
+      }
+
+      // Check for malformed type
+      if (meta.type === 'undefined' || meta.type === undefined) {
+        issues.push(`Search item ${index + 1} has undefined type`);
+      }
+
+      // Check for malformed poster URLs
+      if (meta.poster && typeof meta.poster === 'string') {
+        if (meta.poster.includes('undefined') || meta.poster === 'null') {
+          issues.push(`Search item ${index + 1} has malformed poster URL`);
+        }
+      }
+
+      // Check for malformed background URLs
+      if (meta.background && typeof meta.background === 'string') {
+        if (meta.background.includes('undefined') || meta.background === 'null') {
+          issues.push(`Search item ${index + 1} has malformed background URL`);
+        }
+      }
+    });
+
+    return {
+      isValid: issues.length === 0,
+      issues,
+      itemCount: data.metas.length
+    };
+  }
+
+  /**
+   * Validate genre data before caching
+   */
+  validateGenreBeforeCache(data) {
+    const issues = [];
+    
+    // Check if data exists
+    if (!data) {
+      issues.push('Genre data is null or undefined');
+      return { isValid: false, issues };
+    }
+
+    // Check if it's an error response
+    if (data.error) {
+      issues.push(`Genre data contains error: ${data.message || 'Unknown error'}`);
+      return { isValid: false, issues };
+    }
+
+    // Check if it's an array
+    if (!Array.isArray(data)) {
+      issues.push('Genre data is not an array');
+      return { isValid: false, issues };
+    }
+
+    // Check for empty array (this might be valid for some cases)
+    if (data.length === 0) {
+      console.log('[Cache Validator] Genre array is empty - this might be valid');
+      return { isValid: true, issues: [] };
+    }
+
+    // Validate each genre object
+    data.forEach((genre, index) => {
+      if (!genre || typeof genre !== 'object') {
+        issues.push(`Genre ${index} is not a valid object`);
+        return;
+      }
+
+      // Check for required fields
+      if (!genre.id) {
+        issues.push(`Genre ${index} missing required field: id`);
+      }
+
+      if (!genre.name) {
+        issues.push(`Genre ${index} missing required field: name`);
+      }
+
+      // Check for malformed fields
+      if (genre.id && typeof genre.id === 'string' && genre.id.includes('undefined')) {
+        issues.push(`Genre ${index} ID contains undefined: ${genre.id}`);
+      }
+
+      if (genre.name && genre.name === 'undefined') {
+        issues.push(`Genre ${index} name is undefined string`);
+      }
+
+      // Check for null values
+      if (genre.id === null) {
+        issues.push(`Genre ${index} ID is null`);
+      }
+
+      if (genre.name === null) {
+        issues.push(`Genre ${index} name is null`);
+      }
+
+      // Check for invalid types
+      if (genre.id && typeof genre.id !== 'number' && typeof genre.id !== 'string') {
+        issues.push(`Genre ${index} ID has invalid type: ${typeof genre.id}`);
+      }
+
+      if (genre.name && typeof genre.name !== 'string') {
+        issues.push(`Genre ${index} name has invalid type: ${typeof genre.name}`);
+      }
+    });
+
+    return { isValid: issues.length === 0, issues };
+  }
+
+  /**
    * Check if a cache key contains bad data and should be invalidated
    */
   async checkCacheKeyForBadData(cacheKey, contentType = 'meta') {
@@ -199,11 +294,11 @@ class CacheValidator {
       const parsed = JSON.parse(cachedData);
       
       if (contentType === 'meta') {
-        // Skip meta validation for now as it's causing issues with valid meta responses
+        const validation = this.validateMetaBeforeCache(parsed);
         return {
-          shouldInvalidate: false,
-          reason: 'Meta validation disabled',
-          issues: []
+          shouldInvalidate: !validation.isValid,
+          reason: validation.isValid ? null : validation.issues.join(', '),
+          issues: validation.issues
         };
       } else if (contentType === 'catalog') {
         const validation = this.validateCatalogResponse(parsed);
@@ -284,12 +379,117 @@ class CacheValidator {
    * Validate data before caching to prevent bad data from being cached
    */
   validateBeforeCache(data, contentType = 'meta') {
-    // Skip meta validation for now as it's causing issues with valid meta responses
     if (contentType === 'catalog') {
       return this.validateCatalogResponse(data);
+    } else if (contentType === 'meta') {
+      return this.validateMetaBeforeCache(data);
+    } else if (contentType === 'search') {
+      return this.validateSearchBeforeCache(data);
+    } else if (contentType === 'genre') {
+      return this.validateGenreBeforeCache(data);
     }
     
     return { isValid: true, issues: [] };
+  }
+
+  /**
+   * Enhanced meta validation before caching
+   */
+  validateMetaBeforeCache(data) {
+    const issues = [];
+    
+    // Check if data exists
+    if (!data) {
+      issues.push('Meta data is null or undefined');
+      return { isValid: false, issues };
+    }
+
+    // Check if it's an error response
+    if (data.error) {
+      issues.push(`Meta data contains error: ${data.message || 'Unknown error'}`);
+      return { isValid: false, issues };
+    }
+
+    // Check if meta object exists
+    if (!data.meta) {
+      issues.push('Meta response missing meta object');
+      return { isValid: false, issues };
+    }
+
+    const meta = data.meta;
+
+    // Check for null meta
+    if (meta === null) {
+      issues.push('Meta object is null');
+      return { isValid: false, issues };
+    }
+
+    // Check for required fields
+    if (!meta.id) {
+      issues.push('Meta missing required field: id');
+    }
+
+    if (!meta.name) {
+      issues.push('Meta missing required field: name');
+    }
+
+    if (!meta.type) {
+      issues.push('Meta missing required field: type');
+    }
+
+    // Check for malformed fields
+    if (meta.id && typeof meta.id === 'string' && meta.id.includes('undefined')) {
+      issues.push(`Meta ID contains undefined: ${meta.id}`);
+    }
+
+    if (meta.name && meta.name === 'undefined') {
+      issues.push('Meta name is undefined string');
+    }
+
+    if (meta.type && meta.type === 'undefined') {
+      issues.push('Meta type is undefined string');
+    }
+
+    // Check for malformed episodes in series
+    if (meta.type === 'series' && meta.videos) {
+      if (!Array.isArray(meta.videos)) {
+        issues.push('Series videos is not an array');
+      } else {
+        const episodeIssues = this.validateEpisodes(meta.videos);
+        issues.push(...episodeIssues);
+      }
+    }
+
+    // Check for malformed links
+    if (meta.links && !Array.isArray(meta.links)) {
+      issues.push('Meta links is not an array');
+    }
+
+    // Check for malformed genres
+    if (meta.genres && !Array.isArray(meta.genres)) {
+      issues.push('Meta genres is not an array');
+    }
+
+
+    // Check for malformed poster/background URLs
+    if (meta.poster && typeof meta.poster === 'string') {
+      if (meta.poster.includes('undefined') || meta.poster === 'null') {
+        issues.push('Meta poster URL contains undefined/null');
+      }
+    }
+
+    if (meta.background && typeof meta.background === 'string') {
+      if (meta.background.includes('undefined') || meta.background === 'null') {
+        issues.push('Meta background URL contains undefined/null');
+      }
+    }
+
+    return {
+      isValid: issues.length === 0,
+      issues,
+      metaId: meta.id,
+      contentType: 'meta'
+    };
   }
 }
 

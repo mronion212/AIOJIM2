@@ -354,7 +354,7 @@ class AniListAPI {
 
   /**
    * Get background image URL from AniList data
-   * Resizes banner images for better Stremio display
+   * Converts banner images to full-size backgrounds with proper processing
    * Falls back to cover image if banner is too small
    */
   getBackgroundUrl(animeData) {
@@ -368,13 +368,23 @@ class AniListAPI {
     
     // Use banner if available, otherwise use cover image
     const originalUrl = bannerUrl || coverUrl;
+    const isBanner = !!bannerUrl; // Check if we're using a banner image
     
-    // Use our own image resize endpoint with maximum quality 16:9
-    // This will resize to the highest possible 16:9 resolution while maintaining quality
-    // Sharp will automatically calculate the optimal dimensions and upscale if needed
-    const resizedUrl = `${host}/resize-image?url=${encodeURIComponent(originalUrl)}&fit=cover&output=jpg&q=95`;
+    // Use the new banner-to-background conversion endpoint
+    // This provides better processing for banner images
+    const params = new URLSearchParams({
+      url: originalUrl,
+      width: '1920',
+      height: '1080',
+      blur: isBanner ? '0.5' : '0', // Minimal blur for banners
+      brightness: isBanner ? '0.98' : '1', // Keep original brightness
+      contrast: '1.05', // Very slight contrast boost
+      position: isBanner ? 'top' : 'center' // Use top positioning for banners to avoid cutting off content
+    });
     
-    return resizedUrl;
+    const backgroundUrl = `${host}/api/image/banner-to-background?${params.toString()}`;
+    
+    return backgroundUrl;
   }
 
   /**

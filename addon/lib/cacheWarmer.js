@@ -33,8 +33,9 @@ async function warmEssentialContent() {
     // Warm MAL studios
     await cacheWrapJikanApi('mal-studios', async () => {
       return await mal.getStudios(100);
-    });
+    }, 30 * 24 * 60 * 60); // Cache for 30 days
     
+    initialWarmingComplete = true;
     console.log('[Cache Warming] Essential content warming completed');
   } catch (error) {
     console.error('[Cache Warming] Error warming essential content:', error.message);
@@ -77,12 +78,9 @@ async function warmFromUserActivity() {
  * Schedule essential warming at regular intervals
  */
 function scheduleEssentialWarming(intervalMinutes = 30) {
-  console.log(`[Cache Warming] Scheduling essential warming every ${intervalMinutes} minutes`);
+  console.log(`[Cache Warming] Scheduling periodic warming every ${intervalMinutes} minutes`);
   
-  // Run initial warming
-  warmEssentialContent();
-  
-  // Schedule recurring warming
+  // Schedule recurring warming (initial warming is done separately)
   const intervalMs = intervalMinutes * 60 * 1000;
   setInterval(() => {
     console.log('[Cache Warming] Running scheduled essential warming...');
@@ -90,10 +88,23 @@ function scheduleEssentialWarming(intervalMinutes = 30) {
   }, intervalMs);
 }
 
+// Track if initial warming is complete
+let initialWarmingComplete = false;
+
+/**
+ * Check if initial warming is complete
+ */
+function isInitialWarmingComplete() {
+  return initialWarmingComplete;
+}
+
+
+
 module.exports = {
   warmEssentialContent,
   warmRelatedContent,
   warmFromUserActivity,
   scheduleEssentialWarming,
+  isInitialWarmingComplete,
   WARMING_STRATEGIES
 };

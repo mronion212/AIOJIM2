@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { AlertCircle, CheckCircle, Copy, Loader2, Save, Key, User, Download, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { InstallDialog } from "@/components/InstallDialog";
+import { ConfigImportExport } from "@/components/ConfigImportExport";
 
 interface ConfigurationManagerProps {
   children?: React.ReactNode;
@@ -16,11 +17,10 @@ interface ConfigurationManagerProps {
 interface SavedConfig {
   userUUID: string;
   installUrl: string;
-  compressedConfig: string;
 }
 
 export function ConfigurationManager({ children }: ConfigurationManagerProps) {
-  const { config, auth, setAuth } = useConfig();
+  const { config, auth, setAuth, loadConfigFromDatabase } = useConfig();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -46,6 +46,14 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
       .then(data => setRequireAddonPassword(!!data.requiresAddonPassword))
       .catch(() => setRequireAddonPassword(false));
   }, []);
+
+  // Auto-load config if userUUID is in URL but not authenticated
+  useEffect(() => {
+    if (auth.userUUID && !auth.authenticated) {
+      // Show password dialog to load config
+      setShowPasswordDialog(true);
+    }
+  }, [auth.userUUID, auth.authenticated]);
 
   useEffect(() => {
     if (savedConfig?.userUUID && savedConfig.userUUID.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
@@ -178,6 +186,29 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
     }
   };
 
+  const handleLoadFromUrl = async () => {
+    if (!auth.userUUID) return;
+    setIsLoading(true);
+    setError("");
+    try {
+      const success = await loadConfigFromDatabase(auth.userUUID, password);
+      if (success) {
+        setAuth({ authenticated: true, userUUID: auth.userUUID, password });
+        setShowPasswordDialog(false);
+        setPassword("");
+        setAddonPassword("");
+        toast.success("Configuration loaded successfully!");
+      } else {
+        setError("Invalid password or configuration not found");
+      }
+    } catch (err) {
+      console.error('Load from URL error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load configuration');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const validation = validateRequiredKeys();
 
   return (
@@ -244,9 +275,12 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
               </Button>
               <DialogContent>
                 <DialogHeader>
-                   <DialogTitle>Create Password</DialogTitle>
+                   <DialogTitle>{auth.userUUID ? 'Load Configuration' : 'Create Password'}</DialogTitle>
                   <DialogDescription>
-                    Create a password to protect your configuration. You'll need this password to access your configuration later.
+                    {auth.userUUID 
+                      ? 'Enter your password to load your existing configuration.'
+                      : 'Create a password to protect your configuration. You\'ll need this password to access your configuration later.'
+                    }
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
@@ -280,28 +314,30 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">Password must be at least 6 characters long.</p>
                   </div>
-                   <div className="space-y-2">
-                    <Label htmlFor="confirmPassword">Confirm Password</Label>
-                    <div className="relative">
-                      <Input
-                        id="confirmPassword"
-                        type={showConfirmPassword ? "text" : "password"}
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        placeholder="Confirm your password"
-                        minLength={6}
-                      />
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-2 top-1/2 -translate-y-1/2"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      >
-                        {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">Must match the password above and be at least 6 characters.</p>
-                  </div>
+                   {!auth.userUUID && (
+                     <div className="space-y-2">
+                       <Label htmlFor="confirmPassword">Confirm Password</Label>
+                       <div className="relative">
+                         <Input
+                           id="confirmPassword"
+                           type={showConfirmPassword ? "text" : "password"}
+                           value={confirmPassword}
+                           onChange={(e) => setConfirmPassword(e.target.value)}
+                           placeholder="Confirm your password"
+                           minLength={6}
+                         />
+                         <Button
+                           variant="ghost"
+                           size="sm"
+                           className="absolute right-2 top-1/2 -translate-y-1/2"
+                           onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                         >
+                           {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                         </Button>
+                       </div>
+                       <p className="text-xs text-muted-foreground mt-1">Must match the password above and be at least 6 characters.</p>
+                     </div>
+                   )}
                   {requireAddonPassword && (
                     <div className="space-y-2">
                       <Label htmlFor="addonPassword">Addon Password</Label>
@@ -324,16 +360,16 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                       Cancel
                     </Button>
                     <Button 
-                      onClick={handleSaveConfiguration}
-                      disabled={isLoading || password.length < 6 || password !== confirmPassword}
+                      onClick={auth.userUUID ? handleLoadFromUrl : handleSaveConfiguration}
+                      disabled={isLoading || password.length < 6 || (!auth.userUUID && password !== confirmPassword)}
                     >
                       {isLoading ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Saving...
+                          {auth.userUUID ? 'Loading...' : 'Saving...'}
                         </>
                       ) : (
-                        'Save Configuration'
+                        auth.userUUID ? 'Load Configuration' : 'Save Configuration'
                       )}
                     </Button>
                   </div>
@@ -486,6 +522,10 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
           </CardContent>
         </Card>
       )}
+      
+      {/* Import/Export Section */}
+      <ConfigImportExport />
+      
       {children}
       <InstallDialog isOpen={isInstallOpen} onClose={() => setIsInstallOpen(false)} manifestUrl={installUrl} />
     </div>

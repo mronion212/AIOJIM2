@@ -7,11 +7,14 @@ const catalogsTranslations = require("../static/translations.json");
 const CATALOG_TYPES = require("../static/catalog-types.json");
 const jikan = require('./mal');
 const DEFAULT_LANGUAGE = "en-US";
-const { cacheWrapJikanApi } = require('./getCache');
+const { cacheWrapJikanApi, cacheWrapGlobal } = require('./getCache');
 
 const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
+
+// Manifest cache TTL (5 minutes)
+const MANIFEST_CACHE_TTL = 5 * 60;
 
 function generateArrayOfYears(maxYears) {
   const max = new Date().getFullYear();
@@ -178,12 +181,17 @@ async function createMDBListCatalog(userCatalog, mdblistKey) {
 }
 
 async function getManifest(config) {
-  const language = config.language || DEFAULT_LANGUAGE;
-  const showPrefix = config.showPrefix === true;
-  const provideImdbId = config.provideImdbId === "true";
-  const sessionId = config.sessionId;
-  const userCatalogs = config.catalogs || getDefaultCatalogs();
-  const translatedCatalogs = loadTranslations(language);
+  const startTime = Date.now();
+  console.log('[Manifest] Starting manifest generation...');
+  
+  // Generate manifest directly without caching to avoid cache key issues
+  // The manifest is fast to generate and caching causes more problems than it solves
+    const language = config.language || DEFAULT_LANGUAGE;
+    const showPrefix = config.showPrefix === true;
+    const provideImdbId = config.provideImdbId === "true";
+    const sessionId = config.sessionId;
+    const userCatalogs = config.catalogs || getDefaultCatalogs();
+    const translatedCatalogs = loadTranslations(language);
 
 
   const enabledCatalogs = userCatalogs.filter(c => c.enabled);
@@ -191,14 +199,98 @@ async function getManifest(config) {
   console.log(`[Manifest] MDBList catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('mdblist.')).map(c => c.id));
   
   const years = generateArrayOfYears(20);
-  const genres_movie = (await getGenreList('tmdb', language, "movie", config)).map(g => g.name).sort();
-  const genres_series = (await getGenreList('tmdb', language, "series", config)).map(g => g.name).sort();
-  const genres_tvdb_all = (await getGenreList('tvdb', language, "series", config)).map(g => g.name).sort();
-
-  const languagesArray = await getLanguages(config);
+  
+  // Only fetch genre lists if we actually have catalogs that need them
+  const hasTmdbCatalogs = enabledCatalogs.some(cat => cat.id.startsWith('tmdb.'));
+  const hasTvdbCatalogs = enabledCatalogs.some(cat => cat.id.startsWith('tvdb.'));
+  const hasMalCatalogs = enabledCatalogs.some(cat => cat.id.startsWith('mal.'));
+  
+  // Parallel fetch only what we need
+  const fetchPromises = [];
+  
+  if (hasTmdbCatalogs) {
+    fetchPromises.push(
+      getGenreList('tmdb', language, "movie", config),
+      getGenreList('tmdb', language, "series", config)
+    );
+  }
+  
+  if (hasTvdbCatalogs) {
+    fetchPromises.push(
+      getGenreList('tvdb', language, "series", config)
+    );
+  }
+  
+  fetchPromises.push(
+    cacheWrapGlobal(`languages:${language}`, () => getLanguages(config), 60 * 60)
+  );
+  
+  const genreStart = Date.now();
+  const results = await Promise.all(fetchPromises);
+  console.log(`[Manifest] Genre lists and languages fetched in ${Date.now() - genreStart}ms`);
+  
+  // Extract results based on what was fetched
+  let genres_movie = [], genres_series = [], genres_tvdb_all = [];
+  let resultIndex = 0;
+  
+  if (hasTmdbCatalogs) {
+    genres_movie = results[resultIndex++];
+    genres_series = results[resultIndex++];
+  }
+  
+  if (hasTvdbCatalogs) {
+    genres_tvdb_all = results[resultIndex++];
+  }
+  
+  const languagesArray = results[resultIndex];
+  
+  // Only fetch anime genres if we have MAL catalogs
+  let animeGenreNames = [];
+  let studioNames = [];
+  if (hasMalCatalogs) {
+    const animeStart = Date.now();
+    const animeGenres = await cacheWrapJikanApi('anime-genres', async () => {
+      console.log('[Cache Miss] Fetching fresh anime genre list in manifest from Jikan...');
+      return await jikan.getAnimeGenres();
+    });
+    animeGenreNames = animeGenres.filter(Boolean).map(genre => genre.name).sort();
+    console.log(`[Manifest] Anime genres fetched in ${Date.now() - animeStart}ms`);
+    
+    // Only fetch studios if we have a studio catalog - but don't block manifest generation
+    const hasStudioCatalog = enabledCatalogs.some(cat => cat.id === 'mal.studios');
+    if (hasStudioCatalog) {
+      try {
+        // Try to get cached studios first, don't block if not available
+        const studioPromise = cacheWrapJikanApi('mal-studios', async () => {
+          console.log('[Cache Miss] Fetching fresh anime studio list in manifest from Jikan...');
+          return await jikan.getStudios();
+        }, 30 * 24 * 60 * 60); // Cache for 30 days
+        
+        // Add timeout to prevent blocking manifest generation
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Studio fetch timeout')), 2000); // 2 second timeout
+        });
+        
+        const studios = await Promise.race([studioPromise, timeoutPromise]);
+        
+        studioNames = studios.map(studio => {
+          const defaultTitle = studio.titles.find(t => t.type === 'Default');
+          return defaultTitle ? defaultTitle.title : null;
+        }).filter(Boolean);
+        console.log(`[Manifest] Studio list fetched successfully (${studioNames.length} studios)`);
+      } catch (error) {
+        console.warn('[Manifest] Studio list fetch failed, using empty list:', error.message);
+        studioNames = []; // Fallback to empty list
+      }
+    }
+  }
+  
+  const genres_movie_names = genres_movie.map(g => g.name).sort();
+  const genres_series_names = genres_series.map(g => g.name).sort();
+  const genres_tvdb_all_names = genres_tvdb_all.map(g => g.name).sort();
   const filterLanguages = setOrderLanguage(language, languagesArray);
   const isMDBList = (id) => id.startsWith("mdblist.");
-  const options = { years, genres_movie, genres_series, filterLanguages };
+  const options = { years, genres_movie: genres_movie_names, genres_series: genres_series_names, filterLanguages };
 
   let catalogs = await Promise.all(enabledCatalogs
     .filter(userCatalog => {
@@ -228,9 +320,8 @@ async function getManifest(config) {
       let catalogOptions = [];
 
       if (userCatalog.id.startsWith('tvdb.') && !userCatalog.id.includes('collections')) {
-        console.log('[Manifest] Building TVDB genres catalog options...');
         const excludedGenres = ['awards show', 'podcast', 'game show', 'news'];
-        catalogOptions = genres_tvdb_all
+        catalogOptions = genres_tvdb_all_names
           .filter(name => !excludedGenres.includes(name.toLowerCase()))
           .sort();
       }
@@ -247,20 +338,11 @@ async function getManifest(config) {
         );
       }
       else if (userCatalog.id === 'mal.genres') {
-          const animeGenres = await cacheWrapJikanApi('anime-genres', async () => {
-            console.log('[Cache Miss] Fetching fresh anime genre list in manifest from Jikan...');
-            return await jikan.getAnimeGenres();
-          })
-          catalogOptions = animeGenres.filter(Boolean).map(genre => genre.name).sort();
+          // Use pre-fetched anime genres
+          catalogOptions = animeGenreNames;
       } else if (userCatalog.id === 'mal.studios'){
-        const studios = await cacheWrapJikanApi('mal-studios', async () => {
-          console.log('[Cache Miss] Fetching fresh anime studio list in manifest from Jikan...');
-          return await jikan.getStudios();
-        })
-        catalogOptions = studios.map(studio => {
-          const defaultTitle = studio.titles.find(t => t.type === 'Default');
-          return defaultTitle ? defaultTitle.title : null;
-        }).filter(Boolean);
+        // Use pre-fetched studio names, fallback to empty if not available
+        catalogOptions = studioNames.length > 0 ? studioNames : ['None'];
       }
       else if (userCatalog.id === 'mal.schedule') {
         catalogOptions = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -273,11 +355,8 @@ async function getManifest(config) {
         catalogOptions = ['None'];
       }
       else if (userCatalog.id.startsWith('mal.') && !['mal.airing', 'mal.upcoming', 'mal.schedule', 'mal.top_movies', 'mal.top_series', 'mal.most_favorites', 'mal.top_anime', 'mal.most_popular'].includes(userCatalog.id)) {
-        const animeGenres = await cacheWrapJikanApi('anime-genres', async () => {
-          console.log('[Cache Miss] Fetching fresh anime genre list in manifest from Jikan...');
-          return await jikan.getAnimeGenres();
-        });
-        catalogOptions = animeGenres.filter(Boolean).map(genre => genre.name).sort();
+        // Use pre-fetched anime genres for decade catalogs
+        catalogOptions = animeGenreNames;
       }
       else {
         catalogOptions = getOptionsForCatalog(catalogDef, userCatalog.type, userCatalog.showInHome, options);
@@ -292,7 +371,6 @@ async function getManifest(config) {
           translatedCatalogs,
           userCatalog.showInHome
       );
-      console.log(`[Manifest] Created catalog ${userCatalog.id} with showInHome: ${userCatalog.showInHome}`);
       return catalog;   
     }));
   
@@ -398,7 +476,7 @@ async function getManifest(config) {
   ].join(' | ');
   
 
-  return {
+  const manifest = {
     id: packageJson.name,
     version: packageJson.version,
     favicon: `${host}/favicon.png`,
@@ -416,6 +494,11 @@ async function getManifest(config) {
     },
     catalogs,
   };
+  
+  const endTime = Date.now();
+  console.log(`[Manifest] Manifest generation completed in ${endTime - startTime}ms`);
+  
+  return manifest;
 }
 
 function getDefaultCatalogs() {

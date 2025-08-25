@@ -365,8 +365,11 @@ async function getTopAnimeByDateRange(startDate, endDate, page = 1, genreId, con
     order_by: 'members', 
     sort: 'desc',
     page: page,
-    genres: genreId
   };
+
+  if (genreId) {
+    queryParams.genres = genreId;
+  }
 
   if (config.sfw) {
     queryParams.sfw = true;

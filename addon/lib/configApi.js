@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { compressToEncodedURIComponent } = require('lz-string');
+
 const database = require('./database');
 
 class ConfigApi {
@@ -71,24 +71,182 @@ class ConfigApi {
       // Hash the password
       const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
       
-      await database.saveUserConfig(userUUID, passwordHash, config);
+      // Add timestamp to track config changes
+      const configWithTimestamp = {
+        ...config,
+        lastModified: Date.now()
+      };
+      
+      // Get old config to compare changes
+      let oldConfig = null;
+      try {
+        oldConfig = await database.getUserConfig(userUUID);
+      } catch (error) {
+        // User might not exist yet, that's fine
+        console.log(`[ConfigApi] No existing config found for user ${userUUID}, treating as new config`);
+      }
+      
+      // Add a config version that changes when config is updated
+      // This helps with cache invalidation
+      configWithTimestamp.configVersion = Date.now();
+      
+      await database.saveUserConfig(userUUID, passwordHash, configWithTimestamp);
       // Always trust the UUID after creation
       await database.trustUUID(userUUID);
       
-      // Create compressed config for URL
-      const compressedConfig = compressToEncodedURIComponent(JSON.stringify(config));
+      // Invalidate user's cache when config changes
+      try {
+        const redis = require('./getCache').redis;
+        
+        // Clear only the meta components affected by config changes
+        try {
+          const patterns = [];
+          
+          // Map config changes to specific cache components that need clearing
+          // This ensures we only clear what's actually affected by the change
+          
+          // Cast-related changes
+          if (config.castCount !== undefined && config.castCount !== oldConfig?.castCount) {
+            patterns.push(`meta-cast:*`);  // Cast components
+            patterns.push(`meta-videos:*`); // Episode components (might include cast info)
+            console.log(`[ConfigApi] Cast count changed from ${oldConfig?.castCount} to ${config.castCount}`);
+          }
+          
+          // Language changes - affects all meta content
+          if (config.language !== undefined && config.language !== oldConfig?.language) {
+            patterns.push(`v*:meta-*:*`); // All meta components since language affects everything
+            console.log(`[ConfigApi] Language changed from ${oldConfig?.language} to ${config.language}`);
+          }
+          
+          // Blur thumbs changes - affects poster/background display
+          if (config.blurThumbs !== undefined && config.blurThumbs !== oldConfig?.blurThumbs) {
+            patterns.push(`meta-poster:*`); // Poster components
+            patterns.push(`meta-background:*`); // Background components
+            console.log(`[ConfigApi] Blur thumbs changed from ${oldConfig?.blurThumbs} to ${config.blurThumbs}`);
+          }
+          
+          // Show prefix changes - affects basic meta display
+          if (config.showPrefix !== undefined && config.showPrefix !== oldConfig?.showPrefix) {
+            patterns.push(`meta-basic:*`); // Basic meta components
+            console.log(`[ConfigApi] Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix}`);
+          }
+          
+          // Art provider changes - affects all art-related components
+          if (config.artProviders && oldConfig?.artProviders) {
+            const artProvidersChanged = Object.keys(config.artProviders).some(key => 
+              config.artProviders[key] !== oldConfig.artProviders?.[key]
+            );
+            if (artProvidersChanged) {
+              // Clear all meta components since art provider affects multiple components
+              patterns.push(`meta-*:*`);
+              console.log(`[ConfigApi] Art providers changed, clearing all meta cache`);
+              console.log(`[ConfigApi] Old art providers:`, oldConfig.artProviders);
+              console.log(`[ConfigApi] New art providers:`, config.artProviders);
+            }
+          }
+          
+          // Meta provider changes - affects all components since it changes the data source
+          if (config.providers && oldConfig?.providers) {
+            const providersChanged = Object.keys(config.providers).some(key => 
+              config.providers[key] !== oldConfig.providers?.[key]
+            );
+            if (providersChanged) {
+              // Clear all meta components since meta provider affects all data
+              patterns.push(`meta-*:*`);
+              console.log(`[ConfigApi] Meta providers changed, clearing all meta cache`);
+            }
+          }
+          
+          // SFW mode changes
+          if (config.sfw !== undefined && config.sfw !== oldConfig?.sfw) {
+            // SFW affects content filtering, so clear all components
+            patterns.push(`meta-*:*`); // All meta components
+            console.log(`[ConfigApi] SFW mode changed from ${oldConfig?.sfw} to ${config.sfw}`);
+          }
+          
+          // If no specific patterns identified, don't clear anything
+          if (patterns.length === 0) {
+            console.log(`[ConfigApi] No config changes detected, skipping cache clearing`);
+          }
+          
+          let totalCleared = 0;
+          
+          // First try pattern-based clearing
+          for (const pattern of patterns) {
+            const keys = await redis.keys(pattern);
+            if (keys.length > 0) {
+              await redis.del(...keys);
+              totalCleared += keys.length;
+              console.log(`[ConfigApi] Cleared ${keys.length} cache entries matching pattern: ${pattern}`);
+            }
+          }
+          
+          // If we have any config changes that affect meta, clear ALL cache for this user
+          // This ensures we don't miss any cache entries and forces fresh data
+          if (patterns.some(p => p.includes('meta-'))) {
+            try {
+              // Clear ALL cache entries for this user (nuclear option)
+              const allKeys = await redis.keys(`meta-*:*`);
+              if (allKeys.length > 0) {
+                await redis.del(...allKeys);
+                totalCleared += allKeys.length;
+                console.log(`[ConfigApi] NUCLEAR OPTION: Cleared ${allKeys.length} total meta cache entries for user`);
+              }
+              
+              // Also try clearing with more specific patterns (matching actual cache key format)
+              const specificPatterns = [
+                `meta-basic:*`,
+                `meta-poster:*`,
+                `meta-background:*`,
+                `meta-logo:*`,
+                `meta-cast:*`,
+                `meta-videos:*`,
+                `meta-director:*`,
+                `meta-writer:*`,
+                `meta-links:*`,
+                `meta-trailers:*`,
+                `meta-extras:*`
+              ];
+              
+              for (const pattern of specificPatterns) {
+                const keys = await redis.keys(pattern);
+                if (keys.length > 0) {
+                  await redis.del(...keys);
+                  totalCleared += keys.length;
+                  console.log(`[ConfigApi] Cleared ${keys.length} cache entries with pattern: ${pattern}`);
+                }
+              }
+              
+            } catch (fallbackError) {
+              console.warn(`[ConfigApi] Fallback cache clearing failed:`, fallbackError.message);
+            }
+          }
+          
+          if (totalCleared > 0) {
+            console.log(`[ConfigApi] Total affected cache cleared: ${totalCleared} entries`);
+          } else {
+            console.log(`[ConfigApi] No affected cache entries found to clear`);
+          }
+        } catch (cacheError) {
+          console.warn(`[ConfigApi] Failed to clear affected cache:`, cacheError.message);
+        }
+        
+
+      } catch (cacheError) {
+        console.warn(`[ConfigApi] Failed to invalidate cache for user ${userUUID}:`, cacheError.message);
+        // Don't fail the config save if cache invalidation fails
+      }
       
       const hostEnv = process.env.HOST_NAME;
       const baseUrl = hostEnv
         ? (hostEnv.startsWith('http') ? hostEnv : `https://${hostEnv}`)
         : `https://${req.get('host')}`;
 
-      const installUrl = `${baseUrl}/stremio/${userUUID}/${compressedConfig}/manifest.json`;
+      const installUrl = `${baseUrl}/stremio/${userUUID}/manifest.json`;
 
       res.json({
         success: true,
         userUUID,
-        compressedConfig,
         installUrl,
         message: existingUUID ? 'Configuration updated successfully' : 'Configuration saved successfully'
       });
@@ -97,6 +255,9 @@ class ConfigApi {
       res.status(500).json({ error: 'Failed to save configuration' });
     }
   }
+
+  // Manual cache clearing endpoint (temporarily disabled)
+  // async clearCache(req, res) { ... }
 
   // Load configuration by UUID (requires password)
   async loadConfig(req, res) {
@@ -185,18 +346,15 @@ class ConfigApi {
       // Update the configuration
       await database.saveUserConfig(userUUID, passwordHash, config);
       
-      // Create compressed config for URL
-      const compressedConfig = compressToEncodedURIComponent(JSON.stringify(config));
-      
       const hostEnv2 = process.env.HOST_NAME;
       const baseUrl2 = hostEnv2
         ? (hostEnv2.startsWith('http') ? hostEnv2 : `https://${hostEnv2}`)
         : `https://${req.get('host')}`;
+      
       res.json({
         success: true,
         userUUID,
-        compressedConfig,
-        installUrl: `${baseUrl2}/stremio/${userUUID}/${compressedConfig}/manifest.json`,
+        installUrl: `${baseUrl2}/stremio/${userUUID}/manifest.json`,
         message: 'Configuration updated successfully'
       });
     } catch (error) {
@@ -229,8 +387,6 @@ class ConfigApi {
       await database.trustUUID(userUUID);
 
       const config = await database.getUserConfig(userUUID);
-      
-      const compressedConfig = compressToEncodedURIComponent(JSON.stringify(config));
 
       const hostEnv3 = process.env.HOST_NAME;
       const baseUrl3 = hostEnv3
@@ -239,8 +395,7 @@ class ConfigApi {
       res.json({
         success: true,
         userUUID,
-        compressedConfig,
-        installUrl: `${baseUrl3}/stremio/${userUUID}/${compressedConfig}/manifest.json`,
+        installUrl: `${baseUrl3}/stremio/${userUUID}/manifest.json`,
         message: 'Migration completed successfully'
       });
     } catch (error) {
@@ -298,6 +453,38 @@ class ConfigApi {
       res.status(500).json({ error: 'Failed to check trust status' });
     }
   }
+
+  // Load configuration from database by UUID (for internal use)
+  async loadConfigFromDatabase(userUUID) {
+    try {
+      await this.initialize();
+      
+      if (!userUUID) {
+        throw new Error('userUUID is required');
+      }
+
+      const config = await database.getUserConfig(userUUID);
+      if (!config) {
+        throw new Error(`No configuration found for userUUID: ${userUUID}`);
+      }
+
+      return config;
+    } catch (error) {
+      console.error('[ConfigApi] loadConfigFromDatabase error:', error);
+      throw error;
+    }
+  }
 }
 
-module.exports = new ConfigApi();
+const configApi = new ConfigApi();
+
+module.exports = {
+  saveConfig: configApi.saveConfig.bind(configApi),
+  loadConfig: configApi.loadConfig.bind(configApi),
+  updateConfig: configApi.updateConfig.bind(configApi),
+  migrateFromLocalStorage: configApi.migrateFromLocalStorage.bind(configApi),
+  getStats: configApi.getStats.bind(configApi),
+  getAddonInfo: configApi.getAddonInfo.bind(configApi),
+  isTrusted: configApi.isTrusted.bind(configApi),
+  loadConfigFromDatabase: configApi.loadConfigFromDatabase.bind(configApi)
+};

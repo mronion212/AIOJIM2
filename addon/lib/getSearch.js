@@ -61,7 +61,7 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
     preferredProvider = config.providers?.series || 'tvdb';
   }
   let stremioId;
-  if (preferredProvider === 'tvmaze') {
+  if (preferredProvider === 'tvmaze' && tvmazeId) {
     stremioId = `tvmaze:${tvmazeId}`;
   }
    else if (preferredProvider === 'tmdb' && tmdbId) {

@@ -246,6 +246,15 @@ class Database {
     }
   }
 
+  // Get user by UUID
+  async getUser(userUUID) {
+    const query = this.type === 'sqlite'
+      ? 'SELECT user_uuid, password_hash, created_at FROM user_configs WHERE user_uuid = ?'
+      : 'SELECT user_uuid, password_hash, created_at FROM user_configs WHERE user_uuid = $1';
+    const row = await this.getQuery(query, [userUUID]);
+    return row;
+  }
+
   // ID Mapping Cache Methods
   async getCachedIdMapping(contentType, tmdbId = null, tvdbId = null, imdbId = null, tvmazeId = null) {
     const conditions = [];
@@ -344,12 +353,46 @@ class Database {
     }
   }
 
+  // Verify user password only (returns boolean)
+  async verifyPassword(userUUID, password) {
+    const crypto = require('crypto');
+    const hashRaw = crypto.createHash('sha256').update(password).digest('hex');
+    const hashTrim = crypto.createHash('sha256').update((password || '').trim()).digest('hex');
+
+    const query = this.type === 'sqlite'
+      ? 'SELECT password_hash FROM user_configs WHERE user_uuid = ?'
+      : 'SELECT password_hash FROM user_configs WHERE user_uuid = $1';
+    const row = await this.getQuery(query, [userUUID]);
+    if (!row) return false;
+
+    const storedHash = row.password_hash;
+    return storedHash === hashRaw || storedHash === hashTrim;
+  }
+
   // Delete user configuration
   async deleteUserConfig(userUUID) {
     const query = this.type === 'sqlite'
       ? 'DELETE FROM user_configs WHERE user_uuid = ?'
       : 'DELETE FROM user_configs WHERE user_uuid = $1';
     await this.runQuery(query, [userUUID]);
+  }
+
+  // Delete user and all associated data
+  async deleteUser(userUUID) {
+    try {
+      await this.deleteUserConfig(userUUID);
+      
+      // Delete from trusted_uuids table
+      const deleteTrustedQuery = this.type === 'sqlite'
+        ? 'DELETE FROM trusted_uuids WHERE user_uuid = ?'
+        : 'DELETE FROM trusted_uuids WHERE user_uuid = $1';
+      await this.runQuery(deleteTrustedQuery, [userUUID]);
+      
+      console.log(`[Database] Successfully deleted user ${userUUID} and all associated data`);
+    } catch (error) {
+      console.error(`[Database] Error deleting user ${userUUID}:`, error);
+      throw error;
+    }
   }
 
   // Migrate from localStorage (for backward compatibility)

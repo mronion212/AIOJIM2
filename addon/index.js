@@ -5,17 +5,47 @@ const crypto = require('crypto');
 const addon = express();
 // Honor X-Forwarded-* headers from reverse proxies (e.g., Traefik) so req.protocol reflects HTTPS
 addon.set('trust proxy', true);
-const analytics = require('./utils/analytics');
+
 const { getCatalog } = require("./lib/getCatalog");
 const { getSearch } = require("./lib/getSearch");
 const { getManifest, DEFAULT_LANGUAGE } = require("./lib/getManifest");
 const { getMeta } = require("./lib/getMeta");
-const { cacheWrap, cacheWrapMeta, cacheWrapCatalog, cacheWrapJikanApi, cacheWrapStaticCatalog, cacheWrapGlobal, getCacheHealth, clearCacheHealth, logCacheHealth } = require("./lib/getCache");
+const { cacheWrap, cacheWrapMeta, cacheWrapMetaSmart, cacheWrapCatalog, cacheWrapSearch, cacheWrapJikanApi, cacheWrapStaticCatalog, cacheWrapGlobal, getCacheHealth, clearCacheHealth, logCacheHealth } = require("./lib/getCache");
+const redis = require("./lib/redisClient");
 const { warmEssentialContent, warmRelatedContent, scheduleEssentialWarming } = require("./lib/cacheWarmer");
+
+// Warm user-specific content based on their config
+async function warmUserContent(userUUID, contentType) {
+  try {
+    // Load user config
+    const config = await loadConfigFromDatabase(userUUID);
+    if (!config) return;
+    
+    // Warm popular content based on user's preferences
+    const language = config.language || DEFAULT_LANGUAGE;
+    
+    // Warm trending content for user's preferred providers
+    if (config.providers?.tmdb) {
+      await warmRelatedContent('tmdb.trending', 'movie');
+      await warmRelatedContent('tmdb.trending', 'series');
+    }
+    
+    // Warm anime content if user has MAL configured
+    if (config.mal?.enabled) {
+      await warmRelatedContent('mal.top', 'anime');
+      await warmRelatedContent('mal.seasonal', 'anime');
+    }
+    
+    console.log(`[Cache Warming] User content warmed for ${userUUID} (${contentType})`);
+  } catch (error) {
+    console.warn(`[Cache Warming] Failed to warm user content for ${userUUID}:`, error.message);
+  }
+}
 const configApi = require('./lib/configApi');
 const database = require('./lib/database');
+const { loadConfigFromDatabase } = require('./lib/configApi');
 const { getTrending } = require("./lib/getTrending");
-const { parseConfig, getRpdbPoster, checkIfExists, parseAnimeCatalogMeta, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
+const { getRpdbPoster, checkIfExists, parseAnimeCatalogMeta, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
 const { getRequestToken, getSessionId } = require("./lib/getSession");
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { blurImage } = require('./utils/imageProcessor');
@@ -29,15 +59,17 @@ const sharp = require('sharp');
 addon.use(express.json({ limit: '2mb' }));
 addon.use(express.urlencoded({ extended: true }));
 
-addon.use(analytics.middleware);
+
 const NO_CACHE = process.env.NO_CACHE === 'true';
 
-// Initialize cache warming for public instances
-const ENABLE_CACHE_WARMING = process.env.ENABLE_CACHE_WARMING === 'true';
+// Initialize cache warming for public instances (enabled by default)
+const ENABLE_CACHE_WARMING = process.env.ENABLE_CACHE_WARMING !== 'false';
 const CACHE_WARMING_INTERVAL = parseInt(process.env.CACHE_WARMING_INTERVAL || '30', 10);
 
 if (ENABLE_CACHE_WARMING && !NO_CACHE) {
   console.log(`[Cache Warming] Initializing essential content warming (interval: ${CACHE_WARMING_INTERVAL} minutes)`);
+  
+  // Schedule periodic warming (non-blocking)
   scheduleEssentialWarming(CACHE_WARMING_INTERVAL);
 } else {
   console.log('[Cache Warming] Cache warming disabled or cache disabled');
@@ -55,6 +87,7 @@ const getCacheHeaders = function (opts) {
   const headerParts = Object.keys(cacheHeaders)
     .map((prop) => {
       const value = opts[prop];
+      if (value === 0) return cacheHeaders[prop] + "=0"; // Handle zero values
       if (!value) return false;
       return cacheHeaders[prop] + "=" + value;
     })
@@ -71,26 +104,44 @@ const respond = function (req, res, data, opts) {
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
   } else {
-    const configString = req.params.catalogChoices || '';
-    let etagContent = ADDON_VERSION + JSON.stringify(data) + configString;
+    const userUUID = req.params.userUUID || '';
     
-    // For manifest routes, include catalog information in ETag for immediate cache invalidation
-    if (req.route && req.route.path && req.route.path.includes('/manifest.json')) {
-      const config = parseConfig(configString) || {};
-      const catalogInfo = {
-        catalogs: config.catalogs || [],
-        streaming: config.streaming || []
-      };
-      etagContent += JSON.stringify(catalogInfo);
-    }
-    // For meta routes, include provider-specific info in ETag for immediate cache invalidation
-    else if (req.route && req.route.path && req.route.path.includes('/meta/')) {
-      const config = parseConfig(configString) || {};
-      const providerInfo = {
-        providers: config.providers || {},
-        artProviders: config.artProviders || {}
-      };
-      etagContent += JSON.stringify(providerInfo);
+    // Enhanced ETag generation with config hash for better cache invalidation
+    const configString = req.userConfig ? JSON.stringify(req.userConfig) : '';
+    const configHash = crypto.createHash('md5').update(configString).digest('hex').substring(0, 8);
+    let etagContent = ADDON_VERSION + JSON.stringify(data) + userUUID + configHash;
+    
+    // Add route-specific cache invalidation factors
+    if (req.route && req.route.path) {
+      if (req.route.path.includes('/manifest.json')) {
+        // Manifest should invalidate when any config changes
+        etagContent += ':manifest';
+      } else if (req.route.path.includes('/catalog/')) {
+        // Catalog should invalidate when catalog-related config changes
+        const catalogConfig = req.userConfig ? {
+          language: req.userConfig.language,
+          providers: req.userConfig.providers,
+          artProviders: req.userConfig.artProviders,
+          sfw: req.userConfig.sfw,
+          includeAdult: req.userConfig.includeAdult,
+          ageRating: req.userConfig.ageRating,
+          mal: req.userConfig.mal
+        } : {};
+        etagContent += crypto.createHash('md5').update(JSON.stringify(catalogConfig)).digest('hex').substring(0, 8);
+      } else if (req.route.path.includes('/meta/')) {
+        // Meta should invalidate when meta-related config changes
+        const metaConfig = req.userConfig ? {
+          language: req.userConfig.language,
+          providers: req.userConfig.providers,
+          artProviders: req.userConfig.artProviders,
+          tvdbSeasonType: req.userConfig.tvdbSeasonType,
+          castCount: req.userConfig.castCount,
+          blurThumbs: req.userConfig.blurThumbs,
+          apiKeys: { rpdb: req.userConfig.apiKeys?.rpdb || '' },
+          mal: req.userConfig.mal
+        } : {};
+        etagContent += crypto.createHash('md5').update(JSON.stringify(metaConfig)).digest('hex').substring(0, 8);
+      }
     }
     
     const etagHash = crypto.createHash('md5').update(etagContent).digest('hex');
@@ -98,10 +149,11 @@ const respond = function (req, res, data, opts) {
 
     res.setHeader('ETag', etag);
 
+    // Enhanced cache invalidation strategy
     if (req.headers['if-none-match'] === etag) {
-      console.log('[Cache] Browser cache hit - returning 304 for ETag:', etag);
-      res.status(304).end(); // The browser's cache is fresh.
-      return;
+      console.log('[Cache] Browser cache hit but forcing refresh for ETag:', etag);
+      // Don't return 304, continue to send fresh content
+      // This ensures Stremio always gets the latest data when config changes
     }
 
     const cacheControl = getCacheHeaders(opts);
@@ -110,11 +162,43 @@ const respond = function (req, res, data, opts) {
       res.setHeader("Cache-Control", fullCacheControl);
       console.log('[Cache] Setting Cache-Control:', fullCacheControl);
     } else {
-      // Set a reasonable default cache control if none provided
-      const defaultCacheControl = "public, max-age=3600"; // 1 hour default
+      // Enhanced aggressive cache control for config-sensitive routes
+      let defaultCacheControl;
+      if (req.route && req.route.path) {
+        if (req.route.path.includes('/manifest.json')) {
+          // Manifest: No cache at all - always fresh
+          defaultCacheControl = "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0";
+          console.log('[Cache] Setting manifest Cache-Control:', defaultCacheControl);
+        } else if (req.route.path.includes('/catalog/')) {
+          // Catalog: Very short cache with aggressive revalidation
+          defaultCacheControl = "no-cache, must-revalidate, max-age=0, stale-while-revalidate=300";
+          console.log('[Cache] Setting catalog Cache-Control:', defaultCacheControl);
+        } else if (req.route.path.includes('/meta/')) {
+          // Meta: Aggressive cache control to ensure fresh data when config changes
+          const configVersion = req.userConfig?.configVersion || Date.now();
+          res.setHeader('X-Config-Version', configVersion.toString());
+          res.setHeader('Last-Modified', new Date(configVersion).toUTCString());
+          
+          // Use very short cache to force refresh when config changes
+          defaultCacheControl = "no-cache, must-revalidate, max-age=0";
+          console.log('[Cache] Setting aggressive meta Cache-Control:', defaultCacheControl);
+        } else {
+          defaultCacheControl = "public, max-age=3600"; // 1 hour default for other routes
+          console.log('[Cache] Setting default Cache-Control:', defaultCacheControl);
+        }
+      } else {
+        defaultCacheControl = "public, max-age=3600"; // 1 hour default for other routes
+        console.log('[Cache] Setting default Cache-Control:', defaultCacheControl);
+      }
       res.setHeader("Cache-Control", defaultCacheControl);
-      console.log('[Cache] Setting default Cache-Control:', defaultCacheControl);
     }
+  }
+  
+  // Force aggressive cache control for meta routes (final override)
+  if (req.route && req.route.path && req.route.path.includes('/meta/')) {
+    res.setHeader('Cache-Control', 'no-cache, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
   }
   
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -140,6 +224,8 @@ addon.post("/api/config/load/:userUUID", configApi.loadConfig.bind(configApi));
 addon.put("/api/config/update/:userUUID", configApi.updateConfig.bind(configApi));
 addon.post("/api/config/migrate", configApi.migrateFromLocalStorage.bind(configApi));
 addon.get('/api/config/is-trusted/:uuid', configApi.isTrusted.bind(configApi));
+// Manual cache clearing endpoint (temporarily disabled due to binding issue)
+// addon.post("/api/config/clear-cache/:userUUID", configApi.clearCache.bind(configApi));
 
 // --- Admin Configuration Routes ---
 addon.get("/api/config/stats", (req, res) => {
@@ -181,10 +267,13 @@ addon.get("/api/cache/status", (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   
+  const { isInitialWarmingComplete } = require('./lib/cacheWarmer');
+  
   res.json({
     cacheEnabled: !NO_CACHE,
     warmingEnabled: ENABLE_CACHE_WARMING,
     warmingInterval: CACHE_WARMING_INTERVAL,
+    initialWarmingComplete: isInitialWarmingComplete(),
     addonVersion: ADDON_VERSION
   });
 });
@@ -230,6 +319,54 @@ addon.post("/api/cache/health/log", (req, res) => {
   });
 });
 
+// Clear specific cache key
+addon.delete("/api/cache/clear/:key", async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  const { key } = req.params;
+  const { pattern } = req.query;
+  
+  try {
+    if (pattern === 'true') {
+      // Clear all keys matching pattern
+      const keys = await redis.keys(key);
+      if (keys.length > 0) {
+        await redis.del(...keys);
+        console.log(`[Cache] Cleared ${keys.length} keys matching pattern: ${key}`);
+        res.json({
+          success: true,
+          message: `Cleared ${keys.length} cache keys matching pattern: ${key}`,
+          keysCleared: keys.length
+        });
+      } else {
+        res.json({
+          success: true,
+          message: `No cache keys found matching pattern: ${key}`,
+          keysCleared: 0
+        });
+      }
+    } else {
+      // Clear specific key
+      const result = await redis.del(key);
+      console.log(`[Cache] Cleared cache key: ${key} (result: ${result})`);
+      res.json({
+        success: true,
+        message: result > 0 ? `Cache key cleared: ${key}` : `Cache key not found: ${key}`,
+        keyCleared: result > 0
+      });
+    }
+  } catch (error) {
+    console.error(`[Cache] Error clearing cache key ${key}:`, error);
+    res.status(500).json({
+      error: 'Failed to clear cache key',
+      details: error.message
+    });
+  }
+});
+
 // --- Static, Auth, and Configuration Routes ---
 addon.get("/", function (_, res) {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -242,41 +379,33 @@ addon.get("/session_id", async function (req, res) { const s = await getSessionI
 
 
 
-// --- UUID-based Manifest Route for Public Instances ---
-addon.get("/stremio/:userUUID/:compressedConfig/manifest.json", async function (req, res) {
-    const { userUUID, compressedConfig } = req.params;
+// --- Database-Only Manifest Route ---
+addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
+    const { userUUID } = req.params;
     try {
-        // Try to load config from database first
+        // Load config from database
         const config = await database.getUserConfig(userUUID);
-        if (config) {
-            console.log(`[Manifest] Building fresh manifest for user: ${userUUID}`);
-            const manifest = await getManifest(config);
-            if (!manifest) {
-                return res.status(500).send({ err: "Failed to build manifest." });
-            }
-            // Use shorter cache time and add cache-busting for catalog changes
-            const cacheOpts = { 
-                cacheMaxAge: 5 * 60, // 5 minutes instead of 1 hour
-                staleRevalidate: 60 * 60, // 1 hour stale-while-revalidate
-                staleError: 24 * 60 * 60 // 24 hours stale-if-error
-            };
-            respond(req, res, manifest, cacheOpts);
-        } else {
-            // Fallback to compressed config in URL
-            const config = parseConfig(compressedConfig) || {};
-            console.log(`[Manifest] Building fresh manifest for compressed config`);
-            const manifest = await getManifest(config);
-            if (!manifest) {
-                return res.status(500).send({ err: "Failed to build manifest." });
-            }
-            // Use shorter cache time and add cache-busting for catalog changes
-            const cacheOpts = { 
-                cacheMaxAge: 5 * 60, // 5 minutes instead of 1 hour
-                staleRevalidate: 60 * 60, // 1 hour stale-while-revalidate
-                staleError: 24 * 60 * 60 // 24 hours stale-if-error
-            };
-            respond(req, res, manifest, cacheOpts);
+        if (!config) {
+            console.log(`[Manifest] No config found for user: ${userUUID}`);
+            return res.status(404).send({ err: "User configuration not found." });
         }
+        
+        console.log(`[Manifest] Building fresh manifest for user: ${userUUID}`);
+        const manifest = await getManifest(config);
+            if (!manifest) {
+                return res.status(500).send({ err: "Failed to build manifest." });
+            }
+            
+        // Pass config to request object for ETag generation
+        req.userConfig = config;
+        
+        // Use shorter cache time and add cache-busting for catalog changes
+        const cacheOpts = { 
+            cacheMaxAge: 0, // No cache to force immediate refresh
+            staleRevalidate: 5 * 60, // 5 minutes stale-while-revalidate
+            staleError: 24 * 60 * 60 // 24 hours stale-if-error
+        };
+            respond(req, res, manifest, cacheOpts);
     } catch (error) {
         console.error(`[Manifest] Error for user ${userUUID}:`, error);
         res.status(500).send({ err: "Failed to build manifest." });
@@ -285,12 +414,21 @@ addon.get("/stremio/:userUUID/:compressedConfig/manifest.json", async function (
 
 
 
-// --- Catalog Route under /stremio/:userUUID/:catalogChoices prefix ---
-addon.get("/stremio/:userUUID/:catalogChoices/catalog/:type/:id/:extra?.json", async function (req, res) {
-  const { catalogChoices, type, id, extra } = req.params;
-  const config = parseConfig(catalogChoices) || {};
+// --- Catalog Route under /stremio/:userUUID prefix ---
+addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (req, res) {
+  const { userUUID, type, id, extra } = req.params;
+  
+  // Load config from database
+  const config = await loadConfigFromDatabase(userUUID);
+  if (!config) {
+    return res.status(404).send({ error: "User configuration not found" });
+  }
+  
   const language = config.language || DEFAULT_LANGUAGE;
   const sessionId = config.sessionId;
+  
+  // Pass config to req for ETag generation
+  req.userConfig = config;
 
   const isStaticCatalog = ['mal.decade80s', 'mal.decade90s', 'mal.decade00s', 'mal.decade10s'].includes(id);
   const cacheWrapper = isStaticCatalog ? cacheWrapStaticCatalog : cacheWrapCatalog;
@@ -303,13 +441,21 @@ addon.get("/stremio/:userUUID/:catalogChoices/catalog/:type/:id/:extra?.json", a
   };
   
   try {
-    const responseData = await cacheWrapper(catalogChoices, catalogKey, async () => {
-      let metas = [];
+    let responseData;
+      
       if (id.includes('search')) {
+      // Use search-specific cache wrapper
         const extraArgs = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
+      const searchKey = `${id}:${type}:${JSON.stringify(extraArgs)}`;
+      
+      responseData = await cacheWrapSearch(userUUID, searchKey, async () => {
         const searchResult = await getSearch(id, type, language, extraArgs, config);
-        metas = searchResult.metas || [];
+        return { metas: searchResult.metas || [] };
+      }, cacheOptions);
       } else {
+      // Use regular catalog cache wrapper
+      responseData = await cacheWrapper(userUUID, catalogKey, async () => {
+        let metas = [];
         const { genre: genreName, type_filter,  skip } = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
         const pageSize = id.includes(`mal.`) ? 25 : 20;
         const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
@@ -317,7 +463,7 @@ addon.get("/stremio/:userUUID/:catalogChoices/catalog/:type/:id/:extra?.json", a
         switch (id) {
           case "tmdb.trending":
             console.log(`[CATALOG ROUTE 2] tmdb.trending called with type=${type}, language=${language}, page=${page}`);
-            metas = (await getTrending(...args, genreName, config, catalogChoices)).metas;
+            metas = (await getTrending(...args, genreName, config, userUUID)).metas;
             break;
           case "tmdb.favorites":
             metas = (await getFavorites(...args, genreName, sessionId, config)).metas;
@@ -326,14 +472,13 @@ addon.get("/stremio/:userUUID/:catalogChoices/catalog/:type/:id/:extra?.json", a
             metas = (await getWatchList(...args, genreName, sessionId, config)).metas;
             break;
           case "tvdb.genres": {
-            // Call getCatalog directly - it will handle caching and pagination internally
-            metas = (await getCatalog(type, language, page, id, genreName, config, catalogChoices)).metas;
+            metas = (await getCatalog(type, language, page, id, genreName, config, userUUID)).metas;
             break;
           }
           case "tvdb.collections": {
             // TVDB expects 0-based page
             const tvdbPage = Math.max(0, page - 1);
-            metas = (await getCatalog(type, language, tvdbPage, id, genreName, config, catalogChoices)).metas;
+            metas = (await getCatalog(type, language, tvdbPage, id, genreName, config, userUUID)).metas;
             break;
           }
           case 'mal.airing':
@@ -368,15 +513,15 @@ addon.get("/stremio/:userUUID/:catalogChoices/catalog/:type/:id/:extra?.json", a
               const animeResults = await jikan.getTopAnimeByType('anime', page, config);
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else {
-              const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
-                console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
-                return await jikan.getAnimeGenres();
-              });
+            const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
+              console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
+              return await jikan.getAnimeGenres();
+             });
               const genreNameToFetch = genreName && genreName !== 'None' ? genreName : allAnimeGenres[0]?.name;
-              if (genreNameToFetch) {
-                const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
-                if (selectedGenre) {
-                  const genreId = selectedGenre.mal_id;
+            if (genreNameToFetch) {
+              const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
+              if (selectedGenre) {
+                const genreId = selectedGenre.mal_id;
                   const animeResults = await jikan.getTopAnimeByDateRange('2020-01-01', '2029-12-31', page, genreId, config);
                   metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
                 }
@@ -444,28 +589,27 @@ addon.get("/stremio/:userUUID/:catalogChoices/catalog/:type/:id/:extra?.json", a
               console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
               return await jikan.getAnimeGenres();
             });
-            const genreNameToFetch = genreName || allAnimeGenres[0]?.name;
+            const genreNameToFetch = genreName || "None";
             if (genreNameToFetch) {
               const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
-              if (selectedGenre) {
-                const genreId = selectedGenre.mal_id;
-                const animeResults = await jikan.getTopAnimeByDateRange(startDate, endDate, page, genreId, config);
-                metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-              }
+              const genreId = selectedGenre?.mal_id;
+              const animeResults = await jikan.getTopAnimeByDateRange(startDate, endDate, page, genreId, config);
+              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             }
             
             break;
           }
           default:
-            metas = (await getCatalog(type, language, page, id, genreName, config, catalogChoices)).metas;
+            metas = (await getCatalog(type, language, page, id, genreName, config, userUUID)).metas;
             break;
-        }
       }
       return { metas: metas || [] };
     }, undefined, cacheOptions);
+    }
+    
     const httpCacheOpts = isStaticCatalog
       ? { cacheMaxAge: 24 * 60 * 60 }
-      : { cacheMaxAge: 1 * 60 * 60 };
+      : { cacheMaxAge: 0, staleRevalidate: 5 * 60 }; // No cache for regular catalogs, 5 min stale-while-revalidate
     respond(req, res, responseData, httpCacheOpts);
 
   } catch (e) {
@@ -474,11 +618,20 @@ addon.get("/stremio/:userUUID/:catalogChoices/catalog/:type/:id/:extra?.json", a
   }
 });
 // --- Meta Route (with enhanced caching) ---
-addon.get("/stremio/:userUUID/:catalogChoices/meta/:type/:id.json", async function (req, res) {
-  const { userUUID, catalogChoices, type, id: stremioId } = req.params;
-  const config = parseConfig(catalogChoices) || {};
+addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
+  const { userUUID, type, id: stremioId } = req.params;
+  
+  // Load config from database
+  const config = await loadConfigFromDatabase(userUUID);
+  if (!config) {
+    return res.status(404).send({ error: "User configuration not found" });
+  }
+  
   const language = config.language || DEFAULT_LANGUAGE;
   const fullConfig = config; 
+  
+  // Pass config to req for ETag generation
+  req.userConfig = config; 
   // Enhanced caching options for better error handling
   const cacheOptions = {
     enableErrorCaching: true,
@@ -486,11 +639,9 @@ addon.get("/stremio/:userUUID/:catalogChoices/meta/:type/:id.json", async functi
   };
   
   try {
-    const result = await cacheWrapMeta(catalogChoices, stremioId, async () => {
-      // Pass the full userUUID/catalogChoices string for proper genre link construction
-      const fullCatalogChoices = `${userUUID}/${catalogChoices}`;
-      return await getMeta(type, language, stremioId, fullConfig, fullCatalogChoices);
-    }, undefined, cacheOptions);
+    const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
+      return await getMeta(type, language, stremioId, fullConfig, userUUID);
+    }, undefined, cacheOptions, type);
 
     if (!result || !result.meta) {
       return respond(req, res, { meta: null });
@@ -504,19 +655,16 @@ addon.get("/stremio/:userUUID/:catalogChoices/meta/:type/:id.json", async functi
       });
     }
     
-    // Cache times can be longer now since ETags handle immediate provider change invalidation
-    const cacheOpts = { staleRevalidate: 20 * 24 * 60 * 60, staleError: 30 * 24 * 60 * 60 };
-    if (type === "movie") {
-      cacheOpts.cacheMaxAge = 14 * 24 * 60 * 60; // 14 days - ETags handle provider changes
-    } else if (type === "series") {
-      const hasEnded = result.meta.status === 'Ended';
-      cacheOpts.cacheMaxAge = (hasEnded ? 7 : 1) * 24 * 60 * 60; // 7 days for ended, 1 day for running
-    } else {
-      // Default cache for other types (anime, etc.)
-      cacheOpts.cacheMaxAge = 7 * 24 * 60 * 60; // 7 days default
+    // Warm user's frequently accessed content in background
+    if (!NO_CACHE) {
+      warmUserContent(userUUID, type).catch(error => {
+        console.warn(`[Cache Warming] User content warming failed for ${userUUID}:`, error.message);
+      });
     }
     
-    respond(req, res, result, cacheOpts);
+    // Use aggressive cache control for meta routes to ensure fresh data when config changes
+    // Don't pass cacheOpts to let the respond function use the aggressive cache control
+    respond(req, res, result);
     
   } catch (error) {
     console.error(`CRITICAL ERROR in meta route for ${stremioId}:`, error);
@@ -563,7 +711,7 @@ addon.get("/poster/:type/:id", async function (req, res) {
 });
 
 
-// --- Image Blur Route ---
+// --- Image Processing Routes ---
 addon.get("/api/image/blur", async function (req, res) {
   const imageUrl = req.query.url;
   if (!imageUrl) { return res.status(400).send('Image URL not provided'); }
@@ -575,6 +723,65 @@ addon.get("/api/image/blur", async function (req, res) {
   } catch (error) {
     console.error('Error in blur route:', error);
     res.status(500).send('Error processing image');
+  }
+});
+
+// Convert banner to background image
+addon.get("/api/image/banner-to-background", async function (req, res) {
+  const imageUrl = req.query.url;
+  if (!imageUrl) { return res.status(400).send('Image URL not provided'); }
+  
+  try {
+    const { convertBannerToBackground } = require('./utils/imageProcessor');
+    
+    // Parse options from query parameters
+    const options = {
+      width: parseInt(req.query.width) || 1920,
+      height: parseInt(req.query.height) || 1080,
+      blur: parseFloat(req.query.blur) || 0,
+      brightness: parseFloat(req.query.brightness) || 1,
+      contrast: parseFloat(req.query.contrast) || 1,
+      position: req.query.position || 'center' // Add position parameter
+    };
+    
+    const processedImage = await convertBannerToBackground(imageUrl, options);
+    if (processedImage) {
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+      res.send(processedImage);
+    } else {
+      res.status(500).send('Failed to process image');
+    }
+  } catch (error) {
+    console.error(`Error converting banner to background for ${imageUrl}:`, error.message);
+    res.status(500).send('Internal server error');
+  }
+});
+
+// Add gradient overlay to image
+addon.get("/api/image/gradient-overlay", async function (req, res) {
+  const imageUrl = req.query.url;
+  if (!imageUrl) { return res.status(400).send('Image URL not provided'); }
+  
+  try {
+    const { addGradientOverlay } = require('./utils/imageProcessor');
+    
+    const options = {
+      gradient: req.query.gradient || 'dark',
+      opacity: parseFloat(req.query.opacity) || 0.7
+    };
+    
+    const processedImage = await addGradientOverlay(imageUrl, options);
+    if (processedImage) {
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+      res.send(processedImage);
+    } else {
+      res.status(500).send('Failed to process image');
+    }
+  } catch (error) {
+    console.error(`Error adding gradient overlay for ${imageUrl}:`, error.message);
+    res.status(500).send('Internal server error');
   }
 });
 
@@ -618,12 +825,10 @@ addon.get('/resize-image', async function (req, res) {
 });
 
 
-addon.get('/:catalogChoices?/configure', function (req, res) {
-  res.sendFile(path.join(__dirname, '../dist/index.html'));
-});
+
 
 // Support Stremio settings opening under /stremio/:uuid/:config/configure
-addon.get('/stremio/:userUUID/:catalogChoices/configure', function (req, res) {
+addon.get('/stremio/:userUUID/configure', function (req, res) {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
@@ -694,4 +899,276 @@ addon.get("/api/debug/catalogs/:userUUID", async function (req, res) {
   }
 });
 
-module.exports = addon;
+// --- Delete user account and all associated data ---
+addon.delete('/api/config/delete-user/:userUUID', async (req, res) => {
+  const { userUUID } = req.params;
+  const { password } = req.body;
+
+  if (!userUUID || !password) {
+    return res.status(400).json({ error: 'User UUID and password are required' });
+  }
+
+  try {
+    // Verify the user exists and password is correct
+    const user = await database.getUser(userUUID);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Verify password
+    const isValidPassword = await database.verifyPassword(userUUID, password);
+    if (!isValidPassword) {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    // Check if addon password is required
+    if (process.env.ADDON_PASSWORD) {
+      const addonPassword = req.body.addonPassword;
+      if (!addonPassword || addonPassword !== process.env.ADDON_PASSWORD) {
+        return res.status(401).json({ error: 'Invalid addon password' });
+      }
+    }
+
+    // Delete user and all associated data
+    await database.deleteUser(userUUID);
+    
+    console.log(`[Delete User] Successfully deleted user ${userUUID} and all associated data`);
+    
+    res.json({ 
+      success: true, 
+      message: 'User account and all associated data have been permanently deleted' 
+    });
+
+  } catch (error) {
+    console.error(`[Delete User] Error deleting user ${userUUID}:`, error);
+    res.status(500).json({ 
+      error: 'Failed to delete user account',
+      details: error.message 
+    });
+  }
+});
+
+// --- Cache Management Endpoints ---
+
+// Clean bad cache entries
+addon.post('/api/cache/clean-bad', async (req, res) => {
+  try {
+    const cacheValidator = require('./lib/cacheValidator');
+    const result = await cacheValidator.cleanAllBadCache();
+    
+    res.json({
+      success: true,
+      message: 'Cache cleaning completed',
+      results: result
+    });
+  } catch (error) {
+    console.error('[Cache Clean] Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to clean cache',
+      details: error.message 
+    });
+  }
+});
+
+// Get cache health statistics
+addon.get('/api/cache/health', async (req, res) => {
+  try {
+    const { getCacheHealth } = require('./lib/getCache');
+    const health = getCacheHealth();
+    
+    res.json({
+      success: true,
+      health: health
+    });
+  } catch (error) {
+    console.error('[Cache Health] Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get cache health',
+      details: error.message 
+    });
+  }
+});
+
+// Test granular caching
+addon.post('/api/cache/test-granular', async (req, res) => {
+  try {
+    const { userUUID, metaId, type } = req.body;
+    
+    if (!userUUID || !metaId || !type) {
+      return res.status(400).json({ error: 'userUUID, metaId, and type are required' });
+    }
+    
+    const { cacheWrapMetaSmart, reconstructMetaFromComponents } = require('./lib/getCache');
+    
+    // Test reconstruction
+    const reconstructed = await reconstructMetaFromComponents(userUUID, metaId, undefined, {}, type);
+    
+    res.json({
+      success: true,
+      reconstructed: !!reconstructed,
+      componentCount: reconstructed ? 'varies' : 0,
+      message: reconstructed ? 'Components found and reconstructed' : 'No cached components found'
+    });
+  } catch (error) {
+    console.error('[Cache Test] Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to test granular caching',
+      details: error.message 
+    });
+  }
+});
+
+// Invalidate user's cache when config changes
+addon.post('/api/cache/invalidate-user/:userUUID', async (req, res) => {
+  try {
+    const { userUUID } = req.params;
+    const { password } = req.body;
+    
+    if (!userUUID || !password) {
+      return res.status(400).json({ error: 'userUUID and password are required' });
+    }
+    
+    // Verify the user exists and password is correct
+    const user = await database.getUser(userUUID);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const isValidPassword = await database.verifyPassword(userUUID, password);
+    if (!isValidPassword) {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+    
+    // Clear all cache entries for this user
+    const userCachePattern = `*${userUUID}*`;
+    const keys = await redis.keys(userCachePattern);
+    
+    if (keys.length > 0) {
+      await redis.del(...keys);
+      console.log(`[Cache Invalidation] Cleared ${keys.length} cache entries for user ${userUUID}`);
+      
+      res.json({
+        success: true,
+        message: `Cache invalidated for user ${userUUID}`,
+        cacheEntriesCleared: keys.length
+      });
+    } else {
+      res.json({
+        success: true,
+        message: `No cache entries found for user ${userUUID}`,
+        cacheEntriesCleared: 0
+      });
+    }
+    
+  } catch (error) {
+    console.error('[Cache Invalidation] Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to invalidate cache',
+      details: error.message 
+    });
+  }
+});
+
+// Get cache invalidation status for a user
+// Test if essential cache keys exist
+addon.get('/api/cache/test-essential', async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const essentialKeys = [
+      `global:${ADDON_VERSION}:jikan-api:anime-genres`,
+      `global:${ADDON_VERSION}:jikan-api:mal-studios`,
+      `global:${ADDON_VERSION}:genre:tmdb:en-US:movie`,
+      `global:${ADDON_VERSION}:genre:tmdb:en-US:series`,
+      `global:${ADDON_VERSION}:genre:tvdb:en-US:series`,
+      `global:${ADDON_VERSION}:languages:en-US`
+    ];
+    
+    const results = {};
+    for (const key of essentialKeys) {
+      const exists = await redis.exists(key);
+      results[key] = exists === 1;
+    }
+    
+    const allCached = Object.values(results).every(exists => exists);
+    
+    res.json({
+      success: true,
+      allEssentialContentCached: allCached,
+      cacheStatus: results,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('[Cache Test] Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to test cache',
+      details: error.message 
+    });
+  }
+});
+
+addon.get('/api/cache/invalidation-status/:userUUID', async (req, res) => {
+  try {
+    const { userUUID } = req.params;
+    
+    // Count cache entries for this user
+    const userCachePattern = `*${userUUID}*`;
+    const keys = await redis.keys(userCachePattern);
+    
+    // Group by cache type
+    const cacheStats = {
+      total: keys.length,
+      byType: {}
+    };
+    
+    keys.forEach(key => {
+      if (key.includes('meta-')) {
+        cacheStats.byType.meta = (cacheStats.byType.meta || 0) + 1;
+      } else if (key.includes('catalog')) {
+        cacheStats.byType.catalog = (cacheStats.byType.catalog || 0) + 1;
+      } else if (key.includes('manifest')) {
+        cacheStats.byType.manifest = (cacheStats.byType.manifest || 0) + 1;
+      } else {
+        cacheStats.byType.other = (cacheStats.byType.other || 0) + 1;
+      }
+    });
+    
+    res.json({
+      success: true,
+      userUUID,
+      cacheStats
+    });
+    
+  } catch (error) {
+    console.error('[Cache Status] Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get cache status',
+      details: error.message 
+    });
+  }
+});
+
+// Blocking startup function that waits for cache warming
+async function startServerWithCacheWarming() {
+  if (ENABLE_CACHE_WARMING && !NO_CACHE) {
+    console.log('[Server Startup] Waiting for initial cache warming to complete...');
+    const { warmEssentialContent } = require("./lib/cacheWarmer");
+    
+    try {
+      await warmEssentialContent();
+      console.log('[Server Startup] Initial cache warming completed successfully');
+    } catch (error) {
+      console.error('[Server Startup] Initial cache warming failed:', error.message);
+      console.log('[Server Startup] Continuing with server startup despite cache warming failure');
+    }
+  }
+  
+  console.log('[Server Startup] Server ready to accept requests');
+  return addon;
+}
+
+module.exports = { addon, startServerWithCacheWarming };
