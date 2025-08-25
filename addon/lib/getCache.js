@@ -269,30 +269,30 @@ async function cacheWrap(key, method, ttl, options = {}) {
           if (parsed.error && parsed.type === 'TEMPORARY_ERROR') {
             const errorAge = Date.now() - new Date(parsed.timestamp).getTime();
             if (errorAge > ERROR_TTL_STRATEGIES.TEMPORARY_ERROR * 1000) {
-              console.log(`[Cache] Retrying expired temporary error for ${versionedKey}`);
+              console.log(`📦 [Cache] Retrying expired temporary error for ${versionedKey}`);
               await redis.del(versionedKey);
             } else {
-              console.log(`[Cache] HIT (cached error) for ${versionedKey}`);
+              console.log(`📦 [Cache] HIT (cached error) for ${versionedKey}`);
               updateCacheHealth(versionedKey, 'hit', true);
               return parsed;
             }
           } else if (parsed.error) {
-            console.log(`[Cache] HIT (cached error) for ${versionedKey}`);
+            console.log(`📦 [Cache] HIT (cached error) for ${versionedKey}`);
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           } else {
-            console.log(`[Cache] HIT for ${versionedKey}`);
+            console.log(`⚡ 📦 [Cache] HIT for ${versionedKey}`);
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           }
         } catch (parseError) {
-          console.warn(`[Cache] Corrupted cache entry for ${versionedKey}, attempting self-healing`);
+          console.warn(`📦 [Cache] Corrupted cache entry for ${versionedKey}, attempting self-healing`);
           await attemptSelfHealing(versionedKey, parseError);
           // Continue to retry the method
         }
     }
   } catch (err) {
-    console.warn(`[Cache] Failed to read from Redis for key ${versionedKey}:`, err);
+    console.warn(`📦 [Cache] Failed to read from Redis for key ${versionedKey}:`, err);
       updateCacheHealth(versionedKey, 'error', false);
   }
 
@@ -301,7 +301,7 @@ async function cacheWrap(key, method, ttl, options = {}) {
 
   try {
     const result = await promise;
-      console.log(`[Cache] MISS for ${versionedKey}`);
+      console.log(`⏳ 📦 [Cache] MISS for ${versionedKey}`);
       updateCacheHealth(versionedKey, 'miss', true);
       
     if (result !== null && result !== undefined) {
@@ -319,7 +319,7 @@ async function cacheWrap(key, method, ttl, options = {}) {
         const validation = cacheValidator.validateBeforeCache(result, contentType);
         
         if (!validation.isValid) {
-          console.warn(`[Cache] Preventing bad data from being cached for ${versionedKey}:`, validation.issues);
+          console.warn(`📦 [Cache] Preventing bad data from being cached for ${versionedKey}:`, validation.issues);
           updateCacheHealth(versionedKey, 'error', false);
           throw new Error(`Bad data detected: ${validation.issues.join(', ')}`);
         }
@@ -327,27 +327,27 @@ async function cacheWrap(key, method, ttl, options = {}) {
         const classification = resultClassifier(result, null, key);
         const finalTtl = classification.ttl !== null ? classification.ttl : ttl;
         
-        console.log(`[Cache] Classification: ${classification.type}, TTL: ${finalTtl}s`);
+        console.log(`📦 [Cache] Classification: ${classification.type}, TTL: ${finalTtl}s`);
         
         // Skip caching if TTL is 0 (e.g., empty results)
         if (finalTtl > 0) {
           if (classification.type !== 'SUCCESS') {
-            console.warn(`[Cache] Caching ${classification.type} result for ${versionedKey} for ${finalTtl}s`);
+            console.warn(`📦 [Cache] Caching ${classification.type} result for ${versionedKey} for ${finalTtl}s`);
           }
           
           try {
             await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
           } catch (err) {
-            console.warn(`[Cache] Failed to write to Redis for key ${versionedKey}:`, err);
+            console.warn(`📦 [Cache] Failed to write to Redis for key ${versionedKey}:`, err);
             updateCacheHealth(versionedKey, 'error', false);
           }
         } else {
-          console.log(`[Cache] Skipping cache for ${versionedKey} (TTL: 0)`);
+          console.log(`📦 [Cache] Skipping cache for ${versionedKey} (TTL: 0)`);
         }
     }
     return result;
   } catch (error) {
-    console.error(`[Cache] Method failed for cache key ${versionedKey}:`, error);
+    console.error(`📦 [Cache] Method failed for cache key ${versionedKey}:`, error);
       updateCacheHealth(versionedKey, 'error', false);
       
       // Cache error results if enabled
@@ -363,16 +363,16 @@ async function cacheWrap(key, method, ttl, options = {}) {
             timestamp: new Date().toISOString()
           };
           await redis.set(versionedKey, JSON.stringify(errorResult), 'EX', errorTtl);
-          console.warn(`[Cache] Cached ${classification.type} error for ${versionedKey} for ${errorTtl}s`);
-        } catch (err) {
-          console.warn(`[Cache] Failed to cache error for key ${versionedKey}:`, err);
+          console.warn(`📦 [Cache] Cached ${classification.type} error for ${versionedKey} for ${errorTtl}s`);
+                  } catch (err) {
+            console.warn(`📦 [Cache] Failed to cache error for key ${versionedKey}:`, err);
         }
       }
       
       // Retry logic for temporary errors
       if (retries < maxRetries && (error.status >= 500 || error.message?.includes('timeout'))) {
         retries++;
-        console.log(`[Cache] Retrying ${versionedKey} (attempt ${retries}/${maxRetries})`);
+        console.log(`📦 [Cache] Retrying ${versionedKey} (attempt ${retries}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, SELF_HEALING_CONFIG.retryDelay));
         continue;
       }
@@ -423,7 +423,7 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           } else {
-            console.log(`✅ [Global Cache] HIT for ${truncateCacheKey(versionedKey)}`);
+            console.log(`⚡ [Global Cache] HIT for ${truncateCacheKey(versionedKey)}`);
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           }
@@ -442,7 +442,7 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
 
   try {
     const result = await promise;
-      console.log(`❌ [Global Cache] MISS for ${truncateCacheKey(versionedKey)}`);
+      console.log(`⏳ [Global Cache] MISS for ${truncateCacheKey(versionedKey)}`);
       updateCacheHealth(versionedKey, 'miss', true);
 
       const classification = resultClassifier(result, null, key);
@@ -521,7 +521,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
 
   // Disable caching for trending catalogs since they change frequently
   if (trendingIds.has(idOnly)) {
-    console.log(`[Cache] Skipping cache for trending catalog: ${idOnly}`);
+    console.log(`📦 [Cache] Skipping cache for trending catalog: ${idOnly}`);
     return method(); // Execute without caching
   }
   
@@ -549,7 +549,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const catalogConfigString = JSON.stringify(catalogConfig);
   const key = `catalog:${catalogConfigString}:${catalogKey}`;
   
-  console.log(`[Cache] Catalog cache key (${idOnly}): ${key.substring(0, 120)}...`);
+      console.log(`📦 [Cache] Catalog cache key (${idOnly}): ${key.substring(0, 120)}...`);
   
   return cacheWrap(key, method, CATALOG_TTL, options);
 }
@@ -578,7 +578,7 @@ async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
   const searchConfigString = JSON.stringify(searchConfig);
   const key = `search:${searchConfigString}:${searchKey}`;
   
-  console.log(`[Cache] Search cache key: ${key.substring(0, 120)}...`);
+      console.log(`📦 [Cache] Search cache key: ${key.substring(0, 120)}...`);
   
   // Shorter TTL for search results since they're more dynamic
   const SEARCH_TTL = 10 * 60; // 10 minutes (vs 1 hour for catalogs)
@@ -634,7 +634,7 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
    const metaConfigString = JSON.stringify(metaConfig);
    const key = `meta:${metaConfigString}:${metaId}`;
    
-   console.log(`[Cache] Meta cache key (${prefix}/${metaType}): ${key.substring(0, 120)}...`);
+       console.log(`📦 [Cache] Meta cache key (${prefix}/${metaType}): ${key.substring(0, 120)}...`);
    
    return cacheWrap(key, method, ttl, options);
 }
@@ -698,35 +698,18 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      trailers: `meta-trailers:${metaConfigString}:${metaId}`,
      extras: `meta-extras:${metaConfigString}:${metaId}`
    };
-   
-   console.log(`[Cache] Granular meta cache keys (${prefix}/${metaType}):`, Object.keys(componentCacheKeys));
-   
-   // Execute the method to get the full meta object
+      
    const result = await method();
    
-   // Handle both direct meta objects and wrapped { meta: ... } objects
    const meta = result?.meta || result;
    
-   console.log(`[Cache] Method returned for ${metaId}:`, {
-     hasResult: !!result,
-     hasMeta: !!meta,
-     hasId: !!meta?.id,
-     hasName: !!meta?.name,
-     hasType: !!meta?.type,
-     id: meta?.id,
-     name: meta?.name,
-     type: meta?.type
-   });
-   
    if (!meta || !meta.id || !meta.name || !meta.type) {
-     console.warn(`[Cache] No valid meta object returned for ${metaId}`);
+           console.warn(`📦 [Cache] No valid meta object returned for ${metaId}`);
      return { meta: null };
    }
    
-   // Extract and cache individual components
    const componentPromises = [];
    
-   // Basic meta info (id, name, type, description, etc.)
    const basicMeta = {
      id: meta.id,
      name: meta.name,
@@ -901,14 +884,14 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
        const cached = await redis.get(cacheKey);
        if (cached) {
          const parsed = JSON.parse(cached);
-         console.log(`[Cache] Component HIT: ${componentName} for ${metaId}`);
+         console.log(`📦 [Cache] Component HIT: ${componentName} for ${metaId}`);
          return { componentName, data: parsed };
        } else {
-         console.log(`[Cache] Component MISS: ${componentName} for ${metaId}`);
+         console.log(`📦 [Cache] Component MISS: ${componentName} for ${metaId}`);
          return { componentName, data: null };
        }
      } catch (error) {
-       console.warn(`[Cache] Error fetching component ${componentName}:`, error);
+       console.warn(`📦 [Cache] Error fetching component ${componentName}:`, error);
        return { componentName, data: null };
      }
    });
@@ -963,11 +946,11 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    
    // Validate the reconstructed meta
    if (!reconstructedMeta.id || !reconstructedMeta.name || !reconstructedMeta.type) {
-     console.warn(`[Cache] Reconstructed meta missing required fields for ${metaId}`);
+     console.warn(`📦 [Cache] Reconstructed meta missing required fields for ${metaId}`);
      return null;
    }
    
-   console.log(`[Cache] Successfully reconstructed meta for ${metaId} from ${availableComponents.length} components`);
+   console.log(`📦 [Cache] Successfully reconstructed meta for ${metaId} from ${availableComponents.length} components`);
    
    return { meta: reconstructedMeta };
 }
@@ -977,7 +960,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
  * This provides granular caching with graceful degradation
  */
 async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
-   console.log(`[Cache] Smart meta caching for ${metaId} (type: ${type})`);
+   console.log(`📦 [Cache] Smart meta caching for ${metaId} (type: ${type})`);
    
    // First, try to reconstruct from cached components
    const reconstructedMeta = await reconstructMetaFromComponents(userUUID, metaId, ttl, options, type);
@@ -987,7 +970,7 @@ async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, opti
   }
    
    // If reconstruction failed, generate full meta and cache components
-   console.log(`[Cache] Component reconstruction failed for ${metaId}, generating full meta`);
+   console.log(`📦 [Cache] Component reconstruction failed for ${metaId}, generating full meta`);
    return await cacheWrapMetaComponents(userUUID, metaId, method, ttl, options, type);
 }
 
@@ -1001,7 +984,7 @@ async function cacheComponent(cacheKey, componentData, ttl) {
   try {
     await redis.set(cacheKey, JSON.stringify(componentData), 'EX', ttl);
   } catch (error) {
-    console.warn(`[Cache] Failed to cache component for ${cacheKey}:`, error);
+    console.warn(`📦 [Cache] Failed to cache component for ${cacheKey}:`, error);
   }
 }
 
@@ -1056,7 +1039,7 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
     await redis.set(cacheKey, JSON.stringify(componentData), 'EX', ttl);
     
   } catch (error) {
-    console.warn(`[Cache] Failed to cache component ${componentName} for ${metaId}:`, error);
+    console.warn(`📦 [Cache] Failed to cache component ${componentName} for ${metaId}:`, error);
   }
 }
 
@@ -1111,15 +1094,15 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
     const cached = await redis.get(cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached);
-      console.log(`[Cache] Component HIT: ${componentName} for ${metaId}`);
+      console.log(`📦 [Cache] Component HIT: ${componentName} for ${metaId}`);
       return parsed;
     } else {
-      console.log(`[Cache] Component MISS: ${componentName} for ${metaId}`);
+      console.log(`📦 [Cache] Component MISS: ${componentName} for ${metaId}`);
       return null;
     }
     
   } catch (error) {
-    console.warn(`[Cache] Failed to get cached component ${componentName} for ${metaId}:`, error);
+    console.warn(`📦 [Cache] Failed to get cached component ${componentName} for ${metaId}:`, error);
     return null;
   }
 }
@@ -1143,7 +1126,7 @@ function cacheWrapTvdbApi(key, method) {
     
     // Don't cache null results from TVDB API - let them retry immediately
     if (result === null || result === undefined) {
-      console.log(`[TVDB Cache] Skipping cache for null result: ${key}`);
+      console.log(`📦 [TVDB Cache] Skipping cache for null result: ${key}`);
       return { type: 'SKIP_CACHE', ttl: 0 };
     }
     
@@ -1197,16 +1180,16 @@ function clearCacheHealth() {
  */
 async function clearCache(key) {
   if (!redis) {
-    console.warn('[Cache] Redis not available, cannot clear cache');
+    console.warn('📦 [Cache] Redis not available, cannot clear cache');
     return;
   }
   
   try {
     const result = await redis.del(key);
-    console.log(`[Cache] Cleared key: ${key} (${result} keys removed)`);
+    console.log(`📦 [Cache] Cleared key: ${key} (${result} keys removed)`);
     return result;
   } catch (error) {
-    console.error(`[Cache] Failed to clear key ${key}:`, error.message);
+    console.error(`📦 [Cache] Failed to clear key ${key}:`, error.message);
     throw error;
   }
 }
