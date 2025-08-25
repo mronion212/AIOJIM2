@@ -1,8 +1,8 @@
 const { fetch, Agent } = require('undici');
 const { socksDispatcher } = require('fetch-socks');
+const { scrapeSingleImdbResultByTitle } = require('./imdb');
 
 const TMDB_API_URL = 'https://api.themoviedb.org/3';
-
 
 const SOCKS_PROXY_URL = process.env.TMDB_SOCKS_PROXY_URL;
 let dispatcher;
@@ -32,11 +32,11 @@ if (SOCKS_PROXY_URL) {
   console.log('[TMDB] undici agent is enabled for direct connections.');
 }
 
+// A simple in-memory cache
+// This cache will store { tmdbId: imdbId } pairs after a successful scrape.
+// It prevents calling the scraper multiple times for the same TMDB ID within the same session.
+const scrapedImdbIdCache = new Map();
 
-/**
- * A centralized helper to make authenticated requests to the TMDB API using undici.
- * It correctly uses the globally defined dispatcher (either SOCKS or direct).
- */
 async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', body = null) {
   if (!apiKey) throw new Error("TMDB API key is required.");
   
@@ -52,7 +52,7 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
   queryParams.append('api_key', apiKey);
   
   const url = `${TMDB_API_URL}${endpoint}?${queryParams.toString()}`;
-  
+
   try {
     const response = await fetch(url, {
       method: method,
@@ -65,9 +65,50 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
     if (!response.ok) {
       const errorBody = await response.json().catch(() => ({}));
       const errorMessage = errorBody.status_message || `Request failed with status ${response.status}`;
+      console.error(`[TMDB] Request failed for ${endpoint}: ${errorMessage}`);
       throw new Error(errorMessage);
     }
-    return response.json();
+    
+    const data = await response.json();
+    const isMovieDetailEndpoint = endpoint.match(/^\/movie\/(\d+)$/);
+    const currentTmdbId = isMovieDetailEndpoint ? isMovieDetailEndpoint[1] : null;
+
+    if (!data.imdb_id && currentTmdbId) {
+        if (scrapedImdbIdCache.has(currentTmdbId)) {
+            const cachedImdbId = scrapedImdbIdCache.get(currentTmdbId);
+            data.imdb_id = cachedImdbId;
+            if (!data.external_ids) data.external_ids = {};
+            data.external_ids.imdb_id = cachedImdbId;
+        } else { 
+            console.log(`[TMDB] imdb_id in TMDB response: ${data.imdb_id}`);
+            const titleForScraper = data.original_title || data.title || null;
+
+            if (titleForScraper) {
+                console.log(`[TMDB] Attempting to scrape IMDb for title: "${titleForScraper}"`);
+                const imdbScrapedResult = await scrapeSingleImdbResultByTitle(titleForScraper);
+
+                if (imdbScrapedResult && imdbScrapedResult.imdbId) {
+                    const foundImdbId = imdbScrapedResult.imdbId;
+                    data.imdb_id = foundImdbId;
+                    if (!data.external_ids) {
+                        data.external_ids = {};
+                    }
+                    data.external_ids.imdb_id = foundImdbId;
+
+                    scrapedImdbIdCache.set(currentTmdbId, foundImdbId);
+                    console.log(`[TMDB] IMDb ID found by scraper: ${foundImdbId}`);
+                } else {
+                    console.warn(`[TMDB] IMDb scraper returned no ID for title: "${titleForScraper}"`);
+                }
+            } else {
+                console.warn(`[TMDB] 'original_title'/'title' is null skipping IMDb fallback`);
+            }
+        }
+    } else if (data.imdb_id) {
+      console.log(`[TMDB] IMDb ID already present (${data.imdb_id}); skipping fallback for endpoint: ${endpoint}`);
+    }
+
+    return data;
   } catch (error) {
     throw new Error(`[TMDB] Request to ${endpoint} failed: ${error.message}`);
   }
@@ -154,6 +195,7 @@ async function accountTvWatchlist(params, config) {
 }
 
 module.exports = {
+  makeTmdbRequest, 
   movieInfo,
   tvInfo,
   searchMovie,
