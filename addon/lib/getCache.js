@@ -572,7 +572,13 @@ async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
     engineEnabled: config.search?.engineEnabled || {},
     sfw: config.sfw || false,
     includeAdult: config.includeAdult || false,
-    ageRating: config.ageRating || null
+    ageRating: config.ageRating || null,
+    // Add meta and art providers since they affect search results
+    metaProviders: config.providers || {},
+    artProviders: config.artProviders || {},
+    // Add display settings that affect search results
+    blurThumbs: config.blurThumbs || false,
+    showPrefix: config.showPrefix || false
   };
   
   const searchConfigString = JSON.stringify(searchConfig);
@@ -611,10 +617,10 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
    // Add context-specific settings based on meta type
    if (metaType === 'movie') {
      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
-     metaConfig.artProvider = config.artProviders?.movie || 'tmdb';
+     metaConfig.artProvider = config.artProviders?.movie || config.providers?.movie || 'tmdb';
    } else if (metaType === 'series') {
      metaConfig.metaProvider = config.providers?.series || 'tvdb';
-     metaConfig.artProvider = config.artProviders?.series || 'tvdb';
+     metaConfig.artProvider = config.artProviders?.series || config.providers?.series || 'tvdb';
      // TVDB season type only matters for TVDB series
      if (prefix === 'tvdb') {
        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
@@ -663,16 +669,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
    };
    
    // Add context-specific settings
-   if (metaType === 'movie') {
-     metaConfig.metaProvider = config.providers?.movie || 'tmdb';
-     metaConfig.artProvider = config.artProviders?.movie || 'tmdb';
-   } else if (metaType === 'series') {
-     metaConfig.metaProvider = config.providers?.series || 'tvdb';
-     metaConfig.artProvider = config.artProviders?.series || 'tvdb';
-     if (prefix === 'tvdb') {
-       metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
-     }
-   } else if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
+   if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
      metaConfig.artProvider = config.artProviders?.anime || 'mal';
      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
@@ -680,6 +677,15 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
        skipFiller: config.mal?.skipFiller || false,
        skipRecap: config.mal?.skipRecap || false
      };
+   } else if (metaType === 'movie') {
+     metaConfig.metaProvider = config.providers?.movie || 'tmdb';
+     metaConfig.artProvider = config.artProviders?.movie || config.providers?.movie || 'tmdb';
+   } else if (metaType === 'series') {
+     metaConfig.metaProvider = config.providers?.series || 'tvdb';
+     metaConfig.artProvider = config.artProviders?.series || config.providers?.series || 'tvdb';
+     if (prefix === 'tvdb') {
+       metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
+     }
    }
    
    const metaConfigString = JSON.stringify(metaConfig);
@@ -698,7 +704,13 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      trailers: `meta-trailers:${metaConfigString}:${metaId}`,
      extras: `meta-extras:${metaConfigString}:${metaId}`
    };
-      
+   
+   // Debug: Log cache keys for different content types
+   console.log(`📦 [Cache] DEBUG: Generated cache keys for ${metaId} (type: ${metaType}):`);
+   console.log(`📦 [Cache] DEBUG:   metaConfig: ${metaConfigString}`);
+   console.log(`📦 [Cache] DEBUG:   poster key: ${componentCacheKeys.poster}`);
+   console.log(`📦 [Cache] DEBUG:   background key: ${componentCacheKeys.background}`);
+   
    const result = await method();
    
    const meta = result?.meta || result;
@@ -842,16 +854,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    };
    
    // Add context-specific settings
-   if (metaType === 'movie') {
-     metaConfig.metaProvider = config.providers?.movie || 'tmdb';
-     metaConfig.artProvider = config.artProviders?.movie || 'tmdb';
-   } else if (metaType === 'series') {
-     metaConfig.metaProvider = config.providers?.series || 'tvdb';
-     metaConfig.artProvider = config.artProviders?.series || 'tvdb';
-     if (prefix === 'tvdb') {
-       metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
-     }
-   } else if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
+   if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
      metaConfig.artProvider = config.artProviders?.anime || 'mal';
      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
@@ -859,6 +862,15 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
        skipFiller: config.mal?.skipFiller || false,
        skipRecap: config.mal?.skipRecap || false
      };
+   } else if (metaType === 'movie') {
+     metaConfig.metaProvider = config.providers?.movie || 'tmdb';
+     metaConfig.artProvider = config.artProviders?.movie || config.providers?.movie || 'tmdb';
+   } else if (metaType === 'series') {
+     metaConfig.metaProvider = config.providers?.series || 'tvdb';
+     metaConfig.artProvider = config.artProviders?.series || config.providers?.series || 'tvdb';
+     if (prefix === 'tvdb') {
+       metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
+     }
    }
    
    const metaConfigString = JSON.stringify(metaConfig);
@@ -1013,16 +1025,7 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
     };
     
     // Add context-specific settings
-    if (metaType === 'movie') {
-      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
-      metaConfig.artProvider = config.artProviders?.movie || 'tmdb';
-    } else if (metaType === 'series') {
-      metaConfig.metaProvider = config.providers?.series || 'tvdb';
-      metaConfig.artProvider = config.artProviders?.series || 'tvdb';
-      if (prefix === 'tvdb') {
-        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
-      }
-    } else if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
+    if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
       metaConfig.metaProvider = config.providers?.anime || 'mal';
       metaConfig.artProvider = config.artProviders?.anime || 'mal';
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
@@ -1030,6 +1033,15 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
         skipFiller: config.mal?.skipFiller || false,
         skipRecap: config.mal?.skipRecap || false
       };
+    } else if (metaType === 'movie') {
+      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
+      metaConfig.artProvider = config.artProviders?.movie || config.providers?.movie || 'tmdb';
+    } else if (metaType === 'series') {
+      metaConfig.metaProvider = config.providers?.series || 'tvdb';
+      metaConfig.artProvider = config.artProviders?.series || config.providers?.series || 'tvdb';
+      if (prefix === 'tvdb') {
+        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
+      }
     }
     
     const metaConfigString = JSON.stringify(metaConfig);
@@ -1068,16 +1080,7 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
     };
     
     // Add context-specific settings
-    if (metaType === 'movie') {
-      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
-      metaConfig.artProvider = config.artProviders?.movie || 'tmdb';
-    } else if (metaType === 'series') {
-      metaConfig.metaProvider = config.providers?.series || 'tvdb';
-      metaConfig.artProvider = config.artProviders?.series || 'tvdb';
-      if (prefix === 'tvdb') {
-        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
-      }
-    } else if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
+    if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
       metaConfig.metaProvider = config.providers?.anime || 'mal';
       metaConfig.artProvider = config.artProviders?.anime || 'mal';
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
@@ -1085,6 +1088,15 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
         skipFiller: config.mal?.skipFiller || false,
         skipRecap: config.mal?.skipRecap || false
       };
+    } else if (metaType === 'movie') {
+      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
+      metaConfig.artProvider = config.artProviders?.movie || config.providers?.movie || 'tmdb';
+    } else if (metaType === 'series') {
+      metaConfig.metaProvider = config.providers?.series || 'tvdb';
+      metaConfig.artProvider = config.artProviders?.series || config.providers?.series || 'tvdb';
+      if (prefix === 'tvdb') {
+        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
+      }
     }
     
     const metaConfigString = JSON.stringify(metaConfig);

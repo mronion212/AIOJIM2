@@ -83,7 +83,7 @@ export function SearchSettings() {
                 </CardHeader>
                 <CardContent className="space-y-6">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                        <Label className="text-lg font-medium">Movies Engine:</Label>
+                        <Label className="text-lg font-medium">Movies Search Engine:</Label>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
                             <Select value={config.search.providers.movie} onValueChange={(val) => handleProviderChange('movie', val)}>
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
@@ -99,7 +99,7 @@ export function SearchSettings() {
                         </div>
                     </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                        <Label className="text-lg font-medium">Series Engine:</Label>
+                        <Label className="text-lg font-medium">Series Search Engine:</Label>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
                             <Select value={config.search.providers.series} onValueChange={(val) => handleProviderChange('series', val)}>
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
@@ -115,7 +115,7 @@ export function SearchSettings() {
                         </div>
                     </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                        <Label className="text-lg font-medium">Anime (Series) Engine:</Label>
+                        <Label className="text-lg font-medium">Anime (Series) Search Engine:</Label>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
                             <div className="flex-1 text-sm text-muted-foreground border border-input rounded-md bg-stone-900 px-3 py-2 h-10 flex items-center">
                                 {animeSearchProviders.find(p => p.value === 'mal.search.series')?.label || 'MAL Keyword (Series)'}
@@ -128,7 +128,7 @@ export function SearchSettings() {
                         </div>
                     </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                        <Label className="text-lg font-medium">Anime (Movies) Engine:</Label>
+                        <Label className="text-lg font-medium">Anime (Movies) Search Engine:</Label>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
                             <div className="flex-1 text-sm text-muted-foreground border border-input rounded-md bg-stone-900 px-3 py-2 h-10 flex items-center">
                                 {animeSearchProviders.find(p => p.value === 'mal.search.movie')?.label || 'MAL Keyword (Movies)'}

@@ -11,6 +11,27 @@ const { isAnime } = require("../utils/isAnime");
 const { performGeminiSearch } = require('../utils/gemini-service');
 
 
+function getTvdbCertification(contentRatings, countryCode, contentType) {
+  if (!contentRatings || !Array.isArray(contentRatings)) {
+    return null;
+  }
+
+  let certification = contentRatings.find(rating => 
+    rating.country?.toLowerCase() === countryCode?.toLowerCase() && 
+    (!contentType || rating.contentType === contentType || rating.contentType === '')
+  );
+  
+  if (!certification) {
+    certification = contentRatings.find(rating => 
+      rating.country?.toLowerCase() === 'usa' && 
+      (!contentType || rating.contentType === contentType || rating.contentType === '')
+    );
+  }
+  
+  return certification?.name || null;
+}
+
+
 function getDefaultProvider(type) {
   if (type === 'movie') return 'tmdb.search';
   if (type === 'series') return 'tvdb.search';
@@ -48,11 +69,23 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   const imdbId = extendedRecord.remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
   const tvmazeId = extendedRecord.remoteIds?.find(id => id.sourceName === 'TV Maze')?.id;
   const tvdbId = extendedRecord.id;
-  // found the following ids
   console.log(JSON.stringify({tmdbId, imdbId, tvmazeId, tvdbId}));
   var fallbackImage = extendedRecord.image === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : extendedRecord.image;
   const posterUrl = type === 'movie' ? await Utils.getMoviePoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: fallbackImage }, config) : await Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: fallbackImage }, config);
   const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  
+  let certification = null;
+  try {
+    const langParts = language.split('-');
+    const countryCode = langParts[1] || langParts[0];
+    const contentType = type === 'movie' ? 'movie' : '';
+    
+    if (extendedRecord.contentRatings) {
+      certification = getTvdbCertification(extendedRecord.contentRatings, countryCode, contentType);
+    }
+  } catch (error) {
+    console.warn(`[Search] Failed to get TVDB certification for ${type} ${tvdbId}:`, error.message);
+  }
   
   let preferredProvider;
   if (type === 'movie') {
@@ -78,6 +111,7 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
     poster: config.apiKeys?.rpdb ? posterProxyUrl : posterUrl,
     year: extendedRecord.year,
     description: overview,
+    certification: certification,
     //isAnime: isAnime(extendedRecord)
   };
 }
@@ -126,11 +160,13 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         }
     };
 
+    const includeAdult = ['R', 'NC-17'].includes(config.ageRating);
+
     if (type === 'movie') {
-        const movieRes = await moviedb.searchMovie({ query, language, include_adult: config.includeAdult }, config);
+        const movieRes = await moviedb.searchMovie({ query, language, include_adult: includeAdult }, config);
         movieRes.results.forEach(addRawResult);
     } else { 
-        const seriesRes = await moviedb.searchTv({ query, language, include_adult: config.includeAdult }, config);
+        const seriesRes = await moviedb.searchTv({ query, language, include_adult: includeAdult }, config);
         seriesRes.results.forEach(addRawResult);
     }
     
@@ -148,7 +184,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
     const genreList = await getGenreList('tmdb', language, genreType, config);
 
     const hydrationPromises = Array.from(rawResults.values()).map(async (media) => {
-        const mediaType = media.media_type === 'tv' ? 'series' : 'movie';
+        console.log(`[Search] MediaType: ${media.media_type}`);
+        const mediaType = media.media_type === 'movie' ? 'movie' : 'series';
         
         const parsed = Utils.parseMedia(media, media.media_type, genreList); 
         if (!parsed) return null;
@@ -164,12 +201,27 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
 
         parsed.poster = config.apiKeys?.rpdb ? posterProxyUrl : posterUrl;
         parsed.popularity = media.popularity;
+        
+        // Add certification data
+        try {
+          if (mediaType === 'movie') {
+            const certifications = await moviedb.getMovieCertifications({ id: media.id }, config);
+            parsed.certification = Utils.getTmdbMovieCertificationForCountry(certifications);
+          } else {
+            const certifications = await moviedb.getTvCertifications({ id: media.id }, config);
+            parsed.certification = Utils.getTmdbTvCertificationForCountry(certifications);
+          }
+        } catch (error) {
+          console.warn(`[Search] Failed to fetch certification for ${mediaType} ${media.id}:`, error.message);
+          parsed.certification = null;
+        }
+        
         let preferredProvider;
         if (type === 'movie') {
           preferredProvider = config.providers?.movie || 'tmdb';
         } else {
           preferredProvider = config.providers?.series || 'tvdb';
-        }
+        }        
         let stremioId;
         if (preferredProvider === 'tvdb' && tvdbId) {
           stremioId = `tvdb:${tvdbId}`;
@@ -179,6 +231,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
             if(allIds.tvmazeId) {
               stremioId = `tvmaze:${allIds.tvmazeId}`;
             }
+          } else {
+            stremioId = `tmdb:${media.id}`;
           }
         } else if (preferredProvider === 'tmdb' && media.id) {
           stremioId = `tmdb:${media.id}`;
@@ -200,7 +254,47 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
     });
 
     const finalResults = Array.from(searchResults.values());
-    return Utils.sortSearchResults(finalResults, query);
+    
+    let filteredResults = finalResults;
+          if (config.ageRating) {
+        filteredResults = finalResults.filter(result => {
+          if (!result.certification) return true;
+          
+          // Define rating hierarchies for different content types
+          const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+          const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
+          
+          // Determine which hierarchy to use based on the certification format
+          const isTvRating = result.certification.startsWith('TV-');
+          const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
+          
+          let userRating = config.ageRating;
+          if (isTvRating) {
+            const movieToTvMap = {
+              'G': 'TV-G',
+              'PG': 'TV-PG', 
+              'PG-13': 'TV-14',
+              'R': 'TV-MA',
+              'NC-17': 'TV-MA'
+            };
+            userRating = movieToTvMap[config.ageRating] || config.ageRating;
+          }
+          
+          const userRatingIndex = ratingHierarchy.indexOf(userRating);
+          const resultRatingIndex = ratingHierarchy.indexOf(result.certification);
+          
+          // If user rating is more restrictive (lower index), only show results with same or more restrictive rating
+          if (userRatingIndex !== -1 && resultRatingIndex !== -1) {
+            return resultRatingIndex <= userRatingIndex;
+          }
+          
+          return true;
+        });
+      
+      console.log(`[Search] Filtered ${finalResults.length} results to ${filteredResults.length} based on age rating: ${config.ageRating}`);
+    }
+    
+    return Utils.sortSearchResults(filteredResults, query);
 }
 
 
@@ -326,7 +420,47 @@ async function performTvdbSearch(type, query, language, config) {
 
   const filteredResults = finalResults.filter(item => item.type === type);
 
-  return Utils.sortSearchResults(filteredResults, query);
+  // Apply age rating filtering if configured
+  let ageFilteredResults = filteredResults;
+  if (config.ageRating) {
+    ageFilteredResults = filteredResults.filter(result => {
+      if (!result.certification) return true;
+      
+      // Define rating hierarchies for different content types
+      const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+      const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
+      
+      // Determine which hierarchy to use based on the certification format
+      const isTvRating = result.certification.startsWith('TV-');
+      const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
+      
+      let userRating = config.ageRating;
+      if (isTvRating) {
+        const movieToTvMap = {
+          'G': 'TV-G',
+          'PG': 'TV-PG', 
+          'PG-13': 'TV-14',
+          'R': 'TV-MA',
+          'NC-17': 'TV-MA'
+        };
+        userRating = movieToTvMap[config.ageRating] || config.ageRating;
+      }
+      
+      const userRatingIndex = ratingHierarchy.indexOf(userRating);
+      const resultRatingIndex = ratingHierarchy.indexOf(result.certification);
+      
+      // If user rating is more restrictive (lower index), only show results with same or more restrictive rating
+      if (userRatingIndex !== -1 && resultRatingIndex !== -1) {
+        return resultRatingIndex <= userRatingIndex;
+      }
+      
+      return true;
+    });
+    
+    console.log(`[Search] TVDB filtered ${filteredResults.length} results to ${ageFilteredResults.length} based on age rating: ${config.ageRating}`);
+  }
+
+  return Utils.sortSearchResults(ageFilteredResults, query);
 }
 
 async function performTvmazeSearch(query, language, config) {

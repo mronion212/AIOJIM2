@@ -115,20 +115,26 @@ class ConfigApi {
           // Language changes - affects all meta content
           if (config.language !== undefined && config.language !== oldConfig?.language) {
             patterns.push(`v*:meta-*:*`); // All meta components since language affects everything
+            patterns.push(`search:*`); // Also clear search cache since language affects search results
             console.log(`[ConfigApi] Language changed from ${oldConfig?.language} to ${config.language}`);
+            console.log(`[ConfigApi] DEBUG: Added pattern "v*:meta-*:*" and "search:*" for language change`);
           }
           
           // Blur thumbs changes - affects poster/background display
           if (config.blurThumbs !== undefined && config.blurThumbs !== oldConfig?.blurThumbs) {
             patterns.push(`meta-poster:*`); // Poster components
             patterns.push(`meta-background:*`); // Background components
+            patterns.push(`search:*`); // Also clear search cache since blur affects search results
             console.log(`[ConfigApi] Blur thumbs changed from ${oldConfig?.blurThumbs} to ${config.blurThumbs}`);
+            console.log(`[ConfigApi] DEBUG: Added patterns for poster, background, and search cache for blur change`);
           }
           
           // Show prefix changes - affects basic meta display
           if (config.showPrefix !== undefined && config.showPrefix !== oldConfig?.showPrefix) {
             patterns.push(`meta-basic:*`); // Basic meta components
+            patterns.push(`search:*`); // Also clear search cache since prefix affects search results
             console.log(`[ConfigApi] Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix}`);
+            console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for prefix change`);
           }
           
           // Art provider changes - affects all art-related components
@@ -139,29 +145,58 @@ class ConfigApi {
             if (artProvidersChanged) {
               // Clear all meta components since art provider affects multiple components
               patterns.push(`meta-*:*`);
-              console.log(`[ConfigApi] Art providers changed, clearing all meta cache`);
+              // Also clear search cache since art providers affect search results
+              patterns.push(`search:*`);
+              console.log(`[ConfigApi] Art providers changed, clearing all meta cache and search cache`);
               console.log(`[ConfigApi] Old art providers:`, oldConfig.artProviders);
               console.log(`[ConfigApi] New art providers:`, config.artProviders);
+              console.log(`[ConfigApi] DEBUG: Added pattern "meta-*:*" and "search:*" for art provider change`);
             }
           }
           
           // Meta provider changes - affects all components since it changes the data source
           if (config.providers && oldConfig?.providers) {
+            console.log(`[ConfigApi] DEBUG: Comparing providers - old:`, oldConfig.providers, `new:`, config.providers);
             const providersChanged = Object.keys(config.providers).some(key => 
               config.providers[key] !== oldConfig.providers?.[key]
             );
+            console.log(`[ConfigApi] DEBUG: Providers changed:`, providersChanged);
             if (providersChanged) {
               // Clear all meta components since meta provider affects all data
               patterns.push(`meta-*:*`);
-              console.log(`[ConfigApi] Meta providers changed, clearing all meta cache`);
+              // Also clear search cache since meta providers affect search results
+              patterns.push(`search:*`);
+              console.log(`[ConfigApi] Meta providers changed, clearing all meta cache and search cache`);
+              console.log(`[ConfigApi] DEBUG: Added pattern "meta-*:*" and "search:*" for meta provider change`);
             }
+          } else {
+            console.log(`[ConfigApi] DEBUG: No providers to compare - old:`, oldConfig?.providers, `new:`, config.providers);
           }
           
           // SFW mode changes
           if (config.sfw !== undefined && config.sfw !== oldConfig?.sfw) {
             // SFW affects content filtering, so clear all components
             patterns.push(`meta-*:*`); // All meta components
+            patterns.push(`search:*`); // Also clear search cache since SFW affects search results
             console.log(`[ConfigApi] SFW mode changed from ${oldConfig?.sfw} to ${config.sfw}`);
+            console.log(`[ConfigApi] DEBUG: Added patterns for meta and search cache for SFW change`);
+          }
+          
+          // Search-specific changes - affects search results
+          if (config.search && oldConfig?.search) {
+            const searchProvidersChanged = config.search.providers && oldConfig.search.providers && 
+              Object.keys(config.search.providers).some(key => 
+                config.search.providers[key] !== oldConfig.search.providers?.[key]
+              );
+            const aiEnabledChanged = config.search.ai_enabled !== oldConfig.search.ai_enabled;
+            
+            if (searchProvidersChanged || aiEnabledChanged) {
+              patterns.push(`search:*`); // Clear all search cache
+              console.log(`[ConfigApi] Search settings changed, clearing search cache`);
+              if (searchProvidersChanged) console.log(`[ConfigApi] Search providers changed`);
+              if (aiEnabledChanged) console.log(`[ConfigApi] AI enabled changed from ${oldConfig.search.ai_enabled} to ${config.search.ai_enabled}`);
+              console.log(`[ConfigApi] DEBUG: Added pattern "search:*" for search settings change`);
+            }
           }
           
           // If no specific patterns identified, don't clear anything
@@ -175,9 +210,15 @@ class ConfigApi {
           for (const pattern of patterns) {
             const keys = await redis.keys(pattern);
             if (keys.length > 0) {
+              console.log(`[ConfigApi] DEBUG: Found ${keys.length} keys matching pattern "${pattern}":`);
+              keys.slice(0, 5).forEach(key => console.log(`[ConfigApi] DEBUG:   - ${key}`));
+              if (keys.length > 5) console.log(`[ConfigApi] DEBUG:   ... and ${keys.length - 5} more`);
+              
               await redis.del(...keys);
               totalCleared += keys.length;
               console.log(`[ConfigApi] Cleared ${keys.length} cache entries matching pattern: ${pattern}`);
+            } else {
+              console.log(`[ConfigApi] DEBUG: No keys found matching pattern "${pattern}"`);
             }
           }
           
@@ -187,6 +228,10 @@ class ConfigApi {
             try {
               // Clear ALL cache entries for this user (nuclear option)
               const allKeys = await redis.keys(`meta-*:*`);
+              console.log(`[ConfigApi] DEBUG: Nuclear option - Found ${allKeys.length} total meta keys:`);
+              allKeys.slice(0, 10).forEach(key => console.log(`[ConfigApi] DEBUG:   - ${key}`));
+              if (allKeys.length > 10) console.log(`[ConfigApi] DEBUG:   ... and ${allKeys.length - 10} more`);
+              
               if (allKeys.length > 0) {
                 await redis.del(...allKeys);
                 totalCleared += allKeys.length;
@@ -211,9 +256,15 @@ class ConfigApi {
               for (const pattern of specificPatterns) {
                 const keys = await redis.keys(pattern);
                 if (keys.length > 0) {
+                  console.log(`[ConfigApi] DEBUG: Specific pattern "${pattern}" found ${keys.length} keys:`);
+                  keys.slice(0, 3).forEach(key => console.log(`[ConfigApi] DEBUG:   - ${key}`));
+                  if (keys.length > 3) console.log(`[ConfigApi] DEBUG:   ... and ${keys.length - 3} more`);
+                  
                   await redis.del(...keys);
                   totalCleared += keys.length;
                   console.log(`[ConfigApi] Cleared ${keys.length} cache entries with pattern: ${pattern}`);
+                } else {
+                  console.log(`[ConfigApi] DEBUG: Specific pattern "${pattern}" found no keys`);
                 }
               }
               

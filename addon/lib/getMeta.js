@@ -320,20 +320,20 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
   console.log(`[MovieMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
   
   if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
-          try {
+    try {
         const movieData = await tvdb.getMovieExtended(allIds?.tvdbId, config);
         return await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, config);
-      } catch (e) {
+    } catch (e) {
       console.warn(`[MovieMeta] Preferred provider 'tvdb' failed for ${stremioId}. Falling back.`);
       console.error(`[MovieMeta] Detailed error for provider '${preferredProvider}':`, e);
     }
   }
 
       if (allIds?.imdbId && preferredProvider === 'imdb') {
-      try {
+    try {
         let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
         return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config);
-      } catch (e) {
+    } catch (e) {
       console.warn(`[MovieMeta] Preferred provider 'imdb' failed for ${stremioId}. Falling back.`);
     }
   }
@@ -372,11 +372,12 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
   }
 
     if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
+      console.log(`[SeriesMeta] Attempting preferred provider TVmaze with ID: ${allIds.tvmazeId}`);
     try {
       const seriesData = await tvmaze.getShowDetails(allIds.tvmazeId);
       return await buildSeriesResponseFromTvmaze(stremioId, seriesData, language, config, userUUID);
     } catch (e) {
-      console.warn(`[SeriesMeta] Preferred provider 'tvmaze' failed for ${stremioId}. Falling back.`);
+      console.warn(`[SeriesMeta] Preferred provider 'tvmaze' failed for ${stremioId}. Falling back. ${e.message}`);
     }
   }
 
@@ -501,7 +502,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       }, config)
     ]);
     
-
+    
     
     
             return await buildAnimeResponse(stremioId, details, language, characters, episodes, config, userUUID, { 
@@ -608,11 +609,11 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   
   const fallbackPosterUrl = poster || tvdbPosterUrl || `https://artworks.thetvdb.com/banners/images/missing/movie.jpg`;
   const posterProxyUrl = `${host}/poster/movie/tvdb:${movieData.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-  const tmdbLikeCredits = {
+  const movieCredits = {
     cast: (characters || []).filter(c => c.peopleType === 'Actor').map(c => ({
       name: c.personName,
       character: c.name,
-      photo: c.personImgURL 
+      photo: c.image || c.personImgURL 
     })),
     crew: []
   };
@@ -630,13 +631,13 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   const directorDetails = (characters || []).filter(c => c.peopleType === 'Director').map(d => ({
     name: d.personName,
     character: d.name,
-    photo: d.personImgURL 
+    photo: d.image || d.personImgURL 
   }));
 
   const writerDetails = (characters || []).filter(c => c.peopleType === 'Writer').map(w => ({
     name: w.personName,
     character: w.name,
-    photo: w.personImgURL 
+    photo: w.image || w.personImgURL 
   }));
 
   const writerLinks = writers.map(w => ({
@@ -646,7 +647,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   }));
   
   const { trailers, trailerStreams } = Utils.parseTvdbTrailers(movieData.trailers, translatedName);
- console.log(`[TvdbMovieMeta] Stremio ID: ${stremioId}`);
+
   return {
     id: stremioId,
     type: 'movie',
@@ -672,8 +673,8 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
       defaultVideoId: kitsuId ? `kitsu:${kitsuId}` : imdbId || stremioId,
       hasScheduledVideos: false
     },
-            links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, tmdbLikeCredits, language, castCount, userUUID, true), ...directorLinks, ...writerLinks],
-    app_extras: { cast: Utils.parseCast(tmdbLikeCredits, castCount), directors: directorDetails, writers: writerDetails }
+            links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks],
+    app_extras: { cast: Utils.parseCast(movieCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails }
   };
 }
 
@@ -1006,11 +1007,11 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const imdbRating = imdbRatingValue || "N/A";
   const fallbackPosterUrl = poster || tvdbPosterUrl || `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
   const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbShow.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-  const tmdbLikeCredits = {
+  const tvdbCredits = {
     cast: (characters || []).filter(c => c.peopleType === 'Actor').map(c => ({
       name: c.personName,
       character: c.name,
-      photo: c.personImgURL 
+      photo: c.image || c.personImgURL 
     })),
     crew: []
   };
@@ -1018,16 +1019,17 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const directors = (characters || []).filter(c => c.peopleType === 'Director').map(c => c.personName);
   const writers = (characters || []).filter(c => c.peopleType === 'Writer').map(c => c.personName);
 
+  
   const directorDetails = (characters || []).filter(c => c.peopleType === 'Director').map(d => ({
     name: d.personName,
     character: d.name,
-    photo: d.personImgURL 
+    photo: d.image || d.personImgURL 
   }));
 
   const writerDetails = (characters || []).filter(c => c.peopleType === 'Writer').map(w => ({
     name: w.personName,
     character: w.name,
-    photo: w.personImgURL 
+    photo: w.image || w.personImgURL 
   }));
 
   const directorLinks = directors.map(d => ({
@@ -1183,13 +1185,13 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     imdbRating,
     poster: config.apiKeys?.rpdb ? posterProxyUrl : poster,
     background: background, 
-    logo: processLogo(logoUrl),
+    logo: logoUrl,
     videos: videos,
     trailers: trailers,
     trailerStreams: trailerStreams,
-            links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tmdbLikeCredits, language, castCount, userUUID, true), ...directorLinks, ...writerLinks],
+    links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tvdbCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks],
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-    app_extras: { cast: Utils.parseCast(tmdbLikeCredits, castCount), directors: directorDetails, writers: writerDetails }
+    app_extras: { cast: Utils.parseCast(tvdbCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails }
   };
   //console.log(Utils.parseCast(tmdbLikeCredits, castCount));
   return meta;
@@ -1213,9 +1215,9 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, co
   ]);
   const imdbRating = imdbRatingValue || tvmazeShow.rating?.average?.toFixed(1) || "N/A";
 
-  const tmdbLikeCredits = {
+  const tvmazeCredits = {
     cast: (tvmazeShow?._embedded?.cast || []).map(c => ({
-      name: c.person.name, character: c.character.name, photo: c.person.image?.medium.replace('https://static.tvmaze.com/uploads/images/', '')
+      name: c.person.name, character: c.character.name, photo: c.person.image?.medium
     })),
     crew: (tvmazeShow?._embedded?.cast || []).filter(c => c.type === 'Creator').map(c => ({
         name: c.person.name, job: 'Creator'
@@ -1269,7 +1271,6 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, co
     slug: Utils.parseSlug('series', name, stremioId),
     genres: tvmazeShow.genres || [],
     description: addMetaProviderAttribution(summary ? summary.replace(/<[^>]*>?/gm, '') : '', 'TVmaze'),
-    writer: Utils.parseWriter(tmdbLikeCredits).join(', '),
     year: Utils.parseYear(tvmazeShow.status, premiered, tvmazeShow.ended),
     released: new Date(premiered),
     runtime: tvmazeShow.runtime ? Utils.parseRunTime(tvmazeShow.runtime) : Utils.parseRunTime(tvmazeShow.averageRuntime),
@@ -1279,9 +1280,9 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, co
     poster: config.apiKeys?.rpdb ? posterProxyUrl : poster, 
     background: background,
     logo: processLogo(logoUrl), videos,
-            links: [...Utils.buildLinks(imdbRating, imdbId, name, 'series', tvmazeShow.genres.map(g => ({ name: g })), tmdbLikeCredits, language, castCount, userUUID), ...producerLinks, ...writerLinks],
+    links: [...Utils.buildLinks(imdbRating, imdbId, name, 'series', tvmazeShow.genres.map(g => ({ name: g })), tvmazeCredits, language, castCount, userUUID, false, 'tvmaze'), ...producerLinks, ...writerLinks],
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-    app_extras: { cast: Utils.parseCast(tmdbLikeCredits, castCount), producers: producerDetails, writers: writerDetails }
+    app_extras: { cast: Utils.parseCast(tvmazeCredits, castCount, 'tvmaze'), producers: producerDetails, writers: writerDetails }
   };
 
   return meta;
@@ -1378,7 +1379,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       const filteredEpisodes = (episodeData || []).filter(ep => {
         if (config.mal?.skipFiller && ep.filler) return false;
         if (config.mal?.skipRecap && ep.recap) return false;
-        return true;
+            return true;
       });
       
       // Wait for enhancement data
@@ -1387,9 +1388,9 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       // Process episodes with enhancement data (non-IMDB providers)
       if (idProvider !== 'imdb' || !imdbSeasonInfo) {
         videos = filteredEpisodes.map(ep => {
-          let episodeId = `${seriesId}:${ep.mal_id}`;
-          if (idProvider === 'kitsu' && kitsuId) {
-            episodeId = `kitsu:${kitsuId}:${ep.mal_id}`;
+            let episodeId = `${seriesId}:${ep.mal_id}`;
+            if (idProvider === 'kitsu' && kitsuId) {
+              episodeId = `kitsu:${kitsuId}:${ep.mal_id}`;
           } else if (idProvider === 'imdb' && (imdbId || kitsuId)) {
             episodeId = `kitsu:${kitsuId}:${ep.mal_id}`;
           } 
@@ -1461,31 +1462,31 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
             }
           }
           
-          return {
-            id: `${imdbSeasonInfo.imdbId}:${imdbSeasonInfo.seasonNumber}:${ep.mal_id}`,
-            title: ep.title,
-            season: 1,
-            episode: ep.mal_id,
+              return {
+                id: `${imdbSeasonInfo.imdbId}:${imdbSeasonInfo.seasonNumber}:${ep.mal_id}`,
+                title: ep.title,
+                season: 1,
+                episode: ep.mal_id,
             overview: episodeSynopsis,
-            released: ep.aired? new Date(ep.aired) : null,
-            thumbnail: config.blurThumbs? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
-            available: ep.aired ? new Date(ep.aired) < new Date() : false
-          };
-        });
-      }
+                released: ep.aired? new Date(ep.aired) : null,
+                thumbnail: config.blurThumbs? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
+                available: ep.aired ? new Date(ep.aired) < new Date() : false
+              };
+            });
+      } 
     }
 
     // Optimize cast processing with pre-computed replacements
     const cast = (characterData || [])
-      .map(charEntry => {
-        const voiceActor = charEntry.voice_actors.find(va => va.language === 'Japanese');
-        if (!voiceActor) return null;
-        return {
-          name: voiceActor.person.name.replace(",", ""),
-          photo: voiceActor.person.images.jpg.image_url,
-          character: charEntry.character.name.replace(",", ""),
-        };
-      })
+        .map(charEntry => {
+          const voiceActor = charEntry.voice_actors.find(va => va.language === 'Japanese');
+          if (!voiceActor) return null;
+          return {
+            name: voiceActor.person.name.replace(",", ""),
+            photo: voiceActor.person.images.jpg.image_url,
+            character: charEntry.character.name.replace(",", ""),
+          };
+        })
       .filter(Boolean);
 
     const tmdbLikeCredits = {
@@ -1547,7 +1548,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       },
       videos: videos,
       app_extras: {
-        cast: Utils.parseCast(tmdbLikeCredits, castCount),
+        cast: Utils.parseCast(tmdbLikeCredits, castCount, 'mal'),
         director: [],
         writers: []
       }

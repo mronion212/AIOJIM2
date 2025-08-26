@@ -27,9 +27,9 @@ export interface AppConfig {
     anime_id_provider: 'kitsu' | 'mal' | 'imdb';
   };
   artProviders: {
-    movie: 'tmdb' | 'tvdb' | 'fanart';
-    series: 'tmdb' | 'tvdb' | 'fanart';
-    anime: 'mal' | 'anilist' | 'tvdb' | 'fanart';
+    movie: 'meta' | 'tmdb' | 'tvdb' | 'fanart';
+    series: 'meta' | 'tmdb' | 'tvdb' | 'fanart';
+    anime: 'meta' | 'mal' | 'anilist' | 'tvdb' | 'fanart';
   };
   tvdbSeasonType: string;
   mal: {

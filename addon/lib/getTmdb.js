@@ -194,6 +194,16 @@ async function accountTvWatchlist(params, config) {
   return makeTmdbRequest(`/account/${account.id}/watchlist/tv`, apiKey, params);
 }
 
+async function getMovieCertifications(params, config) {
+  const apiKey = getApiKey(config);
+  return makeTmdbRequest(`/movie/${params.id}/release_dates`, apiKey, params);
+}
+
+async function getTvCertifications(params, config) {
+  const apiKey = getApiKey(config);
+  return makeTmdbRequest(`/tv/${params.id}/content_ratings`, apiKey, params);
+}
+
 module.exports = {
   makeTmdbRequest, 
   movieInfo,
@@ -219,5 +229,7 @@ module.exports = {
   accountFavoriteMovies,
   accountFavoriteTv,
   accountMovieWatchlist,
-  accountTvWatchlist
+  accountTvWatchlist,
+  getMovieCertifications,
+  getTvCertifications
 };

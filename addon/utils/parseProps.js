@@ -55,19 +55,24 @@ function parseMedia(el, type, genreList = []) {
 }
 
 
-function parseCast(credits, count) {
+function parseCast(credits, count, metaProvider = 'tmdb') {
   if (!credits || !Array.isArray(credits.cast)) return [];
   const cast = credits.cast;
   const toParse = count === undefined || count === null ? cast : cast.slice(0, count);
 
   return toParse.map((el) => {
     let photoUrl = null;
-    if (el.profile_path) {
-      if (el.profile_path.startsWith('http')) {
-        photoUrl = el.profile_path;
-      } else {
-        photoUrl = `https://image.tmdb.org/t/p/w276_and_h350_face${el.profile_path}`;
+    if (metaProvider === 'tmdb') {
+      if (el.profile_path) {
+        if (el.profile_path.startsWith('http')) {
+          photoUrl = el.profile_path;
+        } else {
+            photoUrl = `https://image.tmdb.org/t/p/w276_and_h350_face${el.profile_path}`;
+        }
       }
+    }
+    else {
+      photoUrl = el.photo;
     }
     return {
       name: el.name,
@@ -128,9 +133,9 @@ function parseImdbLink(vote_average, imdb_id) {
 
 function parseShareLink(title, imdb_id, type) {
   return {
-    name: "Share",
+    name: title,
     category: "share",
-    url: `https://www.strem.io/s/${type}/${imdb_id}/${encodeURIComponent(title)}`,
+    url: `https://www.strem.io/s/${parseSlug(type, title, imdb_id)}`,
   };
 }
 
@@ -204,8 +209,8 @@ function parseGenreLink(genres, type, userUUID, isTvdb = false) {
   }).filter(Boolean);
 }
 
-function parseCreditsLink(credits, castCount) {
-  const castData = parseCast(credits, castCount);
+function parseCreditsLink(credits, castCount, metaProvider = 'tmdb') {
+  const castData = parseCast(credits, castCount, metaProvider);
   const Cast = castData.map((actor) => ({
     name: actor.name, category: "Cast", url: `stremio:///search?search=${encodeURIComponent(actor.name)}`
   }));
@@ -220,7 +225,7 @@ function parseCreditsLink(credits, castCount) {
 
 
 
-function buildLinks(imdbRating, imdbId, title, type, genres, credits, language, castCount, userUUID, isTvdb = false) {
+function buildLinks(imdbRating, imdbId, title, type, genres, credits, language, castCount, userUUID, isTvdb = false, metaProvider = 'tmdb') {
   const links = [];
 
   if (imdbId) {
@@ -233,7 +238,7 @@ function buildLinks(imdbRating, imdbId, title, type, genres, credits, language, 
     links.push(...genreLinks);
   }
 
-  const creditLinks = parseCreditsLink(credits, castCount);
+  const creditLinks = parseCreditsLink(credits, castCount, metaProvider);
   if (creditLinks.length > 0) {
     links.push(...creditLinks);
   }
@@ -287,6 +292,21 @@ function parseAnimeCreditsLink(characterData, userUUID, castCount) {
   }).filter(Boolean);
 
   return [...voiceActorLinks];
+}
+
+function getTmdbMovieCertificationForCountry(certificationsData) {
+  const countryData = certificationsData.results?.find(r => r.iso_3166_1 === 'US');
+  if (!countryData?.release_dates) return null;
+  
+  const theatrical = countryData.release_dates.find(rd => rd.type === 3);
+  return theatrical?.certification || countryData.release_dates[0]?.certification;
+}
+
+function getTmdbTvCertificationForCountry(certificationsData) {
+  const countryData = certificationsData.results?.find(r => r.iso_3166_1 === 'US');
+  if (!countryData?.rating) return null;
+  
+  return countryData.rating;
 }
 
 
@@ -1805,5 +1825,7 @@ module.exports = {
   getSeriesLogo,
   selectTmdbImageByLang,
   processBackgroundImage,
-  convertAnilistBannerToBackground
+  convertAnilistBannerToBackground,
+  getTmdbMovieCertificationForCountry,
+  getTmdbTvCertificationForCountry
 };
