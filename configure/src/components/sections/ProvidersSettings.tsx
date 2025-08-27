@@ -55,7 +55,7 @@ const seriesArtProviders = [
 const animeArtProviders = [
   { value: 'mal', label: 'MyAnimeList' },
   { value: 'anilist', label: 'AniList' },
-  { value: 'tvdb', label: 'TheTVDB' },
+  { value: 'tvdb', label: 'TheTVDB (Recommended)' },
   { value: 'fanart', label: 'Fanart.tv' },
 ];
 
@@ -232,7 +232,7 @@ export function ProvidersSettings() {
             </CardHeader>
             <CardContent>
               <Select 
-                value={config.artProviders?.anime ?? 'meta'} 
+                value={config.artProviders?.anime ?? 'tvdb'} 
                 onValueChange={(val) => handleArtProviderChange('anime', val)}
               >
                 <SelectTrigger>

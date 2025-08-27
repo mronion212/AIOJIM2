@@ -87,8 +87,9 @@ const initialConfig: AppConfig = {
   blurThumbs: false,
   showPrefix: false,
   castCount: 10,
+  sfw: false,
   providers: { movie: 'tmdb', series: 'tvdb', anime: 'mal', anime_id_provider: 'imdb', },
-  artProviders: { movie: 'tmdb', series: 'tvdb', anime: 'mal' },
+  artProviders: { movie: 'meta', series: 'meta', anime: 'tvdb' },
   tvdbSeasonType: 'default',
   mal: {
     skipFiller: false, 

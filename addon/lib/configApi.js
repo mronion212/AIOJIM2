@@ -143,14 +143,11 @@ class ConfigApi {
               config.artProviders[key] !== oldConfig.artProviders?.[key]
             );
             if (artProvidersChanged) {
-              // Clear all meta components since art provider affects multiple components
               patterns.push(`meta-*:*`);
-              // Also clear search cache since art providers affect search results
               patterns.push(`search:*`);
-              console.log(`[ConfigApi] Art providers changed, clearing all meta cache and search cache`);
+              patterns.push(`catalog:*`);
               console.log(`[ConfigApi] Old art providers:`, oldConfig.artProviders);
               console.log(`[ConfigApi] New art providers:`, config.artProviders);
-              console.log(`[ConfigApi] DEBUG: Added pattern "meta-*:*" and "search:*" for art provider change`);
             }
           }
           
@@ -162,12 +159,9 @@ class ConfigApi {
             );
             console.log(`[ConfigApi] DEBUG: Providers changed:`, providersChanged);
             if (providersChanged) {
-              // Clear all meta components since meta provider affects all data
               patterns.push(`meta-*:*`);
-              // Also clear search cache since meta providers affect search results
               patterns.push(`search:*`);
-              console.log(`[ConfigApi] Meta providers changed, clearing all meta cache and search cache`);
-              console.log(`[ConfigApi] DEBUG: Added pattern "meta-*:*" and "search:*" for meta provider change`);
+              patterns.push(`catalog:*`);
             }
           } else {
             console.log(`[ConfigApi] DEBUG: No providers to compare - old:`, oldConfig?.providers, `new:`, config.providers);

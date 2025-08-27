@@ -171,7 +171,12 @@ const respond = function (req, res, data, opts) {
           console.log('[Cache] Setting manifest Cache-Control:', defaultCacheControl);
         } else if (req.route.path.includes('/catalog/')) {
           // Catalog: Very short cache with aggressive revalidation
-          defaultCacheControl = "no-cache, must-revalidate, max-age=0, stale-while-revalidate=300";
+          const configVersion = req.userConfig?.configVersion || Date.now();
+          res.setHeader('X-Config-Version', configVersion.toString());
+          res.setHeader('Last-Modified', new Date(configVersion).toUTCString());
+          
+          // Use very short cache to force refresh when config changes
+          defaultCacheControl = "no-cache, must-revalidate, max-age=0";
           console.log('[Cache] Setting catalog Cache-Control:', defaultCacheControl);
         } else if (req.route.path.includes('/meta/')) {
           // Meta: Aggressive cache control to ensure fresh data when config changes
@@ -195,7 +200,7 @@ const respond = function (req, res, data, opts) {
   }
   
   // Force aggressive cache control for meta routes (final override)
-  if (req.route && req.route.path && req.route.path.includes('/meta/')) {
+  if (req.route && req.route.path && (req.route.path.includes('/meta/') || req.route.path.includes('/catalog/'))) {
     res.setHeader('Cache-Control', 'no-cache, must-revalidate, max-age=0');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -426,12 +431,10 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   
   const language = config.language || DEFAULT_LANGUAGE;
   const sessionId = config.sessionId;
-  
+
   // Pass config to req for ETag generation
   req.userConfig = config;
-
-  const isStaticCatalog = ['mal.decade80s', 'mal.decade90s', 'mal.decade00s', 'mal.decade10s'].includes(id);
-  const cacheWrapper = isStaticCatalog ? cacheWrapStaticCatalog : cacheWrapCatalog;
+  const cacheWrapper = cacheWrapCatalog;
 
   const catalogKey = `${id}:${type}:${JSON.stringify(extra || {})}`;
   
@@ -488,8 +491,18 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
           case 'mal.most_favorites':
           case 'mal.most_popular':
           case 'mal.top_anime':
-          case 'mal.decade20s': {
-            // change to if else structure
+          case 'mal.80sDecade':
+          case 'mal.90sDecade':
+          case 'mal.00sDecade':
+          case 'mal.10sDecade':
+          case 'mal.20sDecade': {
+            const decadeMap = {
+              'mal.80sDecade': ['1980-01-01', '1989-12-31'],
+              'mal.90sDecade': ['1990-01-01', '1999-12-31'],
+              'mal.00sDecade': ['2000-01-01', '2009-12-31'],
+              'mal.10sDecade': ['2010-01-01', '2019-12-31'],
+              'mal.20sDecade': ['2020-01-01', '2029-12-31'],
+            };
             if (id === 'mal.airing') {
               const animeResults = await jikan.getAiringNow(page, config);
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
@@ -513,17 +526,18 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               const animeResults = await jikan.getTopAnimeByType('anime', page, config);
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else {
-            const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
-              console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
-              return await jikan.getAnimeGenres();
-             });
-              const genreNameToFetch = genreName && genreName !== 'None' ? genreName : allAnimeGenres[0]?.name;
-            if (genreNameToFetch) {
-              const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
-              if (selectedGenre) {
-                const genreId = selectedGenre.mal_id;
-                  const animeResults = await jikan.getTopAnimeByDateRange('2020-01-01', '2029-12-31', page, genreId, config);
-                  metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+            const [startDate, endDate] = decadeMap[id];
+              const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
+                console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
+                return await jikan.getAnimeGenres();
+              });
+                const genreNameToFetch = genreName && genreName !== 'None' ? genreName : allAnimeGenres[0]?.name;
+              if (genreNameToFetch) {
+                const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
+                if (selectedGenre) {
+                  const genreId = selectedGenre.mal_id;
+                    const animeResults = await jikan.getTopAnimeByDateRange(startDate, endDate, page, genreId, config);
+                    metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
                 }
               }
               
@@ -573,32 +587,6 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             break;
           }
-          case 'mal.decade80s':
-          case 'mal.decade90s':
-          case 'mal.decade00s':
-          case 'mal.decade10s': {
-            const decadeMap = {
-              'mal.decade80s': ['1980-01-01', '1989-12-31'],
-              'mal.decade90s': ['1990-01-01', '1999-12-31'],
-              'mal.decade00s': ['2000-01-01', '2009-12-31'],
-              'mal.decade10s': ['2010-01-01', '2019-12-31'],
-            };
-            const [startDate, endDate] = decadeMap[id];
-
-            const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
-              console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
-              return await jikan.getAnimeGenres();
-            });
-            const genreNameToFetch = genreName || "None";
-            if (genreNameToFetch) {
-              const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
-              const genreId = selectedGenre?.mal_id;
-              const animeResults = await jikan.getTopAnimeByDateRange(startDate, endDate, page, genreId, config);
-              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            }
-            
-            break;
-          }
           default:
             metas = (await getCatalog(type, language, page, id, genreName, config, userUUID)).metas;
             break;
@@ -607,9 +595,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     }, undefined, cacheOptions);
     }
     
-    const httpCacheOpts = isStaticCatalog
-      ? { cacheMaxAge: 24 * 60 * 60 }
-      : { cacheMaxAge: 0, staleRevalidate: 5 * 60 }; // No cache for regular catalogs, 5 min stale-while-revalidate
+    const httpCacheOpts = { cacheMaxAge: 0, staleRevalidate: 5 * 60 }; // No cache for regular catalogs, 5 min stale-while-revalidate
     respond(req, res, responseData, httpCacheOpts);
 
   } catch (e) {
@@ -1111,7 +1097,7 @@ addon.get('/api/cache/test-essential', async (req, res) => {
   }
 });
 
-addon.get('/api/cache/invalidation-status/:userUUID', async (req, res) => {
+addon.get('aapi/cache/invalidation-status/:userUUID', async (req, res) => {
   try {
     const { userUUID } = req.params;
     

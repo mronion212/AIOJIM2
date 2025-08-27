@@ -1124,9 +1124,40 @@ function cacheWrapJikanApi(key, method) {
   return cacheWrapGlobal(`jikan-api:${subkey}`, method, JIKAN_API_TTL);
 }
 
-function cacheWrapStaticCatalog(configString, catalogKey, method) {
-  const fullKey = `catalog:${configString}:${catalogKey}`;
-  return cacheWrap(fullKey, method, STATIC_CATALOG_TTL);
+async function cacheWrapStaticCatalog(userUUID, catalogKey, method, options = {}) {
+  // Load config from database
+  const config = await loadConfigFromDatabase(userUUID);
+  if (!config) {
+    throw new Error('User configuration not found');
+  }
+  
+  const idOnly = catalogKey.split(':')[0];
+  
+  // Create context-aware catalog config (only relevant parameters for catalogs)
+  const catalogConfig = {
+    // Language (affects all catalogs)
+    language: config.language || 'en-US',
+    
+    // Provider settings (affect catalog content)
+    providers: config.providers || {},
+    artProviders: config.artProviders || {},
+    
+    // Content filtering (affects catalog results)
+    sfw: config.sfw || false,
+    includeAdult: config.includeAdult || false,
+    ageRating: config.ageRating || null,
+    showPrefix: config.showPrefix || false,
+    
+    // Anime-specific settings (for MAL catalogs)
+    mal: config.mal || {}
+  };
+  
+  const catalogConfigString = JSON.stringify(catalogConfig);
+  const key = `catalog:${catalogConfigString}:${catalogKey}`;
+  
+  console.log(`📦 [Cache] Static catalog cache key (${idOnly}): ${key.substring(0, 120)}...`);
+  
+  return cacheWrap(key, method, STATIC_CATALOG_TTL, options);
 }
 
 function cacheWrapTvdbApi(key, method) {
