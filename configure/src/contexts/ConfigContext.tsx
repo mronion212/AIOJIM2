@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useRef  } from "react";
 import { AppConfig, CatalogConfig, SearchConfig } from "./config";
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
-import { allCatalogDefinitions, allSearchProviders } from "@/data/catalogs"; 
+import { allCatalogDefinitions, allSearchProviders } from "@/data/catalogs";
+import { LoadingScreen } from "@/components/LoadingScreen"; 
 
 interface AuthState {
   authenticated: boolean;
@@ -246,7 +247,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   };
 
   if (isLoading) {
-    return <div>Loading configuration...</div>;
+    return <LoadingScreen message="Loading configuration..." />;
   }
 
   return (
