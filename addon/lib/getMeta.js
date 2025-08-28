@@ -686,7 +686,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   const castCount = config.castCount === 0 ? undefined : config.castCount;
   
   // Get artwork based on art provider preference
-  const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w500${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/movie.jpg`;
+  const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/movie.jpg`;
   const tmdbBackgroundUrl = backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
   let tmdbLogoUrl = null;
   
@@ -766,7 +766,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   const idProvider = config.providers?.anime_id_provider || 'imdb';
 
   // Get artwork based on art provider preference
-  const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w500${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
+  const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
   const tmdbBackgroundUrl = backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
   let tmdbLogoUrl = null;
   const [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
@@ -1347,8 +1347,9 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
             .then(kitsuEpisodes => {
               console.log(`[Anime Meta] Fetched ${kitsuEpisodes.length} Kitsu episodes for ${kitsuId}`);
               kitsuEpisodes.forEach(kitsuEp => {
-                const episodeNumber = kitsuEp.attributes?.number;
+                const episodeNumber = kitsuEp.number;
                 if (episodeNumber) {
+                  console.log(`[Anime Meta] Mapping Kitsu episode ${episodeNumber} (ID: ${kitsuEp.id}) for anime ${kitsuId}`);
                   kitsuEpisodeMap.set(episodeNumber, kitsuEp);
                 }
               });
@@ -1375,6 +1376,8 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
     
     // Process episodes while API calls are running
     if (stremioType === 'series' && malData.status !== 'Not yet aired' && episodeData && episodeData.length > 0) {
+      const cinemetaVideos = await idMapper.getCinemetaVideosForImdbSeries(imdbId);
+      const nonZeroSeasonsVideos = cinemetaVideos?.filter(s => s.season !== 0) || [];
       // Filter episodes once
       const filteredEpisodes = (episodeData || []).filter(ep => {
         if (config.mal?.skipFiller && ep.filler) return false;
@@ -1387,8 +1390,12 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       
       // Process episodes with enhancement data (non-IMDB providers)
       if (idProvider !== 'imdb' || !imdbSeasonInfo) {
+        console.log(`[Anime Meta] Starting non-IMDB season processing for ${seriesId}`);
         videos = filteredEpisodes.map(ep => {
             let episodeId = `${seriesId}:${ep.mal_id}`;
+            const cinemetaVideo = (ep.mal_id > 0 && ep.mal_id <= nonZeroSeasonsVideos.length) 
+              ? nonZeroSeasonsVideos[ep.mal_id - 1] 
+              : null;
             if (idProvider === 'kitsu' && kitsuId) {
               episodeId = `kitsu:${kitsuId}:${ep.mal_id}`;
           } else if (idProvider === 'imdb' && (imdbId || kitsuId)) {
@@ -1396,29 +1403,42 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
           } 
           
           // Try to enhance with Kitsu data
-          let thumbnailUrl = posterUrl;
+          let thumbnailUrl = null;
           let episodeTitle = ep.title;
           let episodeSynopsis = ep.synopsis;
           const kitsuEpisode = kitsuEpisodeMap.get(ep.mal_id);
           
           if (kitsuEpisode) {
-            if (kitsuEpisode.attributes?.thumbnail?.original) {
-              thumbnailUrl = kitsuEpisode.attributes.thumbnail.original;
+            if (kitsuEpisode.thumbnail?.original) {
+              thumbnailUrl = kitsuEpisode.thumbnail.original;
             }
             
-            if (kitsuEpisode.attributes?.synopsis) {
-              episodeSynopsis = kitsuEpisode.attributes.synopsis;
+            if (kitsuEpisode.synopsis) {
+              episodeSynopsis = kitsuEpisode.synopsis;
             }
             
-            if (kitsuEpisode.attributes?.titles?.en_us) {
-              episodeTitle = kitsuEpisode.attributes.titles.en_us;
-            } else if (kitsuEpisode.attributes?.titles?.en_jp) {
-              episodeTitle = kitsuEpisode.attributes.titles.en_jp;
-            } else if (kitsuEpisode.attributes?.titles?.en) {
-              episodeTitle = kitsuEpisode.attributes.titles.en;
-            } else if (kitsuEpisode.attributes?.canonicalTitle) {
-              episodeTitle = kitsuEpisode.attributes.canonicalTitle;
+            if (kitsuEpisode.titles?.en_us) {
+              episodeTitle = kitsuEpisode.titles.en_us;
+            } else if (kitsuEpisode.titles?.en_jp) {
+              episodeTitle = kitsuEpisode.titles.en_jp;
+            } else if (kitsuEpisode.titles?.en) {
+              episodeTitle = kitsuEpisode.titles.en;
+            } else if (kitsuEpisode.canonicalTitle) {
+              episodeTitle = kitsuEpisode.canonicalTitle;
             }
+          }
+
+          if (cinemetaVideo) {
+            if (!episodeSynopsis) {
+              episodeSynopsis = cinemetaVideo.synopsis;
+            }
+            if (cinemetaVideo.thumbnail) {
+              thumbnailUrl = cinemetaVideo.thumbnail;
+            }
+          }
+
+          if (!thumbnailUrl) {
+            thumbnailUrl = posterUrl;
           }
           
           return {
@@ -1436,43 +1456,50 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       
       // Special processing for IMDB provider with season info
       if (idProvider === 'imdb' && imdbSeasonInfo) {
+        console.log(`[Anime Meta] Starting IMDB season processing for ${imdbId} with season ${imdbSeasonInfo.seasonNumber}`);
         videos = filteredEpisodes.map(ep => {
-          let thumbnailUrl = posterUrl;
+          let thumbnailUrl = null;
           let episodeTitle = ep.title;
           let episodeSynopsis = ep.synopsis;
           const kitsuEpisode = kitsuEpisodeMap.get(ep.mal_id);
           
           if (kitsuEpisode) {
-            if (kitsuEpisode.attributes?.thumbnail?.original) {
-              thumbnailUrl = kitsuEpisode.attributes.thumbnail.original;
+            if (kitsuEpisode.thumbnail?.original) {
+              thumbnailUrl = kitsuEpisode.thumbnail.original;
             }
             
-            if (kitsuEpisode.attributes?.synopsis) {
-              episodeSynopsis = kitsuEpisode.attributes.synopsis;
-            }
-            
-            if (kitsuEpisode.attributes?.titles?.en_us) {
-              episodeTitle = kitsuEpisode.attributes.titles.en_us;
-            } else if (kitsuEpisode.attributes?.titles?.en_jp) {
-              episodeTitle = kitsuEpisode.attributes.titles.en_jp;
-            } else if (kitsuEpisode.attributes?.titles?.en) {
-              episodeTitle = kitsuEpisode.attributes.titles.en;
-            } else if (kitsuEpisode.attributes?.canonicalTitle) {
-              episodeTitle = kitsuEpisode.attributes.canonicalTitle;
+            if (kitsuEpisode.synopsis) {
+              episodeSynopsis = kitsuEpisode.synopsis;
             }
           }
+          const cinemetaVideo = (ep.mal_id > 0 && ep.mal_id <= nonZeroSeasonsVideos.length) 
+            ? nonZeroSeasonsVideos[ep.mal_id - 1] 
+            : null;
+          console.log(`[Anime Meta] Found Cinemeta video for ${ep.mal_id}: ${cinemetaVideo?.name}`);
+          if (cinemetaVideo) {
+            if (!episodeSynopsis) {
+              episodeSynopsis = cinemetaVideo.synopsis;
+            }
+            if (cinemetaVideo.thumbnail) {
+              thumbnailUrl = cinemetaVideo.thumbnail;
+            }
+          }
+
+          if (!thumbnailUrl) {
+            thumbnailUrl = posterUrl;
+          }
           
-              return {
-                id: `${imdbSeasonInfo.imdbId}:${imdbSeasonInfo.seasonNumber}:${ep.mal_id}`,
-                title: ep.title,
-                season: 1,
-                episode: ep.mal_id,
+          return {
+            id: `${imdbSeasonInfo.imdbId}:${imdbSeasonInfo.seasonNumber}:${ep.mal_id}`,
+            title: episodeTitle,
+            season: 1,
+            episode: ep.mal_id,
             overview: episodeSynopsis,
-                released: ep.aired? new Date(ep.aired) : null,
-                thumbnail: config.blurThumbs? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
-                available: ep.aired ? new Date(ep.aired) < new Date() : false
-              };
-            });
+            released: ep.aired? new Date(ep.aired) : null,
+            thumbnail: config.blurThumbs? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
+            available: ep.aired ? new Date(ep.aired) < new Date() : false
+          };
+        });
       } 
     }
 
@@ -1553,7 +1580,6 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
         writers: []
       }
     };
-    console.log(meta);
 
     return meta;
 

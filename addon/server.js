@@ -5,11 +5,25 @@ const geminiService = require('./utils/gemini-service');
 
 async function startServer() {
   console.log('--- Addon Starting Up ---');
+  
+  process.on('uncaughtException', (error) => {
+    console.error('--- UNCAUGHT EXCEPTION ---');
+    console.error('Error:', error.message);
+    console.error('Stack:', error.stack);
+    console.error('This error was not caught and could crash the application.');
+  });
+
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('--- UNHANDLED PROMISE REJECTION ---');
+    console.error('Reason:', reason);
+    console.error('Promise:', promise);
+    console.error('This rejection was not handled and could crash the application.');
+  });
+  
   console.log('Initializing ID Mapper...');
   await initializeMapper();
   console.log('ID Mapper initialization complete.');
 
-  // Wait for cache warming to complete before starting server
   const addon = await startServerWithCacheWarming();
 
   addon.listen(PORT, () => {

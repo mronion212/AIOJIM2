@@ -267,6 +267,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
           // Determine which hierarchy to use based on the certification format
           const isTvRating = result.certification.startsWith('TV-');
           const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
+          //console.log(`[Search] result title ${result.name} and rating ${result.certification} where user rating is ${config.ageRating} with type ${type}`);
           
           let userRating = config.ageRating;
           if (isTvRating) {
@@ -286,6 +287,11 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
           // If user rating is more restrictive (lower index), only show results with same or more restrictive rating
           if (userRatingIndex !== -1 && resultRatingIndex !== -1) {
             return resultRatingIndex <= userRatingIndex;
+          }
+          
+          // If result rating is not in hierarchy (like NR), filter it out when age filtering is enabled
+          if (resultRatingIndex === -1) {
+            return false;
           }
           
           return true;

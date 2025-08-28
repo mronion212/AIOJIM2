@@ -115,7 +115,7 @@ export function ConfigImportExport() {
         const mergedConfig = {
           ...config,
           ...importData.config,
-          apiKeys: excludeApiKeys ? config.apiKeys : importData.config.apiKeys
+          apiKeys: importData.metadata?.apiKeysExcluded ? config.apiKeys : importData.config.apiKeys
         };
 
         // Update the configuration

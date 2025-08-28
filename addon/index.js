@@ -527,15 +527,15 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else {
             const [startDate, endDate] = decadeMap[id];
-              const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
-                console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
-                return await jikan.getAnimeGenres();
-              });
+            const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
+              console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
+              return await jikan.getAnimeGenres();
+             });
                 const genreNameToFetch = genreName && genreName !== 'None' ? genreName : allAnimeGenres[0]?.name;
-              if (genreNameToFetch) {
-                const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
-                if (selectedGenre) {
-                  const genreId = selectedGenre.mal_id;
+            if (genreNameToFetch) {
+              const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
+              if (selectedGenre) {
+                const genreId = selectedGenre.mal_id;
                     const animeResults = await jikan.getTopAnimeByDateRange(startDate, endDate, page, genreId, config);
                     metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
                 }
@@ -701,6 +701,12 @@ addon.get("/poster/:type/:id", async function (req, res) {
 addon.get("/api/image/blur", async function (req, res) {
   const imageUrl = req.query.url;
   if (!imageUrl) { return res.status(400).send('Image URL not provided'); }
+  
+  // Add security headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  
   try {
     const blurredImageBuffer = await blurImage(imageUrl);
     res.setHeader('Content-Type', 'image/jpeg');
@@ -782,8 +788,21 @@ addon.get('/resize-image', async function (req, res) {
     return res.status(400).send('Image URL not provided');
   }
 
+  // Import the validation function
+  const { validateImageUrl } = require('./utils/imageProcessor');
+  
+  // Validate URL before processing
+  if (!validateImageUrl(imageUrl)) {
+    return res.status(400).send('Invalid or unauthorized image URL');
+  }
+
   try {
-    const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+    const response = await axios.get(imageUrl, { 
+      responseType: 'arraybuffer',
+      timeout: 10000,
+      maxContentLength: 10 * 1024 * 1024, // 10MB limit
+      maxBodyLength: 10 * 1024 * 1024
+    });
     let transformer = sharp(response.data).resize({
       width: 1280, // You can adjust or make this configurable
       height: 720,

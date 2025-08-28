@@ -4,6 +4,26 @@ const { scrapeSingleImdbResultByTitle } = require('./imdb');
 
 const TMDB_API_URL = 'https://api.themoviedb.org/3';
 
+/**
+ * Selects the best TMDB image by language (user's, then English, then any)
+ * @param {Array} images - Array of TMDB image objects
+ * @param {object} config - The user's configuration object
+ * @returns {object|undefined} The best image object, or undefined if none
+ */
+function selectTmdbImageByLang(images, config) {
+  if (!Array.isArray(images) || images.length === 0) return undefined;
+  
+  const userLang = config.language?.split('-')[0]?.toLowerCase() || 'en';
+  
+  let filtered = images.filter(img => img.iso_639_1 === userLang);
+  if (filtered.length === 0) filtered = images.filter(img => img.iso_639_1 === 'en');
+  if (filtered.length === 0) filtered = images;
+  
+  filtered.sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
+  
+  return filtered[0];
+}
+
 const SOCKS_PROXY_URL = process.env.TMDB_SOCKS_PROXY_URL;
 let dispatcher;
 
@@ -72,7 +92,7 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
     const data = await response.json();
     const isMovieDetailEndpoint = endpoint.match(/^\/movie\/(\d+)$/);
     const currentTmdbId = isMovieDetailEndpoint ? isMovieDetailEndpoint[1] : null;
-
+    const type = isMovieDetailEndpoint ? 'movie' : 'series';
     if (!data.imdb_id && currentTmdbId) {
         if (scrapedImdbIdCache.has(currentTmdbId)) {
             const cachedImdbId = scrapedImdbIdCache.get(currentTmdbId);
@@ -85,7 +105,7 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
 
             if (titleForScraper) {
                 console.log(`[TMDB] Attempting to scrape IMDb for title: "${titleForScraper}"`);
-                const imdbScrapedResult = await scrapeSingleImdbResultByTitle(titleForScraper);
+                const imdbScrapedResult = await scrapeSingleImdbResultByTitle(titleForScraper, type);
 
                 if (imdbScrapedResult && imdbScrapedResult.imdbId) {
                     const foundImdbId = imdbScrapedResult.imdbId;
@@ -204,6 +224,170 @@ async function getTvCertifications(params, config) {
   return makeTmdbRequest(`/tv/${params.id}/content_ratings`, apiKey, params);
 }
 
+/**
+ * Get TMDB movie poster URL
+ * @param {string} tmdbId - TMDB movie ID
+ * @param {string} mediaType - Media type ('movie' or 'series')
+ * @param {Object} config - Configuration object
+ * @returns {Promise<string|null>} Poster URL or null if not found
+ */
+async function getTmdbMoviePoster(tmdbId, config) {
+  if (!tmdbId) return null;
+  
+  try {
+    const apiKey = getApiKey(config);
+    const images = await makeTmdbRequest(`/movie/${tmdbId}/images`, apiKey, {});
+    
+    if (images && images.posters && images.posters.length > 0) {
+      const poster = selectTmdbImageByLang(images.posters, config);
+      if (poster) {
+        return `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster.file_path}`;
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.warn(`[TMDB] Failed to get movie poster for TMDB ID ${tmdbId}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Get TMDB series poster URL
+ * @param {string} tmdbId - TMDB series ID
+ * @param {string} mediaType - Media type ('movie' or 'series')
+ * @param {Object} config - Configuration object
+ * @returns {Promise<string|null>} Poster URL or null if not found
+ */
+async function getTmdbSeriesPoster(tmdbId, config) {
+  if (!tmdbId) return null;
+  
+  try {
+    const apiKey = getApiKey(config);
+    const images = await makeTmdbRequest(`/tv/${tmdbId}/images`, apiKey, {});
+    
+    if (images && images.posters && images.posters.length > 0) {
+      const poster = selectTmdbImageByLang(images.posters, config);
+      if (poster) {
+        return `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster.file_path}`;
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.warn(`[TMDB] Failed to get series poster for TMDB ID ${tmdbId}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Get TMDB movie background URL
+ * @param {string} tmdbId - TMDB movie ID
+ * @param {Object} config - Configuration object
+ * @returns {Promise<string|null>} Background URL or null if not found
+ */
+async function getTmdbMovieBackground(tmdbId, config) {
+  if (!tmdbId) return null;
+  
+  try {
+    const apiKey = getApiKey(config);
+    const images = await makeTmdbRequest(`/movie/${tmdbId}/images`, apiKey, {});
+    
+    if (images && images.backdrops && images.backdrops.length > 0) {
+      const backdrop = selectTmdbImageByLang(images.backdrops, config);
+      if (backdrop) {
+        return `https://image.tmdb.org/t/p/original${backdrop.file_path}`;
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.warn(`[TMDB] Failed to get movie background for TMDB ID ${tmdbId}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Get TMDB series background URL
+ * @param {string} tmdbId - TMDB series ID
+ * @param {Object} config - Configuration object
+ * @returns {Promise<string|null>} Background URL or null if not found
+ */
+async function getTmdbSeriesBackground(tmdbId, config) {
+  if (!tmdbId) return null;
+  
+  try {
+    const apiKey = getApiKey(config);
+    const images = await makeTmdbRequest(`/tv/${tmdbId}/images`, apiKey, {});
+    
+    if (images && images.backdrops && images.backdrops.length > 0) {
+      const backdrop = selectTmdbImageByLang(images.backdrops, config);
+      if (backdrop) {
+        return `https://image.tmdb.org/t/p/original${backdrop.file_path}`;
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.warn(`[TMDB] Failed to get series background for TMDB ID ${tmdbId}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Get TMDB movie logo URL
+ * @param {string} tmdbId - TMDB movie ID
+ * @param {Object} config - Configuration object
+ * @returns {Promise<string|null>} Logo URL or null if not found
+ */
+async function getTmdbMovieLogo(tmdbId, config) {
+  if (!tmdbId) return null;
+  
+  try {
+    const apiKey = getApiKey(config);
+    const images = await makeTmdbRequest(`/movie/${tmdbId}/images`, apiKey, {});
+    
+    if (images && images.logos && images.logos.length > 0) {
+      const logo = selectTmdbImageByLang(images.logos, config);
+      if (logo) {
+        return `https://image.tmdb.org/t/p/original${logo.file_path}`;
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.warn(`[TMDB] Failed to get movie logo for TMDB ID ${tmdbId}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Get TMDB series logo URL
+ * @param {string} tmdbId - TMDB series ID
+ * @param {Object} config - Configuration object
+ * @returns {Promise<string|null>} Logo URL or null if not found
+ */
+async function getTmdbSeriesLogo(tmdbId, config) {
+  if (!tmdbId) return null;
+  
+  try {
+    const apiKey = getApiKey(config);
+    const images = await makeTmdbRequest(`/tv/${tmdbId}/images`, apiKey, {});
+    
+    if (images && images.logos && images.logos.length > 0) {
+      const logo = selectTmdbImageByLang(images.logos, config);
+      if (logo) {
+        return `https://image.tmdb.org/t/p/original${logo.file_path}`;
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.warn(`[TMDB] Failed to get series logo for TMDB ID ${tmdbId}:`, error.message);
+    return null;
+  }
+}
+
 module.exports = {
   makeTmdbRequest, 
   movieInfo,
@@ -231,5 +415,11 @@ module.exports = {
   accountMovieWatchlist,
   accountTvWatchlist,
   getMovieCertifications,
-  getTvCertifications
+  getTvCertifications,
+  getTmdbMoviePoster,
+  getTmdbSeriesPoster,
+  getTmdbMovieBackground,
+  getTmdbSeriesBackground,
+  getTmdbMovieLogo,
+  getTmdbSeriesLogo
 };

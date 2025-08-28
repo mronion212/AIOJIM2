@@ -36,26 +36,26 @@ imdbAxiosInstance.interceptors.response.use(response => {
 
 async function getMetaFromImdb(imdbId, type, stremioId) {
     if (!imdbId) {
-        return undefined;
+      return undefined;
     }
-
+  
     const url = `https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`;
     try {
         const response = await imdbAxiosInstance.get(url);
-        const meta = response.data?.meta;
+      const meta = response.data?.meta;
         if (meta) {
-            meta.id = stremioId;
-            return meta;
+      meta.id = stremioId;
+      return meta;
         }
         return undefined;
     } catch (error) {
         console.warn(
             `Could not fetch meta for ${imdbId} from Cinemeta for type ${type}. Error: ${error.message}`
         );
-        return undefined;
+      return undefined;
     }
-}
-
+  }
+  
 async function fetchHtml(url, headers = {}) {
     console.log(`[imdb-scraper] Connecting to: ${url}`);
     try {
@@ -282,8 +282,14 @@ function processSearchResults($, searchResults, originalSearchTitle) {
     return bestFoundResult;
 }
 
-async function scrapeSingleImdbResultByTitle(title) {
-    const searchUrl = `https://www.imdb.com/find?q=${encodeURIComponent(title)}&s=all&ref_=fn_al_all`;
+async function scrapeSingleImdbResultByTitle(title, type) {
+    let title_type;
+    if (type === 'movie') {
+        title_type = 'feature';
+    } else {
+        title_type = 'tv_series';
+    }
+    const searchUrl = `https://www.imdb.com/find?q=${encodeURIComponent(title)}&s=all&ref_=fn_al_all&title_type=${title_type}`;
     console.log(`[imdb-scraper] Fetching IMDb search results for: "${title}"`);
 
     try {

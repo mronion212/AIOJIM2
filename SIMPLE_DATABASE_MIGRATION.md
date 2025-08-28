@@ -9,7 +9,7 @@ The password-protected database system provides:
 - **Password protection** for configuration access
 - **Frontend validation** requiring TMDB/TVDB API keys before password creation
 - **Database storage** replacing localStorage
-- **URL format**: `Hostname/stremio/uuid/compressedConfigString/manifest.json`
+- **URL format**: `Hostname/stremio/uuid/manifest.json`
 
 ## 🔄 User Flow
 

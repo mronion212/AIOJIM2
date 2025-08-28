@@ -511,9 +511,18 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
 
 async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   // Load config from database
-  const config = await loadConfigFromDatabase(userUUID);
+  let config;
+  try {
+    config = await loadConfigFromDatabase(userUUID);
+  } catch (error) {
+    console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+    // Return empty response for invalid UUIDs instead of crashing
+    return { metas: [] };
+  }
+  
   if (!config) {
-    throw new Error('User configuration not found');
+    console.warn(`[Cache] No config found for user ${userUUID}`);
+    return { metas: [] };
   }
   
   const idOnly = catalogKey.split(':')[0];
@@ -560,9 +569,18 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
  */
 async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
   // Load config from database
-  const config = await loadConfigFromDatabase(userUUID);
+  let config;
+  try {
+    config = await loadConfigFromDatabase(userUUID);
+  } catch (error) {
+    console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+    // Return empty response for invalid UUIDs instead of crashing
+    return { metas: [] };
+  }
+  
   if (!config) {
-    throw new Error('User configuration not found');
+    console.warn(`[Cache] No config found for user ${userUUID}`);
+    return { metas: [] };
   }
   
   // Search-specific config (only relevant parameters for search results)
@@ -594,9 +612,18 @@ async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
 
 async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
    // Load config from database
-   const config = await loadConfigFromDatabase(userUUID);
+   let config;
+   try {
+     config = await loadConfigFromDatabase(userUUID);
+   } catch (error) {
+     console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+     // Return empty response for invalid UUIDs instead of crashing
+     return { meta: null };
+   }
+   
    if (!config) {
-     throw new Error('User configuration not found');
+     console.warn(`[Cache] No config found for user ${userUUID}`);
+     return { meta: null };
    }
    
    // Parse metaId to determine context (fallback if type not provided)
@@ -651,9 +678,18 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
  */
 async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
    // Load config from database
-   const config = await loadConfigFromDatabase(userUUID);
+   let config;
+   try {
+     config = await loadConfigFromDatabase(userUUID);
+   } catch (error) {
+     console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+     // Return empty response for invalid UUIDs instead of crashing
+     return { meta: null };
+   }
+   
    if (!config) {
-     throw new Error('User configuration not found');
+     console.warn(`[Cache] No config found for user ${userUUID}`);
+     return { meta: null };
    }
    
    // Parse metaId to determine context
@@ -836,9 +872,18 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
  */
 async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, options = {}, type = null) {
    // Load config from database
-   const config = await loadConfigFromDatabase(userUUID);
+   let config;
+   try {
+     config = await loadConfigFromDatabase(userUUID);
+   } catch (error) {
+     console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+     // Return null for invalid UUIDs instead of crashing
+     return null;
+   }
+   
    if (!config) {
-     throw new Error('User configuration not found');
+     console.warn(`[Cache] No config found for user ${userUUID}`);
+     return null;
    }
    
    // Parse metaId to determine context
@@ -1009,8 +1054,18 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
   
   try {
     // Load config from database
-    const config = await loadConfigFromDatabase(userUUID);
-    if (!config) return;
+    let config;
+    try {
+      config = await loadConfigFromDatabase(userUUID);
+    } catch (error) {
+      console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+      return; // Skip caching for invalid UUIDs
+    }
+    
+    if (!config) {
+      console.warn(`[Cache] No config found for user ${userUUID}`);
+      return;
+    }
     
     // Parse metaId to determine context
     const [prefix, sourceId] = metaId.split(':');
@@ -1064,8 +1119,18 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
   
   try {
     // Load config from database
-    const config = await loadConfigFromDatabase(userUUID);
-    if (!config) return null;
+    let config;
+    try {
+      config = await loadConfigFromDatabase(userUUID);
+    } catch (error) {
+      console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+      return null; // Return null for invalid UUIDs
+    }
+    
+    if (!config) {
+      console.warn(`[Cache] No config found for user ${userUUID}`);
+      return null;
+    }
     
     // Parse metaId to determine context
     const [prefix, sourceId] = metaId.split(':');
@@ -1126,9 +1191,18 @@ function cacheWrapJikanApi(key, method) {
 
 async function cacheWrapStaticCatalog(userUUID, catalogKey, method, options = {}) {
   // Load config from database
-  const config = await loadConfigFromDatabase(userUUID);
+  let config;
+  try {
+    config = await loadConfigFromDatabase(userUUID);
+  } catch (error) {
+    console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+    // Return empty response for invalid UUIDs instead of crashing
+    return { metas: [] };
+  }
+  
   if (!config) {
-    throw new Error('User configuration not found');
+    console.warn(`[Cache] No config found for user ${userUUID}`);
+    return { metas: [] };
   }
   
   const idOnly = catalogKey.split(':')[0];

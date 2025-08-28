@@ -56,6 +56,7 @@ const animeArtProviders = [
   { value: 'mal', label: 'MyAnimeList' },
   { value: 'anilist', label: 'AniList' },
   { value: 'tvdb', label: 'TheTVDB (Recommended)' },
+  { value: 'tmdb', label: 'The Movie Database (TMDB)' },
   { value: 'fanart', label: 'Fanart.tv' },
 ];
 

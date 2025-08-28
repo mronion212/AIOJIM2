@@ -1,11 +1,90 @@
 const sharp = require('sharp');
 const axios = require('axios');
+const url = require('url');
+
+// Whitelisted domains for image processing
+const ALLOWED_DOMAINS = [
+  'image.tmdb.org',
+  'artworks.thetvdb.com',
+  'cdn.myanimelist.net',
+  'media.kitsu.io',
+  'gogocdn.net',
+  'artworks.thetvdb.com',
+  'fanart.tv',
+  'themoviedb.org',
+  'thetvdb.com',
+  'myanimelist.net',
+  'kitsu.io',
+  'anilist.co',
+  'anidb.net'
+];
+
+// Allowed file extensions
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'];
+
+// Maximum file size (50MB)
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
+
+/**
+ * Validate image URL for security
+ * @param {string} imageUrl - URL to validate
+ * @returns {boolean} - Whether URL is safe to process
+ */
+function validateImageUrl(imageUrl) {
+  try {
+    const parsedUrl = new URL(imageUrl);
+    
+    const domain = parsedUrl.hostname.toLowerCase();
+    const isAllowedDomain = ALLOWED_DOMAINS.some(allowed => 
+      domain === allowed || domain.endsWith('.' + allowed)
+    );
+    
+    if (!isAllowedDomain) {
+      console.warn(`[Security] Blocked request to unauthorized domain: ${domain}`);
+      return false;
+    }
+    
+    if (parsedUrl.protocol !== 'https:' && !(parsedUrl.protocol === 'http:' && domain === 'localhost')) {
+      console.warn(`[Security] Blocked request with unauthorized protocol: ${parsedUrl.protocol}`);
+      return false;
+    }
+    
+    const pathname = parsedUrl.pathname.toLowerCase();
+    const hasValidExtension = ALLOWED_EXTENSIONS.some(ext => pathname.endsWith(ext));
+    
+    if (!hasValidExtension) {
+      console.warn(`[Security] Blocked request with unauthorized file extension: ${pathname}`);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.warn(`[Security] Invalid URL format: ${imageUrl}`);
+    return false;
+  }
+}
 
 async function blurImage(imageUrl) {
+  if (!validateImageUrl(imageUrl)) {
+    throw new Error('Invalid or unauthorized image URL');
+  }
+  
   try {
     const response = await axios.get(imageUrl, {
-      responseType: 'arraybuffer'
+      responseType: 'arraybuffer',
+      timeout: 10000, // 10 second timeout
+      maxContentLength: MAX_FILE_SIZE,
+      maxBodyLength: MAX_FILE_SIZE
     });
+
+    const contentType = response.headers['content-type'];
+    if (!contentType || !contentType.startsWith('image/')) {
+      throw new Error('Invalid content type');
+    }
+
+    if (response.data.length > MAX_FILE_SIZE) {
+      throw new Error('File too large');
+    }
 
     const processedImageBuffer = await sharp(response.data)
       .blur(20)
@@ -13,8 +92,8 @@ async function blurImage(imageUrl) {
 
     return processedImageBuffer;
   } catch (error) {
-    console.error('Erro ao processar imagem:', error);
-    return null;
+    console.error('[ImageProcessor] Error processing image:', error.message);
+    throw error;
   }
 }
 
@@ -30,6 +109,11 @@ async function blurImage(imageUrl) {
  * @returns {Promise<Buffer|null>} Processed image buffer
  */
 async function convertBannerToBackground(bannerUrl, options = {}) {
+  // Validate URL before processing
+  if (!validateImageUrl(bannerUrl)) {
+    throw new Error('Invalid or unauthorized image URL');
+  }
+  
   try {
       const {
     width = 1920,
@@ -41,8 +125,20 @@ async function convertBannerToBackground(bannerUrl, options = {}) {
   } = options;
 
     const response = await axios.get(bannerUrl, {
-      responseType: 'arraybuffer'
+      responseType: 'arraybuffer',
+      timeout: 10000,
+      maxContentLength: MAX_FILE_SIZE,
+      maxBodyLength: MAX_FILE_SIZE
     });
+
+    const contentType = response.headers['content-type'];
+    if (!contentType || !contentType.startsWith('image/')) {
+      throw new Error('Invalid content type');
+    }
+
+    if (response.data.length > MAX_FILE_SIZE) {
+      throw new Error('File too large');
+    }
 
     let sharpInstance = sharp(response.data);
 
@@ -84,14 +180,30 @@ async function convertBannerToBackground(bannerUrl, options = {}) {
  * @returns {Promise<Buffer|null>} Processed image buffer
  */
 async function addGradientOverlay(imageUrl, options = {}) {
+  // Validate URL before processing
+  if (!validateImageUrl(imageUrl)) {
+    throw new Error('Invalid or unauthorized image URL');
+  }
+  
   try {
     const { gradient = 'dark', opacity = 0.7 } = options;
 
     const response = await axios.get(imageUrl, {
-      responseType: 'arraybuffer'
+      responseType: 'arraybuffer',
+      timeout: 10000,
+      maxContentLength: MAX_FILE_SIZE,
+      maxBodyLength: MAX_FILE_SIZE
     });
 
-    // Create gradient overlay based on type
+    const contentType = response.headers['content-type'];
+    if (!contentType || !contentType.startsWith('image/')) {
+      throw new Error('Invalid content type');
+    }
+
+    if (response.data.length > MAX_FILE_SIZE) {
+      throw new Error('File too large');
+    }
+
     let gradientOverlay;
     switch (gradient) {
       case 'dark':
@@ -136,4 +248,4 @@ async function addGradientOverlay(imageUrl, options = {}) {
   }
 }
 
-module.exports = { blurImage, convertBannerToBackground, addGradientOverlay }; 
+module.exports = { blurImage, convertBannerToBackground, addGradientOverlay, validateImageUrl }; 

@@ -1,14 +1,8 @@
-const axios = require('axios');
-const https = require('https');
+const Kitsu = require('kitsu');
 const { cacheWrapGlobal } = require('./getCache');
 
-// Use the same robust agent to ensure network stability
-const robustAgent = new https.Agent({
-  family: 4,
-  keepAlive: true,
-});
-
-const KITSU_API_URL = 'https://kitsu.io/api/edge';
+// Initialize Kitsu client
+const kitsu = new Kitsu();
 
 /**
  * Searches Kitsu for anime by a text query.
@@ -17,13 +11,13 @@ const KITSU_API_URL = 'https://kitsu.io/api/edge';
  */
 async function searchByName(query) {
   if (!query) return [];
-  const url = `${KITSU_API_URL}/anime?filter[text]=${encodeURIComponent(query)}`;
+  
   try {
-    const response = await axios.get(url, {
-      httpsAgent: robustAgent,
-      timeout: 10000,
+    const response = await kitsu.fetch('anime', {
+      filter: { text: query },
+      page: { limit: 20 }
     });
-    return response.data?.data || []; // Kitsu nests results in a 'data' array
+    return response.data || [];
   } catch (error) {
     console.error(`[Kitsu Client] Error searching for "${query}":`, error.message);
     return [];
@@ -39,18 +33,32 @@ async function getMultipleAnimeDetails(ids) {
   if (!ids || ids.length === 0) {
     return [];
   }
-  // Kitsu API allows filtering by a comma-separated list of IDs.
-  const idString = ids.join(',');
-  const url = `${KITSU_API_URL}/anime?filter[id]=${idString}`;
   
   try {
+    console.log(`[Kitsu Client] Fetching details for IDs: ${ids.join(',')}`);
+    
+    // Use direct API call to bypass Kitsu library filter issues
+    const axios = require('axios');
+    const url = `https://kitsu.io/api/edge/anime?filter[id]=${ids.join(',')}`;
+    
+    console.log(`[Kitsu Client] Direct API URL: ${url}`);
+    
     const response = await axios.get(url, {
-      httpsAgent: robustAgent,
-      timeout: 10000,
+      headers: {
+        'Accept': 'application/vnd.api+json',
+        'Content-Type': 'application/vnd.api+json'
+      },
+      timeout: 10000
     });
+    
+    console.log(`[Kitsu Client] Direct API received ${response.data?.data?.length || 0} results`);
+    const receivedIds = response.data?.data?.map(item => item.id) || [];
+    console.log(`[Kitsu Client] Received IDs: ${receivedIds.join(',')}`);
+    
     return response.data?.data || [];
+    
   } catch (error) {
-    console.error(`[Kitsu Client] Error fetching details for IDs ${idString}:`, error.message);
+    console.error(`[Kitsu Client] Error fetching details for IDs ${ids.join(',')}:`, error.message);
     return [];
   }
 }
@@ -63,37 +71,18 @@ async function getMultipleAnimeDetails(ids) {
 async function getAnimeEpisodes(kitsuId) {
   if (!kitsuId) return [];
   
-  const cacheKey = `kitsu-episodes:${kitsuId}`;
+  const cacheKey = `kitsu-episodes:v2:${kitsuId}`;
   const cacheTTL = 3600; // 1 hour cache for episode data
   
   return cacheWrapGlobal(cacheKey, async () => {
     console.log(`[Kitsu Client] Fetching episodes for ID ${kitsuId}`);
     
-    const allEpisodes = [];
-    let nextUrl = `${KITSU_API_URL}/anime/${kitsuId}/episodes?page[limit]=20`;
-    
     try {
-      while (nextUrl) {
-        const response = await axios.get(nextUrl, {
-          httpsAgent: robustAgent,
-          timeout: 10000,
-        });
-        
-        const data = response.data;
-        if (data?.data) {
-          allEpisodes.push(...data.data);
-          console.log(`[Kitsu Client] Fetched ${data.data.length} episodes (total so far: ${allEpisodes.length})`);
-        }
-        
-        // Check if there's a next page
-        nextUrl = data?.links?.next || null;
-        
-        // Add a small delay to be respectful to the API
-        if (nextUrl) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-      }
+      const params = {
+        page: { limit: 20 }
+      };
       
+      const allEpisodes = await _fetchEpisodesRecursively(`anime/${kitsuId}/episodes`, params);
       console.log(`[Kitsu Client] Total episodes fetched: ${allEpisodes.length}`);
       return allEpisodes;
     } catch (error) {
@@ -103,8 +92,47 @@ async function getAnimeEpisodes(kitsuId) {
   }, cacheTTL);
 }
 
+async function _fetchEpisodesRecursively(endpoint, params, offset = 0) {
+  const currentParams = { 
+    ...params, 
+    page: { ...params.page, offset } 
+  };
+  
+  const response = await kitsu.get(endpoint, { params: currentParams });
+  
+  if (response.links && response.links.next) {
+    const nextOffset = offset + response.data.length;
+    const nextEpisodes = await _fetchEpisodesRecursively(endpoint, params, nextOffset);
+    return response.data.concat(nextEpisodes);
+  }
+  
+  return response.data;
+}
+
+/**
+ * Fetches detailed anime information including relationships and episodes.
+ * @param {string|number} kitsuId - The Kitsu anime ID.
+ * @returns {Promise<Object>} A promise that resolves to detailed anime object.
+ */
+async function getAnimeDetails(kitsuId) {
+  if (!kitsuId) return null;
+  
+  try {
+    const response = await kitsu.fetch('anime', {
+      filter: { id: kitsuId },
+      include: 'episodes,genres,mediaRelationships.destination'
+    });
+    
+    return response.data[0] || null;
+  } catch (error) {
+    console.error(`[Kitsu Client] Error fetching anime details for ID ${kitsuId}:`, error.message);
+    return null;
+  }
+}
+
 module.exports = {
   searchByName,
   getMultipleAnimeDetails,
   getAnimeEpisodes,
+  getAnimeDetails,
 };
