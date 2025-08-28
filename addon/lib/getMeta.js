@@ -294,7 +294,7 @@ async function getMeta(type, language, stremioId, config = {}, userUUID) {
     let meta;
     console.log(`[Meta] Starting process for ${stremioId} (type: ${type}, language: ${language})`);
     const allIds = await resolveAllIds(stremioId, type, config);
-    const isAnime = stremioId.startsWith('mal:') || stremioId.startsWith('kitsu:') || stremioId.startsWith('anidb:') || stremioId.startsWith('anilist:');
+    const isAnime = allIds.malId || allIds.kitsuId || allIds.anidbId || allIds.anilistId;
     const finalType = isAnime ? 'anime' : type;
     switch (finalType) {
       case 'movie':

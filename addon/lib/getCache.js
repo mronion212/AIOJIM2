@@ -225,7 +225,7 @@ function classifyResult(result, error = null, cacheKey = null) {
     if (hasValidData) {
       return { type: 'SUCCESS', ttl: null };
     } else {
-      return { type: 'EMPTY_RESULT', ttl: ERROR_TTL_STRATEGIES.EMPTY_RESULT };
+    return { type: 'EMPTY_RESULT', ttl: ERROR_TTL_STRATEGIES.EMPTY_RESULT };
     }
   }
   
@@ -235,7 +235,7 @@ function classifyResult(result, error = null, cacheKey = null) {
   const hasArrayData = (Array.isArray(result) && result.length > 0);
   
   if (hasMetaData || hasMetasData || hasArrayData) {
-    return { type: 'SUCCESS', ttl: null };
+  return { type: 'SUCCESS', ttl: null };
   }
   
   return { type: 'EMPTY_RESULT', ttl: ERROR_TTL_STRATEGIES.EMPTY_RESULT };
@@ -331,15 +331,15 @@ async function cacheWrap(key, method, ttl, options = {}) {
         
         // Skip caching if TTL is 0 (e.g., empty results)
         if (finalTtl > 0) {
-          if (classification.type !== 'SUCCESS') {
+        if (classification.type !== 'SUCCESS') {
             console.warn(`📦 [Cache] Caching ${classification.type} result for ${versionedKey} for ${finalTtl}s`);
-          }
-          
-          try {
-            await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
-          } catch (err) {
+        }
+        
+        try {
+          await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
+      } catch (err) {
             console.warn(`📦 [Cache] Failed to write to Redis for key ${versionedKey}:`, err);
-            updateCacheHealth(versionedKey, 'error', false);
+          updateCacheHealth(versionedKey, 'error', false);
           }
         } else {
           console.log(`📦 [Cache] Skipping cache for ${versionedKey} (TTL: 0)`);
@@ -364,7 +364,7 @@ async function cacheWrap(key, method, ttl, options = {}) {
           };
           await redis.set(versionedKey, JSON.stringify(errorResult), 'EX', errorTtl);
           console.warn(`📦 [Cache] Cached ${classification.type} error for ${versionedKey} for ${errorTtl}s`);
-                  } catch (err) {
+        } catch (err) {
             console.warn(`📦 [Cache] Failed to cache error for key ${versionedKey}:`, err);
         }
       }
@@ -458,16 +458,16 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
 
       // Skip caching if TTL is 0 (e.g., empty results)
       if (finalTtl > 0) {
-        if (classification.type !== 'SUCCESS') {
-          console.warn(`[Global Cache] Caching ${classification.type} result for ${versionedKey} for ${finalTtl}s`);
-        }
+      if (classification.type !== 'SUCCESS') {
+        console.warn(`[Global Cache] Caching ${classification.type} result for ${versionedKey} for ${finalTtl}s`);
+    }
 
-        if (result !== null && result !== undefined) {
-          await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
+    if (result !== null && result !== undefined) {
+      await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
         }
       } else {
         console.log(`[Global Cache] Skipping cache for ${versionedKey} (TTL: 0)`);
-      }
+    }
     return result;
   } catch (error) {
     console.error(`[Global Cache] Method failed for cache key ${versionedKey}:`, error);
@@ -524,7 +524,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     console.warn(`[Cache] No config found for user ${userUUID}`);
     return { metas: [] };
   }
-  
+
   const idOnly = catalogKey.split(':')[0];
   const trendingIds = new Set(['tmdb.trending']);
 
@@ -559,9 +559,9 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const key = `catalog:${catalogConfigString}:${catalogKey}`;
   
       console.log(`📦 [Cache] Catalog cache key (${idOnly}): ${key.substring(0, 120)}...`);
-  
-  return cacheWrap(key, method, CATALOG_TTL, options);
-}
+    
+    return cacheWrap(key, method, CATALOG_TTL, options);
+  }
 
 /**
  * Search-specific cache wrapper with context-aware cache keys
@@ -705,7 +705,19 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
    };
    
    // Add context-specific settings
-   if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
+   // First, check if this is anime content by checking if it has anime-related IDs
+   // We need to resolve IDs to determine if this is anime content
+   const { resolveAllIds } = require('./id-resolver');
+   let allIds = {};
+   try {
+     allIds = await resolveAllIds(metaId, metaType, config);
+   } catch (error) {
+     console.warn(`[Cache] Failed to resolve IDs for ${metaId}:`, error.message);
+   }
+   
+   const isAnime = metaType === 'anime' || allIds.malId || allIds.kitsuId || allIds.anidbId || allIds.anilistId;
+   
+   if (isAnime) {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
      metaConfig.artProvider = config.artProviders?.anime || 'mal';
      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
@@ -899,7 +911,19 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    };
    
    // Add context-specific settings
-   if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
+   // First, check if this is anime content by checking if it has anime-related IDs
+   // We need to resolve IDs to determine if this is anime content
+   const { resolveAllIds } = require('./id-resolver');
+   let allIds = {};
+   try {
+     allIds = await resolveAllIds(metaId, metaType, config);
+   } catch (error) {
+     console.warn(`[Cache] Failed to resolve IDs for ${metaId}:`, error.message);
+   }
+   
+   const isAnime = metaType === 'anime' || allIds.malId || allIds.kitsuId || allIds.anidbId || allIds.anilistId;
+   
+   if (isAnime) {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
      metaConfig.artProvider = config.artProviders?.anime || 'mal';
      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
@@ -1080,7 +1104,19 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
     };
     
     // Add context-specific settings
-    if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
+    // First, check if this is anime content by checking if it has anime-related IDs
+    // We need to resolve IDs to determine if this is anime content
+    const { resolveAllIds } = require('./id-resolver');
+    let allIds = {};
+    try {
+      allIds = await resolveAllIds(metaId, metaType, config);
+    } catch (error) {
+      console.warn(`[Cache] Failed to resolve IDs for ${metaId}:`, error.message);
+    }
+    
+    const isAnime = metaType === 'anime' || allIds.malId || allIds.kitsuId || allIds.anidbId || allIds.anilistId;
+    
+    if (isAnime) {
       metaConfig.metaProvider = config.providers?.anime || 'mal';
       metaConfig.artProvider = config.artProviders?.anime || 'mal';
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
@@ -1145,7 +1181,19 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
     };
     
     // Add context-specific settings
-    if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
+    // First, check if this is anime content by checking if it has anime-related IDs
+    // We need to resolve IDs to determine if this is anime content
+    const { resolveAllIds } = require('./id-resolver');
+    let allIds = {};
+    try {
+      allIds = await resolveAllIds(metaId, metaType, config);
+    } catch (error) {
+      console.warn(`[Cache] Failed to resolve IDs for ${metaId}:`, error.message);
+    }
+    
+    const isAnime = metaType === 'anime' || allIds.malId || allIds.kitsuId || allIds.anidbId || allIds.anilistId;
+    
+    if (isAnime) {
       metaConfig.metaProvider = config.providers?.anime || 'mal';
       metaConfig.artProvider = config.artProviders?.anime || 'mal';
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
