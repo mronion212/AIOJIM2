@@ -548,6 +548,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     includeAdult: config.includeAdult || false,
     ageRating: config.ageRating || null,
     showPrefix: config.showPrefix || false,
+    showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     
 
     
@@ -596,7 +597,8 @@ async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
     artProviders: config.artProviders || {},
     // Add display settings that affect search results
     blurThumbs: config.blurThumbs || false,
-    showPrefix: config.showPrefix || false
+    showPrefix: config.showPrefix || false,
+    showMetaProviderAttribution: config.showMetaProviderAttribution || false
   };
   
   const searchConfigString = JSON.stringify(searchConfig);
@@ -638,11 +640,20 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
      // Display settings (affect all meta)
      castCount: config.castCount || 0,
      blurThumbs: config.blurThumbs || false,
+     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
      
    };
    
    // Add context-specific settings based on meta type
-   if (metaType === 'movie') {
+   if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
+     metaConfig.metaProvider = config.providers?.anime || 'mal';
+     metaConfig.artProvider = config.artProviders?.anime || 'mal';
+     metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
+     metaConfig.mal = {
+      skipFiller: config.mal?.skipFiller || false,
+      skipRecap: config.mal?.skipRecap || false
+    };
+   } else if (metaType === 'movie') {
      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
      metaConfig.artProvider = config.artProviders?.movie || config.providers?.movie || 'tmdb';
    } else if (metaType === 'series') {
@@ -653,14 +664,6 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
      }
 
-   } else if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
-     metaConfig.metaProvider = config.providers?.anime || 'mal';
-     metaConfig.artProvider = config.artProviders?.anime || 'mal';
-     metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
-     metaConfig.mal = {
-      skipFiller: config.mal?.skipFiller || false,
-      skipRecap: config.mal?.skipRecap || false
-    };
    }
    
    // Create cache key from context-aware meta config (no UUID for shared caching)
@@ -702,20 +705,10 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      castCount: config.castCount || 0,
      blurThumbs: config.blurThumbs || false,
      showPrefix: config.showPrefix || false,
+     showMetaProviderAttribution: config.showMetaProviderAttribution || true,
    };
    
-   // Add context-specific settings
-   // First, check if this is anime content by checking if it has anime-related IDs
-   // We need to resolve IDs to determine if this is anime content
-   const { resolveAllIds } = require('./id-resolver');
-   let allIds = {};
-   try {
-     allIds = await resolveAllIds(metaId, metaType, config);
-   } catch (error) {
-     console.warn(`[Cache] Failed to resolve IDs for ${metaId}:`, error.message);
-   }
-   
-   const isAnime = metaType === 'anime' || allIds.malId || allIds.kitsuId || allIds.anidbId || allIds.anilistId;
+   const isAnime = metaType === 'anime' || prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb';
    
    if (isAnime) {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
@@ -908,20 +901,10 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      castCount: config.castCount || 0,
      blurThumbs: config.blurThumbs || false,
      showPrefix: config.showPrefix || false,
+     showMetaProviderAttribution: config.showMetaProviderAttribution || true,
    };
    
-   // Add context-specific settings
-   // First, check if this is anime content by checking if it has anime-related IDs
-   // We need to resolve IDs to determine if this is anime content
-   const { resolveAllIds } = require('./id-resolver');
-   let allIds = {};
-   try {
-     allIds = await resolveAllIds(metaId, metaType, config);
-   } catch (error) {
-     console.warn(`[Cache] Failed to resolve IDs for ${metaId}:`, error.message);
-   }
-   
-   const isAnime = metaType === 'anime' || allIds.malId || allIds.kitsuId || allIds.anidbId || allIds.anilistId;
+   const isAnime = prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime';
    
    if (isAnime) {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
@@ -1101,20 +1084,11 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
       castCount: config.castCount || 0,
       blurThumbs: config.blurThumbs || false,
       showPrefix: config.showPrefix || false,
+      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     };
     
     // Add context-specific settings
-    // First, check if this is anime content by checking if it has anime-related IDs
-    // We need to resolve IDs to determine if this is anime content
-    const { resolveAllIds } = require('./id-resolver');
-    let allIds = {};
-    try {
-      allIds = await resolveAllIds(metaId, metaType, config);
-    } catch (error) {
-      console.warn(`[Cache] Failed to resolve IDs for ${metaId}:`, error.message);
-    }
-    
-    const isAnime = metaType === 'anime' || allIds.malId || allIds.kitsuId || allIds.anidbId || allIds.anilistId;
+    const isAnime = prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime';
     
     if (isAnime) {
       metaConfig.metaProvider = config.providers?.anime || 'mal';
@@ -1178,20 +1152,11 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
       castCount: config.castCount || 0,
       blurThumbs: config.blurThumbs || false,
       showPrefix: config.showPrefix || false,
+      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     };
     
     // Add context-specific settings
-    // First, check if this is anime content by checking if it has anime-related IDs
-    // We need to resolve IDs to determine if this is anime content
-    const { resolveAllIds } = require('./id-resolver');
-    let allIds = {};
-    try {
-      allIds = await resolveAllIds(metaId, metaType, config);
-    } catch (error) {
-      console.warn(`[Cache] Failed to resolve IDs for ${metaId}:`, error.message);
-    }
-    
-    const isAnime = metaType === 'anime' || allIds.malId || allIds.kitsuId || allIds.anidbId || allIds.anilistId;
+    const isAnime = prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime';
     
     if (isAnime) {
       metaConfig.metaProvider = config.providers?.anime || 'mal';
@@ -1269,6 +1234,7 @@ async function cacheWrapStaticCatalog(userUUID, catalogKey, method, options = {}
     includeAdult: config.includeAdult || false,
     ageRating: config.ageRating || null,
     showPrefix: config.showPrefix || false,
+    showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     
     // Anime-specific settings (for MAL catalogs)
     mal: config.mal || {}

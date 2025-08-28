@@ -237,6 +237,10 @@ export function GeneralSettings() {
     setConfig(prevConfig => ({ ...prevConfig, showPrefix: checked }));
   };
 
+  const handleShowMetaProviderAttributionChange = (checked: boolean) => {
+    setConfig(prevConfig => ({ ...prevConfig, showMetaProviderAttribution: checked }));
+  };
+
   const handleCastCountChange = (value: string) => {
     const count = parseInt(value, 10);
     setConfig(prevConfig => ({ ...prevConfig, castCount: count }));
@@ -310,6 +314,19 @@ export function GeneralSettings() {
             id="show-prefix"
             checked={config.showPrefix}
             onCheckedChange={handleShowPrefixChange}
+          />
+        </div>
+
+        {/* Show Meta Provider Attribution Setting */}
+        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+          <div>
+            <Label htmlFor="show-meta-provider-attribution" className="text-lg font-medium">Show Meta Provider Attribution</Label>
+            <p className="text-sm text-muted-foreground">Add "[Meta provided by Provider]" to the end of overview text.</p>
+          </div>
+          <Switch
+            id="show-meta-provider-attribution"
+            checked={config.showMetaProviderAttribution}
+            onCheckedChange={handleShowMetaProviderAttributionChange}
           />
         </div>
         <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">

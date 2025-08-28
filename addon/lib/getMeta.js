@@ -23,7 +23,12 @@ const processLogo = (logoUrl) => {
 };
 
 // Helper function to add meta provider attribution to overview
-const addMetaProviderAttribution = (overview, provider) => {
+const addMetaProviderAttribution = (overview, provider, config) => {
+  // Check if meta provider attribution is enabled
+  if (!config?.showMetaProviderAttribution) {
+    return overview;
+  }
+  
   if (!overview) return `[Meta provided by ${provider}]`;
   return `${overview}\n\n[Meta provided by ${provider}]`;
 };
@@ -277,7 +282,7 @@ async function getMeta(type, language, stremioId, config = {}, userUUID) {
               id: `tvdbc:${collectionId}`,
               type: 'series',
               name,
-              description: addMetaProviderAttribution(overview, 'TVDB'),
+              description: addMetaProviderAttribution(overview, 'TVDB', config),
               poster,
               background,
               genres: genres.length > 0 ? genres : [],
@@ -294,7 +299,7 @@ async function getMeta(type, language, stremioId, config = {}, userUUID) {
     let meta;
     console.log(`[Meta] Starting process for ${stremioId} (type: ${type}, language: ${language})`);
     const allIds = await resolveAllIds(stremioId, type, config);
-    const isAnime = allIds.malId || allIds.kitsuId || allIds.anidbId || allIds.anilistId;
+    const isAnime = stremioId.startsWith('mal:') || stremioId.startsWith('kitsu:') || stremioId.startsWith('anidb:') || stremioId.startsWith('anilist:');
     const finalType = isAnime ? 'anime' : type;
     switch (finalType) {
       case 'movie':
@@ -541,7 +546,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
   
   // Add meta provider attribution to description
   if (imdbData.description) {
-    imdbData.description = addMetaProviderAttribution(imdbData.description, 'IMDB');
+    imdbData.description = addMetaProviderAttribution(imdbData.description, 'IMDB', config);
   }
 
   return imdbData;
@@ -568,7 +573,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
   
   // Add meta provider attribution to description
   if (imdbData.description) {
-    imdbData.description = addMetaProviderAttribution(imdbData.description, 'IMDB');
+    imdbData.description = addMetaProviderAttribution(imdbData.description, 'IMDB', config);
   }
   
   return imdbData;
@@ -655,7 +660,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     imdb_id: imdbId,
     slug: Utils.parseSlug('movie', translatedName, null, stremioId),
     genres: movieData.genres?.map(g => g.name) || [],
-    description: addMetaProviderAttribution(overview, 'TVDB'),
+    description: addMetaProviderAttribution(overview, 'TVDB', config),
     director: directors.join(', '),
     writer: writers.join(', '),
     year: year,
@@ -730,7 +735,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   return {
     id: stremioId,
     type: 'movie',
-    description: addMetaProviderAttribution(movieData.overview, 'TMDB'),
+    description: addMetaProviderAttribution(movieData.overview, 'TMDB', config),
     name: title,
     imdb_id: imdbId,  
     slug: Utils.parseSlug('movie', title, null, stremioId),
@@ -924,7 +929,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     imdb_id: imdbId,
     slug: Utils.parseSlug('series', name, null, stremioId),
     genres: Utils.parseGenres(seriesData.genres),
-    description: addMetaProviderAttribution(seriesData.overview, 'TMDB'),
+    description: addMetaProviderAttribution(seriesData.overview, 'TMDB', config),
     year: seriesData.first_air_date ? seriesData.first_air_date.substring(0, 4) : "",
     released: seriesData.first_air_date ? new Date(seriesData.first_air_date).toISOString() : null,
     runtime: seriesData.episode_run_time?.[0] ? `${seriesData.episode_run_time[0]}min` : null,
@@ -1175,7 +1180,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     writer: writers.join(', '),
     slug: Utils.parseSlug('series', translatedName, imdbId, stremioId),
     genres: tvdbShow.genres?.map(g => g.name) || [],
-    description: addMetaProviderAttribution(overview, 'TVDB'),
+    description: addMetaProviderAttribution(overview, 'TVDB', config),
     writer: (tvdbShow.companies?.production || []).map(p => p.name).join(', '),
     year: year,
     released: new Date(tvdbShow.firstAired),
@@ -1270,7 +1275,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, co
     imdb_id: imdbId,
     slug: Utils.parseSlug('series', name, stremioId),
     genres: tvmazeShow.genres || [],
-    description: addMetaProviderAttribution(summary ? summary.replace(/<[^>]*>?/gm, '') : '', 'TVmaze'),
+    description: addMetaProviderAttribution(summary ? summary.replace(/<[^>]*>?/gm, '') : '', 'TVmaze', config),
     year: Utils.parseYear(tvmazeShow.status, premiered, tvmazeShow.ended),
     released: new Date(premiered),
     runtime: tvmazeShow.runtime ? Utils.parseRunTime(tvmazeShow.runtime) : Utils.parseRunTime(tvmazeShow.averageRuntime),
@@ -1550,7 +1555,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
     const meta = {
       id: stremioId,
       type: stremioType,
-      description: addMetaProviderAttribution(malData.synopsis, 'MAL'),
+      description: addMetaProviderAttribution(malData.synopsis, 'MAL', config),
       name: malData.title_english || malData.title,
       imdb_id: imdbId,
       slug: Utils.parseSlug('series', malData.title_english || malData.title, imdbId, malData.mal_id),

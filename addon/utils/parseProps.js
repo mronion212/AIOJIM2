@@ -897,7 +897,7 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
     });
   }
   return {
-    id: id,
+    id:  `mal:${malId}`,
     type: stremioType,
     name: anime.title_english || anime.title,
     poster: finalPosterUrl,
@@ -1093,7 +1093,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
     }
 
     return {
-      id: id,
+      id:  `mal:${malId}`,
       type: stremioType,
       name: anime.title_english || anime.title,
       poster: finalPosterUrl,

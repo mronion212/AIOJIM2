@@ -19,6 +19,7 @@ export interface AppConfig {
   includeAdult: boolean;
   blurThumbs: boolean;
   showPrefix: boolean;
+  showMetaProviderAttribution: boolean;
   castCount: number;
   providers: {
     movie: string;

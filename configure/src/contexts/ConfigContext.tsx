@@ -87,6 +87,7 @@ const initialConfig: AppConfig = {
   includeAdult: false,
   blurThumbs: false,
   showPrefix: false,
+  showMetaProviderAttribution: false,
   castCount: 10,
   sfw: false,
   providers: { movie: 'tmdb', series: 'tvdb', anime: 'mal', anime_id_provider: 'imdb', },
