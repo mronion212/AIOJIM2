@@ -21,7 +21,7 @@ const seriesProviders = [
 const animeProviders = [
   { value: 'mal', label: 'MyAnimeList (Recommended)' },
   { value: 'tvdb', label: 'TheTVDB' },
-  { value: 'tmdb', label: 'The Movie Database' },
+  // { value: 'tmdb', label: 'The Movie Database' },
   { value: 'imdb', label: 'IMDb' },
 ];
 

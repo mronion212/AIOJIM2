@@ -10,17 +10,44 @@ const { to3LetterCode } = require('./language-map');
 const jikan = require('./mal');
 const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com';
 const idMapper = require('./id-mapper');
+const { resolveAnidbEpisodeFromTvdbEpisode } = require('./anime-list-mapper');
 const fanart = require('../utils/fanart');
+const { isAnime: isAnimeFunc } = require('../utils/isAnime');
 const e = require("express");
 const { resolveAllIds } = require('./id-resolver');
 const { cacheWrapMeta } = require('./getCache');
 const kitsu = require('./kitsu');
+var nameToImdb = require("name-to-imdb");
 
 
 const processLogo = (logoUrl) => {
   if (!logoUrl) return null;
   return logoUrl.replace(/^http:/, "https:");
 };
+
+async function getAnimeArtwork(allIds, config, fallbackPosterUrl, fallbackBackgroundUrl, type) {
+  const [background, poster, logo, imdbRatingValue] = await Promise.all([
+    Utils.getAnimeBg({
+      tvdbId: allIds?.tvdbId,
+      tmdbId: allIds?.tmdbId,
+      malId: allIds?.malId,
+    malPosterUrl: fallbackBackgroundUrl,
+    mediaType: type
+    }, config),
+    Utils.getAnimePoster({
+      malId: allIds?.malId,
+    malPosterUrl: fallbackPosterUrl,
+    mediaType: type
+    }, config),
+    Utils.getAnimeLogo({
+      malId: allIds?.malId,
+    mediaType: type
+    }, config),
+    getImdbRating(allIds?.imdbId, type)
+  ]);
+
+  return { background, poster, logo, imdbRatingValue };
+}
 
 // Helper function to add meta provider attribution to overview
 const addMetaProviderAttribution = (overview, provider, config) => {
@@ -309,7 +336,7 @@ async function getMeta(type, language, stremioId, config = {}, userUUID) {
         meta = await getSeriesMeta(config.providers?.series, stremioId, language, config, userUUID, allIds);
         break;
       case 'anime':
-        meta = await getAnimeMeta(config.providers?.anime, stremioId, language, config, userUUID, type);
+        meta = await getAnimeMeta(config.providers?.anime, stremioId, language, config, userUUID, allIds, type, isAnime);
         break;
     }
     return { meta };
@@ -403,63 +430,51 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
 
 // --- Anime worker ---
 
-async function getAnimeMeta(preferredProvider, stremioId, language, config, userUUID, animeType) {
-  const allIds = await resolveAllIds(stremioId, 'anime', config, animeType);
-  const malId = allIds.malId;
+async function getAnimeMeta(preferredProvider, stremioId, language, config, userUUID, allIds, type, isAnime) {
+  const malId = allIds?.malId;
   const nativeProvider = 'mal';
 
-    
-    
-
   console.log(`[AnimeMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
-
- 
   
 
   if (preferredProvider !== nativeProvider) {
     try {
       if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
-        //console.log(`[AnimeMeta] Attempting preferred provider TMDB with ID: ${allIds.tmdbId}`);
-        const mapping = idMapper.getMappingByMalId(malId);
-        const tmdbType = mapping?.type?.toLowerCase() === 'movie' ? 'movie' : 'series';
         
-        if (tmdbType === 'movie') {
+        if (type === 'movie') {
           const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids" }, config);
-          return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds });
+          return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
         } else {
           const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids" }, config);
-            return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds });
+            return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, isAnime);
         }
       }
       
       if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
-        if( animeType === 'series') {
+        if( type === 'series') {
           const [seriesData, episodes] = await Promise.all([
               tvdb.getSeriesExtended(allIds.tvdbId, config),
               tvdb.getSeriesEpisodes(allIds.tvdbId, language, config.tvdbSeasonType, config)
           ]);
-          return await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds });
-        } else if (animeType === 'movie') {
+          return await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime);
+        } else if (type === 'movie') {
           const movieData = await tvdb.getMovieExtended(allIds.tvdbId, config);
-                      return await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds });
+                      return await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
         }
       }
 
       if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
         //console.log(`[AnimeMeta] Attempting preferred provider TVmaze with ID: ${allIds.tvmazeId}`);
         const seriesData = await tvmaze.getShowDetails(allIds.tvmazeId);
-        return await buildSeriesResponseFromTvmaze(stremioId, seriesData, language, config, userUUID);
+        return await buildSeriesResponseFromTvmaze(stremioId, seriesData, language, config, userUUID, isAnime);
       }
       if (preferredProvider === 'imdb' && allIds?.imdbId) {
-        if(animeType === 'anime'){
-          animeType = idMapper.getAnimeTypeFromAnilistId(allIds.anilistId);
-        }
-        if(animeType === 'series') {
+        if(type === 'series') {
           let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series', stremioId);
-          return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config);
-          } else if(animeType === 'movie') {
+          return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime);
+          } else if(type === 'movie') {
             let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie', stremioId);
-            return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config);
+            return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
         }
       }
 
@@ -488,29 +503,13 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
     
     
     // Fetch artwork (cacheWrapMetaSmart will handle caching)
-    const [background, poster, logo] = await Promise.all([
-      Utils.getAnimeBg({
-        tvdbId: allIds?.tvdbId,
-        tmdbId: allIds?.tmdbId,
-        malId: allIds?.malId,
-      malPosterUrl: details.images?.jpg?.large_image_url,
-      mediaType: details.type?.toLowerCase() === 'movie' ? 'movie' : 'series'
-      }, config),
-      Utils.getAnimePoster({
-        malId: allIds?.malId,
-      malPosterUrl: details.images?.jpg?.large_image_url,
-      mediaType: details.type?.toLowerCase() === 'movie' ? 'movie' : 'series'
-      }, config),
-      Utils.getAnimeLogo({
-        malId: allIds?.malId,
-      mediaType: details.type?.toLowerCase() === 'movie' ? 'movie' : 'series'
-      }, config)
-    ]);
+    const artwork = await getAnimeArtwork(allIds, config, details.images?.jpg?.large_image_url, details.images?.jpg?.large_image_url, 'anime');
+    const { background, poster, logo } = artwork;
     
     
     
     
-            return await buildAnimeResponse(stremioId, details, language, characters, episodes, config, userUUID, { 
+    return await buildAnimeResponse(stremioId, details, language, characters, episodes, config, userUUID, { 
       mapping: allIds, 
       bestBackgroundUrl: background,
       bestPosterUrl: poster,
@@ -525,7 +524,8 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
   return null;
 }
 
-async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {}, config) {
+
+async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {}, config, isAnime = false) {
   const { allIds } = enrichmentData;
   const tmdbId = allIds?.tmdbId;
   const tvdbId = allIds?.tvdbId;
@@ -533,11 +533,20 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
   const imdbPosterUrl = imdbData.poster;
   const imdbBackgroundUrl = imdbData.background;
   const imdbLogoUrl = imdbData.logo;
-  const [poster, background, logoUrl] = await Promise.all([
-    Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'imdb', fallbackPosterUrl: imdbPosterUrl }, config),
-    Utils.getSeriesBackground({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'imdb', fallbackBackgroundUrl: imdbBackgroundUrl }, config),
-    Utils.getSeriesLogo({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'imdb', fallbackLogoUrl: imdbLogoUrl }, config),
-  ]);
+  let poster, background, logoUrl;
+  
+  if (isAnime) {
+    const artwork = await getAnimeArtwork(allIds, config, imdbPosterUrl, imdbBackgroundUrl, 'series');
+    poster = artwork.poster;
+    background = artwork.background;
+    logoUrl = artwork.logo;
+  } else {
+    [poster, background, logoUrl] = await Promise.all([
+      Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'imdb', fallbackPosterUrl: imdbPosterUrl }, config),
+      Utils.getSeriesBackground({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'imdb', fallbackBackgroundUrl: imdbBackgroundUrl }, config),
+      Utils.getSeriesLogo({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'imdb', fallbackLogoUrl: imdbLogoUrl }, config),
+    ]);
+  }
 
   imdbData.poster = poster;
   imdbData.background = background;
@@ -552,7 +561,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
   return imdbData;
 }
 
-async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, config) {
+async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, config, isAnime = false) {
   const { allIds } = enrichmentData;
   const tmdbId = allIds?.tmdbId;
   const tvdbId = allIds?.tvdbId;
@@ -560,11 +569,20 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
   const imdbPosterUrl = imdbData.poster || null;
   const imdbBackgroundUrl = imdbData.background || null;
   const imdbLogoUrl = imdbData.logo || null;
-  const [poster, background, logoUrl] = await Promise.all([
-    Utils.getMoviePoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'imdb', fallbackPosterUrl: imdbPosterUrl }, config),
-    Utils.getMovieBackground({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'imdb', fallbackBackgroundUrl: imdbBackgroundUrl }, config),
-    Utils.getMovieLogo({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'imdb', fallbackLogoUrl: imdbLogoUrl }, config),
-  ]);
+  let poster, background, logoUrl;
+  
+  if (isAnime) {
+    const artwork = await getAnimeArtwork(allIds, config, imdbPosterUrl, imdbBackgroundUrl, 'movie');
+    poster = artwork.poster;
+    background = artwork.background;
+    logoUrl = artwork.logo;
+  } else {
+    [poster, background, logoUrl] = await Promise.all([
+      Utils.getMoviePoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'imdb', fallbackPosterUrl: imdbPosterUrl }, config),
+      Utils.getMovieBackground({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'imdb', fallbackBackgroundUrl: imdbBackgroundUrl }, config),
+      Utils.getMovieLogo({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'imdb', fallbackLogoUrl: imdbLogoUrl }, config),
+    ]);
+  }
 
   imdbData.poster = poster;
   imdbData.background = background;
@@ -579,7 +597,414 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
   return imdbData;
 }
 
-async function buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, enrichmentData = {}) {
+async function buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, enrichmentData = {}, isAnime = false) {
+  const { allIds } = enrichmentData;
+  const { id: tmdbId, title, external_ids, poster_path, backdrop_path, credits } = movieData;
+  const imdbId = allIds?.imdbId;
+  const tvdbId = allIds?.tvdbId;
+  const castCount = config.castCount === 0 ? undefined : config.castCount;
+  
+  // Get artwork based on art provider preference
+  const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/movie.jpg`;
+  const tmdbBackgroundUrl = backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
+  let tmdbLogoUrl = null;
+  
+  let poster, background, logoUrl, imdbRatingValue;
+  
+  if (isAnime) {
+    const artwork = await getAnimeArtwork(allIds, config, tmdbPosterUrl, tmdbBackgroundUrl, 'movie');
+    poster = artwork.poster;
+    background = artwork.background;
+    logoUrl = artwork.logo;
+    imdbRatingValue = artwork.imdbRatingValue;
+  } else {
+    [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
+      Utils.getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterUrl }, config, isAnime),
+      Utils.getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbBackgroundUrl }, config, isAnime),
+      Utils.getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackLogoUrl: tmdbLogoUrl }, config, isAnime),
+    getImdbRating(imdbId, 'movie')
+  ]);
+  }
+  
+  const imdbRating = imdbRatingValue || movieData.vote_average?.toFixed(1) || "N/A";
+  const posterProxyUrl = `${host}/poster/movie/tmdb:${movieData.id}?fallback=${encodeURIComponent(poster)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  const kitsuId = allIds?.kitsuId;
+  const idProvider = config.providers?.movie || 'imdb';
+
+  const directorLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
+    name: d.name,
+    category: 'Directors',
+    url: `stremio:///search?search=${d.name}`
+  }));
+
+  const writerLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
+    name: w.name,
+    category: 'Writers',
+    url: `stremio:///search?search=${w.name}`
+  }));
+  
+  const directorDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
+    name: d.name,
+    character: d.name,
+    photo: d.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${d.profile_path}` : null
+  }));
+
+  const writerDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
+    name: w.name,
+    character: w.name,
+    photo: w.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${w.profile_path}` : null
+  }));
+
+  
+  return {
+    id: stremioId,
+    type: 'movie',
+    description: addMetaProviderAttribution(movieData.overview, 'TMDB', config),
+    name: title,
+    imdb_id: imdbId,  
+    slug: Utils.parseSlug('movie', title, null, stremioId),
+    genres: Utils.parseGenres(movieData.genres),
+    director: Utils.parseDirector(credits).join(', '),
+    writer: Utils.parseWriter(credits).join(', '),
+    year: movieData.release_date ? movieData.release_date.substring(0, 4) : "",
+    released: new Date(movieData.release_date),
+    releaseInfo: movieData.release_date ? movieData.release_date.substring(0, 4) : "",
+    runtime: Utils.parseRunTime(movieData.runtime),
+    country: Utils.parseCoutry(movieData.production_countries),
+    imdbRating,
+    poster: config.apiKeys?.rpdb ? posterProxyUrl : poster,
+    background: background,
+    logo: processLogo(logoUrl),
+    // filter out trailers with lang !== language. if none left return full array,
+    trailers: Utils.parseTrailers(movieData.videos).filter(trailer => trailer.lang === language).length > 0 ? Utils.parseTrailers(movieData.videos).filter(trailer => trailer.lang === language) : Utils.parseTrailers(movieData.videos),
+    trailerStreams: Utils.parseTrailerStream(movieData.videos).filter(trailer => trailer.lang === language).length > 0 ? Utils.parseTrailerStream(movieData.videos).filter(trailer => trailer.lang === language) : Utils.parseTrailerStream(movieData.videos),
+    links: Utils.buildLinks(imdbRating, imdbId, title, 'movie', movieData.genres, credits, language, castCount, userUUID),
+    behaviorHints: { defaultVideoId: kitsuId && idProvider === 'kitsu' ? `kitsu:${kitsuId}` : imdbId || stremioId, hasScheduledVideos: false },
+    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails }
+  };
+}
+
+
+async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, enrichmentData = {}, isAnime = false) {
+  const { id: tmdbId, name, external_ids, poster_path, backdrop_path, credits, videos: trailers, seasons } = seriesData;
+  const { allIds } = enrichmentData;
+  const imdbId = allIds?.imdbId;
+  const tvdbId = allIds?.tvdbId;
+  const kitsuId = allIds?.kitsuId;
+  const malId = allIds?.malId;
+
+  const idProvider = config.providers?.anime_id_provider || 'imdb';
+
+  // Get artwork based on art provider preference
+  const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
+  const tmdbBackgroundUrl = backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
+  let tmdbLogoUrl = null;
+  let poster, background, logoUrl, imdbRatingValue;
+  
+  if (isAnime) {
+    const artwork = await getAnimeArtwork(allIds, config, tmdbPosterUrl, tmdbBackgroundUrl, 'series');
+    poster = artwork.poster;
+    background = artwork.background;
+    logoUrl = artwork.logo;
+    imdbRatingValue = artwork.imdbRatingValue;
+  } else {
+    [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
+      Utils.getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterUrl }, config, isAnime),
+      Utils.getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbBackgroundUrl }, config, isAnime),
+      Utils.getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackLogoUrl: tmdbLogoUrl }, config, isAnime),
+    imdbId ? getImdbRating(imdbId, 'series') : Promise.resolve(null)
+  ]);
+  }
+  
+  const posterProxyUrl = `${host}/poster/series/tmdb:${tmdbId}?fallback=${encodeURIComponent(poster)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  const imdbRating = imdbRatingValue || seriesData.vote_average?.toFixed(1) || "N/A";
+  const castCount = config.castCount === 0 ? undefined : config.castCount;
+
+  // Build season-to-Kitsu mapping for anime series
+  const seasonToKitsuIdMap = new Map();
+  const seasonToImdbIdMap = new Map();
+  
+  if (kitsuId && config.providers?.anime_id_provider === 'kitsu') {
+    const officialSeasons = (seasons || [])
+      .filter(season => season.season_number > 0 && season.episode_count > 0)
+      .sort((a, b) => a.season_number - b.season_number);
+
+    const kitsuMapPromises = officialSeasons.map(async (season) => {
+      const seasonalKitsuId = await idMapper.resolveKitsuIdFromTmdbSeason(tmdbId, season.season_number);
+      if (seasonalKitsuId) {
+        seasonToKitsuIdMap.set(season.season_number, seasonalKitsuId);
+      }
+    });
+    await Promise.all(kitsuMapPromises);
+    console.log(`[ID Builder] Built Season-to-Kitsu map for tmdb:${tmdbId}:`, seasonToKitsuIdMap);
+  }
+  //console.log(`[TmdbSeriesMeta] credits: ${JSON.stringify(credits)}`);
+  const directorLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
+    name: d.name,
+    category: 'Directors',
+    url: `stremio:///search?search=${d.name}`
+  }));
+
+  const writerLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
+    name: w.name,
+    category: 'Writers',
+    url: `stremio:///search?search=${w.name}`
+  }));
+  
+  const directorDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
+    name: d.name,
+    character: d.name,
+    photo: d.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${d.profile_path}` : null
+  }));
+
+  const writerDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
+    name: w.name,
+    character: w.name,
+    photo: w.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${w.profile_path}` : null
+  }));
+  
+  // Fetch Cinemeta videos data for IMDB episode mapping (once per IMDB series)
+  let cinemetaVideos = null;
+    try {
+      cinemetaVideos = await idMapper.getCinemetaVideosForImdbSeries(imdbId);
+      if (cinemetaVideos) {
+        console.log(`[ID Builder] Fetched ${cinemetaVideos.length} Cinemeta videos for IMDB ${imdbId}`);
+      }
+    } catch (error) {
+      console.warn(`[ID Builder] Failed to fetch Cinemeta videos for IMDB ${imdbId}:`, error.message);
+  }
+
+  const seasonPromises = (seasons || [])
+    .filter(season => season.season_number > 0 && season.episode_count > 0) 
+    .map(season => moviedb.seasonInfo({ id: tmdbId, season_number: season.season_number, language }, config));
+  const imdbEpisodesCount = (cinemetaVideos || []).filter(season => season.season !==0).length;
+  const seasonDetails = await Promise.all(seasonPromises);
+  const tmdbTotalEpisodes = seasonDetails.reduce((acc, season) => acc + season.episodes.length, 0);
+  if (imdbEpisodesCount !== tmdbTotalEpisodes) {
+    const imdbMeta = await imdb.getMetaFromImdbIo(imdbId, 'series', stremioId);
+    if (imdbMeta) {
+      const cinemetaIoVideos = (imdbMeta.videos || []).filter(episode => episode.season !== 0);
+      if (cinemetaIoVideos.length > 0 && cinemetaIoVideos.length === tmdbTotalEpisodes) {
+        cinemetaVideos = cinemetaIoVideos;
+      }
+    }
+  }
+  const isAnimeContent = isAnimeFunc(seriesData, seriesData.genres) || kitsuId || malId;
+  console.log(`[TmdbSeriesMeta] isAnimeContent: ${isAnimeContent}`);
+  const tmdbSeasons = (seasons || []).filter(season => season.season_number != 0);
+  const imdbSeasons = [...new Set((cinemetaVideos || []).map(episode => episode.season).filter(season => season != 0))];
+  // get season posters
+  const tmdbSeasonPosters = tmdbSeasons.map(season => {
+    return season.poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${season.poster_path}` : null;
+  });
+  const tmdbSeasonNames = tmdbSeasons.map(season => {
+    // For anime, include series name for better specificity
+    const seasonPattern = /^season\s+\d+$/i;
+    if (tmdbSeasons.length === 1) {
+      return seriesData.name;
+    }
+    else {
+      if (seasonPattern.test(season.name)) {
+        // Generic season name like "Season 1", add series name
+        return `${seriesData.name} ${season.name}`;
+      } else {
+        // Season name already has more specific info, use as is
+        return season.name;
+      }
+    }
+  });
+  let resolvedImdbResults = [];
+  let allTmdbSeasonsMapToSameImdb = false;
+  
+  if (tmdbSeasons.length !== imdbSeasons.length) {
+    // Only do name-to-imdb lookup when season counts don't match
+    const imdbResults = tmdbSeasonNames.map(name => new Promise((resolve, reject) => {
+      nameToImdb({ name: name, type: 'series' }, (err, result) => {
+        if (err) {
+          console.warn(`[TMDB] Failed to get IMDB ID for season name "${name}":`, err);
+          resolve(null);
+        } else {
+          console.log(`[TMDB] IMDB ID for season name "${name}":`, result);
+          resolve(result);
+        }
+      });
+    }));
+    
+    resolvedImdbResults = await Promise.all(imdbResults);
+    allTmdbSeasonsMapToSameImdb = resolvedImdbResults.every(id => id === resolvedImdbResults[0]);
+  }
+  console.log(`[TMDB] TMDB seasons: ${tmdbSeasons.length}, IMDB seasons: ${imdbSeasons.length}`);
+  
+  // Only fetch IMDB videos if we have resolved IMDB results
+  const imdbVideos = resolvedImdbResults.length > 0 
+    ? await Promise.all(resolvedImdbResults.map(imdbId => idMapper.getCinemetaVideosForImdbSeries(imdbId)))
+    : [];
+  const videosPromises = seasonDetails.flatMap(season => 
+    (season.episodes || []).map(async ep => {
+      let episodeId = null; 
+      if(ep.season_number === 0) {
+        episodeId = `${imdbId || `tmdb:${tmdbId}`}:0:${ep.episode_number}`;
+      } else {
+        if (idProvider === 'kitsu' && kitsuId) {
+          // Use season-specific Kitsu ID if available
+          const seasonalKitsuId = seasonToKitsuIdMap.get(ep.season_number);
+          if (seasonalKitsuId) {
+            // Check if episode-level mapping is needed (like Dan Da Dan scenario)
+            const franchiseInfo = await idMapper.getFranchiseInfoFromTmdbId(tmdbId);
+            if (franchiseInfo && franchiseInfo.needsEpisodeMapping) {
+              // Use episode-level mapping for this specific episode
+                const episodeMapping = await idMapper.resolveKitsuIdForEpisodeByTmdb(tmdbId, ep.season_number, ep.episode_number, ep.air_date);
+              if (episodeMapping) {
+                episodeId = `kitsu:${episodeMapping.kitsuId}:${episodeMapping.episodeNumber}`;
+                console.log(`[ID Builder] Episode-level mapping: TMDB S${ep.season_number}E${ep.episode_number} → Kitsu ID ${episodeMapping.kitsuId} E${episodeMapping.episodeNumber}`);
+              } else {
+                // Fallback to season-level mapping
+                episodeId = `kitsu:${seasonalKitsuId}:${ep.episode_number}`;
+              }
+            } else {
+              // Use regular season-level mapping
+              episodeId = `kitsu:${seasonalKitsuId}:${ep.episode_number}`;
+            }
+          }
+        } 
+        else if (idProvider === 'mal' && malId) {
+          const seasonalKitsuId = seasonToKitsuIdMap.get(ep.season_number);
+          const seasonalMalId = idMapper.getMappingByKitsuId(seasonalKitsuId)?.mal_id;
+          if (seasonalMalId) {
+            episodeId = `mal:${seasonalMalId}:${ep.episode_number}`;
+          }
+        }
+        else {
+          // Use episode-level IMDB mapping with air dates
+            if (imdbId && cinemetaVideos.length > 0) {
+              // check if tmdb and imdb have the same number of non 0 seasons and episodes
+
+              if (tmdbSeasons.length === imdbSeasons.length) {
+                episodeId = `${imdbId}:${ep.season_number}:${ep.episode_number}`;
+              } else {
+                if (allTmdbSeasonsMapToSameImdb) {
+                  // Case 1: All TMDB seasons map to the same IMDB ID
+                  const commonImdbId = resolvedImdbResults[0];
+                  if (commonImdbId) {
+                    // Find which TMDB season this episode belongs to
+                    const tmdbSeason = tmdbSeasons.find(s => s.season_number === ep.season_number);
+                    const tmdbSeasonName = tmdbSeason ? tmdbSeason.name : `Season ${ep.season_number}`;
+                    
+                    const imdbEpisodeId = await idMapper.getImdbEpisodeIdFromTmdbEpisodeWhenAllSeasonsMapToSameImdb(
+                      tmdbId,
+                      ep.season_number,
+                      ep.episode_number,
+                      ep.air_date,
+                      commonImdbId,
+                      cinemetaVideos,
+                      tmdbSeasonName
+                    );
+                    
+                    if (imdbEpisodeId) {
+                      episodeId = imdbEpisodeId;
+                    } else {
+                      // Fallback to TMDB ID
+                      episodeId = `tmdb:${tmdbId}:${ep.season_number}:${ep.episode_number}`;
+                    }
+                    } else {
+                          // Fallback to TMDB ID
+                      episodeId = `tmdb:${tmdbId}:${ep.season_number}:${ep.episode_number}`;
+                    }
+                }
+                else {
+                  // Case 2: Different TMDB seasons map to different IMDB IDs
+                  // Find the IMDB ID for this specific TMDB season
+                  if(isAnimeContent) {
+                    const tmdbSeason = tmdbSeasons.find(s => s.season_number === ep.season_number);
+                    const tmdbSeasonIndex = tmdbSeasons.indexOf(tmdbSeason);
+                    const seasonImdbId = resolvedImdbResults[tmdbSeasonIndex];
+                    
+                    if (seasonImdbId && imdbVideos[tmdbSeasonIndex]) {
+                      // Use the specific IMDB videos for this season
+                      const seasonImdbVideos = imdbVideos[tmdbSeasonIndex];
+                      
+                      // Try to find the episode in the specific IMDB series
+                      const imdbEpisodeId = idMapper.getImdbEpisodeIdFromTmdbEpisode(
+                        tmdbId,
+                        ep.season_number,
+                        ep.episode_number,
+                        ep.air_date,
+                        seasonImdbVideos,
+                        seasonImdbId
+                      );
+                      
+                      if (imdbEpisodeId) {
+                        episodeId = imdbEpisodeId;
+                      } else {
+                        // Fallback to the specific IMDB ID
+                        episodeId = `${seasonImdbId}:${ep.season_number}:${ep.episode_number}`;
+                      }
+                    } else {
+                      episodeId = `tmdb:${tmdbId}:${ep.season_number}:${ep.episode_number}`;
+                    }
+                  } else {
+                    // Non-anime content - use TMDB ID as fallback
+                    episodeId = `tmdb:${tmdbId}:${ep.season_number}:${ep.episode_number}`;
+                  }
+                }
+              }
+          }
+        }
+      }
+      
+      if (!episodeId) {
+        episodeId = `tmdb:${tmdbId}:${ep.season_number}:${ep.episode_number}`;
+      }
+
+      const thumbnailUrl = ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : poster;
+      const finalThumbnail = config.blurThumbs && thumbnailUrl
+        ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
+        : thumbnailUrl;
+      
+      return {
+        id: episodeId,
+        title: ep.name || `Episode ${ep.episode_number}`,
+        season: ep.season_number,
+        episode: ep.episode_number,
+        released: ep.air_date ? new Date(ep.air_date).toISOString() : null,
+        overview: ep.overview,
+        thumbnail: finalThumbnail,
+      };
+    })
+  );
+  
+  const videos = (await Promise.all(videosPromises)).filter(Boolean);
+  const runtime = seriesData.episode_run_time?.[0] ?? seriesData.last_episode_to_air?.runtime ?? seriesData.next_episode_to_air?.runtime ?? null;
+
+  return {
+    id: stremioId,
+    type: 'series',
+    name: name,
+    imdb_id: imdbId,
+    slug: Utils.parseSlug('series', name, null, stremioId),
+    genres: Utils.parseGenres(seriesData.genres),
+    description: addMetaProviderAttribution(seriesData.overview, 'TMDB', config),
+    year: seriesData.first_air_date ? seriesData.first_air_date.substring(0, 4) : "",
+    released: seriesData.first_air_date ? new Date(seriesData.first_air_date).toISOString() : null,
+    runtime: runtime ? `${runtime}min` : null,
+    status: seriesData.status,
+    seasonPosters: tmdbSeasonPosters,
+    imdbRating,
+    poster: config.apiKeys?.rpdb ? posterProxyUrl : poster,
+    background: background,
+    logo: logoUrl,
+    trailers: Utils.parseTrailers(trailers),
+            links: [ ...Utils.buildLinks(imdbRating, imdbId, name, 'series', seriesData.genres, credits, language, castCount, userUUID), ...directorLinks, ...writerLinks],
+    videos: videos,
+    behaviorHints: {
+      defaultVideoId: null,
+      hasScheduledVideos: true,
+    },
+    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails }
+  };
+}
+
+async function buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, enrichmentData = {}, isAnime = false) {
   const tvdbId = movieData.id;
   const { allIds } = enrichmentData;
   const kitsuId = allIds?.kitsuId;
@@ -604,12 +1029,22 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   const tvdbPosterUrl = tvdbPosterPath ? `${tvdbPosterPath}` : `https://artworks.thetvdb.com/banners/images/missing/movie.jpg`;
   const tvdbBackgroundUrl = movieData.artworks?.find(a => a.type === 15)?.image;
   const tvdbLogoUrl = movieData.artworks?.find(a => a.type === 25)?.image;
-  const [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
-    Utils.getMoviePoster({ tmdbId: tmdbId?.toString(), tvdbId: tvdbId?.toString(), imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: tvdbPosterUrl }, config),
-    Utils.getMovieBackground({ tmdbId: tmdbId?.toString(), tvdbId: tvdbId?.toString(), imdbId: imdbId, metaProvider: 'tvdb', fallbackBackgroundUrl: tvdbBackgroundUrl }, config),
-    Utils.getMovieLogo({ tmdbId: tmdbId?.toString(), tvdbId: tvdbId?.toString(), imdbId: imdbId, metaProvider: 'tvdb', fallbackLogoUrl: tvdbLogoUrl }, config),
-    getImdbRating(imdbId, 'movie')
-  ]);
+  let poster, background, logoUrl, imdbRatingValue;
+  
+  if (isAnime) {
+    const artwork = await getAnimeArtwork(allIds, config, tvdbPosterUrl, tvdbBackgroundUrl, 'movie');
+    poster = artwork.poster;
+    background = artwork.background;
+    logoUrl = artwork.logo;
+    imdbRatingValue = artwork.imdbRatingValue;
+  } else {
+    [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
+      Utils.getMoviePoster({ tmdbId: tmdbId?.toString(), tvdbId: tvdbId?.toString(), imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: tvdbPosterUrl }, config, isAnime),
+      Utils.getMovieBackground({ tmdbId: tmdbId?.toString(), tvdbId: tvdbId?.toString(), imdbId: imdbId, metaProvider: 'tvdb', fallbackBackgroundUrl: tvdbBackgroundUrl }, config, isAnime),
+      Utils.getMovieLogo({ tmdbId: tmdbId?.toString(), tvdbId: tvdbId?.toString(), imdbId: imdbId, metaProvider: 'tvdb', fallbackLogoUrl: tvdbLogoUrl }, config, isAnime),
+      getImdbRating(imdbId, 'movie')
+    ]);
+  }
   const imdbRating = imdbRatingValue || "N/A";
   
   const fallbackPosterUrl = poster || tvdbPosterUrl || `https://artworks.thetvdb.com/banners/images/missing/movie.jpg`;
@@ -675,277 +1110,11 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     trailers: trailers,
     trailerStreams: trailerStreams,
     behaviorHints: {
-      defaultVideoId: kitsuId ? `kitsu:${kitsuId}` : imdbId || stremioId,
+      defaultVideoId: imdbId ? imdbId : kitsuId ? `kitsu:${kitsuId}` : stremioId,
       hasScheduledVideos: false
     },
-            links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks],
+    links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks],
     app_extras: { cast: Utils.parseCast(movieCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails }
-  };
-}
-
-async function buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, enrichmentData = {}) {
-  const { allIds } = enrichmentData;
-  const { id: tmdbId, title, external_ids, poster_path, backdrop_path, credits } = movieData;
-  const imdbId = allIds?.imdbId;
-  const tvdbId = allIds?.tvdbId;
-  const castCount = config.castCount === 0 ? undefined : config.castCount;
-  
-  // Get artwork based on art provider preference
-  const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/movie.jpg`;
-  const tmdbBackgroundUrl = backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
-  let tmdbLogoUrl = null;
-  
-  const [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
-    Utils.getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterUrl }, config),
-    Utils.getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbBackgroundUrl }, config),
-    Utils.getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackLogoUrl: tmdbLogoUrl }, config),
-    getImdbRating(imdbId, 'movie')
-  ]);
-  
-  const imdbRating = imdbRatingValue || movieData.vote_average?.toFixed(1) || "N/A";
-  const posterProxyUrl = `${host}/poster/movie/tmdb:${movieData.id}?fallback=${encodeURIComponent(poster)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-  const kitsuId = allIds?.kitsuId;
-  const idProvider = config.providers?.movie || 'imdb';
-
-  const directorLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
-    name: d.name,
-    category: 'Directors',
-    url: `stremio:///search?search=${d.name}`
-  }));
-
-  const writerLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
-    name: w.name,
-    category: 'Writers',
-    url: `stremio:///search?search=${w.name}`
-  }));
-  
-  const directorDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
-    name: d.name,
-    character: d.name,
-    photo: d.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${d.profile_path}` : null
-  }));
-
-  const writerDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
-    name: w.name,
-    character: w.name,
-    photo: w.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${w.profile_path}` : null
-  }));
-
-  
-  return {
-    id: stremioId,
-    type: 'movie',
-    description: addMetaProviderAttribution(movieData.overview, 'TMDB', config),
-    name: title,
-    imdb_id: imdbId,  
-    slug: Utils.parseSlug('movie', title, null, stremioId),
-    genres: Utils.parseGenres(movieData.genres),
-    director: Utils.parseDirector(credits).join(', '),
-    writer: Utils.parseWriter(credits).join(', '),
-    year: movieData.release_date ? movieData.release_date.substring(0, 4) : "",
-    released: new Date(movieData.release_date),
-    releaseInfo: movieData.release_date ? movieData.release_date.substring(0, 4) : "",
-    runtime: Utils.parseRunTime(movieData.runtime),
-    country: Utils.parseCoutry(movieData.production_countries),
-    imdbRating,
-    poster: config.apiKeys?.rpdb ? posterProxyUrl : poster,
-    background: background,
-    logo: processLogo(logoUrl),
-    trailers: Utils.parseTrailers(movieData.videos),
-    trailerStreams: Utils.parseTrailerStream(movieData.videos),
-            links: [ ...Utils.buildLinks(imdbRating, imdbId, title, 'movie', movieData.genres, credits, language, castCount, userUUID), ...directorLinks, ...writerLinks],
-    behaviorHints: { defaultVideoId: kitsuId && idProvider === 'kitsu' ? `kitsu:${kitsuId}` : imdbId || stremioId, hasScheduledVideos: false },
-    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails }
-  };
-}
-
-
-async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, enrichmentData = {}) {
-  const { id: tmdbId, name, external_ids, poster_path, backdrop_path, credits, videos: trailers, seasons } = seriesData;
-  const { allIds } = enrichmentData;
-  const imdbId = allIds?.imdbId;
-  const tvdbId = allIds?.tvdbId;
-  const kitsuId = allIds?.kitsuId;
-  const malId = allIds?.malId;
-
-  const idProvider = config.providers?.anime_id_provider || 'imdb';
-
-  // Get artwork based on art provider preference
-  const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
-  const tmdbBackgroundUrl = backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
-  let tmdbLogoUrl = null;
-  const [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
-    Utils.getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterUrl }, config),
-    Utils.getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbBackgroundUrl }, config),
-    Utils.getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackLogoUrl: tmdbLogoUrl }, config),
-    imdbId ? getImdbRating(imdbId, 'series') : Promise.resolve(null)
-  ]);
-  
-  const posterProxyUrl = `${host}/poster/series/tmdb:${tmdbId}?fallback=${encodeURIComponent(poster)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-  const imdbRating = imdbRatingValue || seriesData.vote_average?.toFixed(1) || "N/A";
-  const castCount = config.castCount === 0 ? undefined : config.castCount;
-
-  // Build season-to-Kitsu mapping for anime series
-  const seasonToKitsuIdMap = new Map();
-  const seasonToImdbIdMap = new Map();
-  
-  if (kitsuId && config.providers?.anime_id_provider === 'kitsu') {
-    const officialSeasons = (seasons || [])
-      .filter(season => season.season_number > 0 && season.episode_count > 0)
-      .sort((a, b) => a.season_number - b.season_number);
-
-    const kitsuMapPromises = officialSeasons.map(async (season) => {
-      const seasonalKitsuId = await idMapper.resolveKitsuIdFromTmdbSeason(tmdbId, season.season_number);
-      if (seasonalKitsuId) {
-        seasonToKitsuIdMap.set(season.season_number, seasonalKitsuId);
-      }
-    });
-    await Promise.all(kitsuMapPromises);
-    console.log(`[ID Builder] Built Season-to-Kitsu map for tmdb:${tmdbId}:`, seasonToKitsuIdMap);
-  }
-  console.log(`[TmdbSeriesMeta] credits: ${JSON.stringify(credits)}`);
-  const directorLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
-    name: d.name,
-    category: 'Directors',
-    url: `stremio:///search?search=${d.name}`
-  }));
-
-  const writerLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
-    name: w.name,
-    category: 'Writers',
-    url: `stremio:///search?search=${w.name}`
-  }));
-  
-  const directorDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
-    name: d.name,
-    character: d.name,
-    photo: d.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${d.profile_path}` : null
-  }));
-
-  const writerDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
-    name: w.name,
-    character: w.name,
-    photo: w.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${w.profile_path}` : null
-  }));
-  
-  // Fetch Cinemeta videos data for IMDB episode mapping (once per IMDB series)
-  let cinemetaVideos = null;
-  if (imdbId && config.providers?.anime_id_provider === 'imdb') {
-    try {
-      cinemetaVideos = await idMapper.getCinemetaVideosForImdbSeries(imdbId);
-      if (cinemetaVideos) {
-        console.log(`[ID Builder] Fetched ${cinemetaVideos.length} Cinemeta videos for IMDB ${imdbId}`);
-      }
-    } catch (error) {
-      console.warn(`[ID Builder] Failed to fetch Cinemeta videos for IMDB ${imdbId}:`, error.message);
-    }
-  }
-
-  const seasonPromises = (seasons || [])
-    .filter(season => season.season_number > 0 && season.episode_count > 0) 
-    .map(season => moviedb.seasonInfo({ id: tmdbId, season_number: season.season_number, language }, config));
-  
-  const seasonDetails = await Promise.all(seasonPromises);
-  
-  const videosPromises = seasonDetails.flatMap(season => 
-    (season.episodes || []).map(async ep => {
-      let episodeId = null; 
-      if(ep.season_number === 0) {
-        episodeId = `${imdbId || `tmdb:${tmdbId}`}:0:${ep.episode_number}`;
-      } else{
-        if (idProvider === 'kitsu' && kitsuId) {
-          // Use season-specific Kitsu ID if available
-          const seasonalKitsuId = seasonToKitsuIdMap.get(ep.season_number);
-          if (seasonalKitsuId) {
-            // Check if episode-level mapping is needed (like Dan Da Dan scenario)
-            const franchiseInfo = await idMapper.getFranchiseInfoFromTmdbId(tmdbId);
-            if (franchiseInfo && franchiseInfo.needsEpisodeMapping) {
-              // Use episode-level mapping for this specific episode
-              const episodeMapping = await idMapper.resolveKitsuIdForEpisodeByTmdb(tmdbId, ep.season_number, ep.episode_number, ep.air_date);
-              if (episodeMapping) {
-                episodeId = `kitsu:${episodeMapping.kitsuId}:${episodeMapping.episodeNumber}`;
-                console.log(`[ID Builder] Episode-level mapping: TMDB S${ep.season_number}E${ep.episode_number} → Kitsu ID ${episodeMapping.kitsuId} E${episodeMapping.episodeNumber}`);
-              } else {
-                // Fallback to season-level mapping
-                episodeId = `kitsu:${seasonalKitsuId}:${ep.episode_number}`;
-              }
-            } else {
-              // Use regular season-level mapping
-              episodeId = `kitsu:${seasonalKitsuId}:${ep.episode_number}`;
-            }
-          }
-        } 
-        else if (idProvider === 'mal' && malId) {
-          const seasonalKitsuId = seasonToKitsuIdMap.get(ep.season_number);
-          const seasonalMalId = idMapper.getMappingByKitsuId(seasonalKitsuId)?.mal_id;
-          if (seasonalMalId) {
-            episodeId = `mal:${seasonalMalId}:${ep.episode_number}`;
-          }
-        }
-        else {
-          // Use episode-level IMDB mapping with air dates
-          if (imdbId && ep.air_date && cinemetaVideos) {
-            const imdbEpisodeId = idMapper.getImdbEpisodeIdFromTmdbEpisode(tmdbId, ep.season_number, ep.episode_number, ep.air_date, cinemetaVideos);
-            if (imdbEpisodeId) {
-              episodeId = imdbEpisodeId;
-            } else {
-              // Fallback to main IMDB ID
-              episodeId = `${imdbId}:${ep.season_number}:${ep.episode_number}`;
-            }
-          } else {
-            // Fallback to main IMDB ID
-            episodeId = `${imdbId}:${ep.season_number}:${ep.episode_number}`;
-          }
-        }
-      }
-      
-      if (!episodeId) {
-        episodeId = `tmdb:${tmdbId}:${ep.season_number}:${ep.episode_number}`;
-      }
-
-      const thumbnailUrl = ep.still_path ? `https://image.tmdb.org/t/p/w300${ep.still_path}` : poster;
-      const finalThumbnail = config.blurThumbs && thumbnailUrl
-        ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
-        : thumbnailUrl;
-      
-      return {
-        id: episodeId,
-        title: ep.name || `Episode ${ep.episode_number}`,
-        season: ep.season_number,
-        episode: ep.episode_number,
-        released: ep.air_date ? new Date(ep.air_date).toISOString() : null,
-        overview: ep.overview,
-        thumbnail: finalThumbnail,
-      };
-    })
-  );
-  
-  const videos = (await Promise.all(videosPromises)).filter(Boolean);
-
-  return {
-    id: stremioId,
-    type: 'series',
-    name: name,
-    imdb_id: imdbId,
-    slug: Utils.parseSlug('series', name, null, stremioId),
-    genres: Utils.parseGenres(seriesData.genres),
-    description: addMetaProviderAttribution(seriesData.overview, 'TMDB', config),
-    year: seriesData.first_air_date ? seriesData.first_air_date.substring(0, 4) : "",
-    released: seriesData.first_air_date ? new Date(seriesData.first_air_date).toISOString() : null,
-    runtime: seriesData.episode_run_time?.[0] ? `${seriesData.episode_run_time[0]}min` : null,
-    status: seriesData.status,
-    imdbRating,
-    poster: config.apiKeys?.rpdb ? posterProxyUrl : poster,
-    background: background,
-    logo: logoUrl,
-    trailers: Utils.parseTrailers(trailers),
-            links: [ ...Utils.buildLinks(imdbRating, imdbId, name, 'series', seriesData.genres, credits, language, castCount, userUUID), ...directorLinks, ...writerLinks],
-    videos: videos,
-    behaviorHints: {
-      defaultVideoId: null,
-      hasScheduledVideos: true,
-    },
-    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails }
   };
 }
 
@@ -978,7 +1147,7 @@ async function tvdbAbsoluteToImdbHelper(tvdbShow, config){
   return seasonLayoutMap;
 }
 
-async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, language, config, userUUID, enrichmentData = {}) {
+async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, language, config, userUUID, enrichmentData = {}, isAnime = false) {
   const { year, image: tvdbPosterPath, remoteIds, characters, episodes } = tvdbShow;
   const { allIds } = enrichmentData;
   const kitsuId = allIds?.kitsuId;
@@ -1003,12 +1172,22 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const tvdbPosterUrl = tvdbPosterPath ? `${tvdbPosterPath}` : null;
   const tvdbBackgroundUrl = tvdbShow.artworks?.find(a => a.type === 3)?.image;
   const tvdbLogoUrl = tvdbShow.artworks?.find(a => a.type === 23)?.image;
-  const [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
-    Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: tvdbPosterUrl }, config),
-    Utils.getSeriesBackground({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackBackgroundUrl: tvdbBackgroundUrl }, config),
-    Utils.getSeriesLogo({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackLogoUrl: tvdbLogoUrl }, config),
+  let poster, background, logoUrl, imdbRatingValue;
+
+  if (isAnime) {
+    const artwork = await getAnimeArtwork(allIds, config, tvdbPosterUrl, tvdbBackgroundUrl, 'series');
+    poster = artwork.poster;
+    background = artwork.background;
+    logoUrl = artwork.logo;
+    imdbRatingValue = artwork.imdbRatingValue;
+  } else {
+    [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
+      Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: tvdbPosterUrl }, config, isAnime),
+      Utils.getSeriesBackground({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackBackgroundUrl: tvdbBackgroundUrl }, config, isAnime),
+      Utils.getSeriesLogo({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackLogoUrl: tvdbLogoUrl }, config, isAnime),
     getImdbRating(imdbId, 'series')
   ]);
+  }
   const imdbRating = imdbRatingValue || "N/A";
   const fallbackPosterUrl = poster || tvdbPosterUrl || `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
   const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbShow.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
@@ -1053,23 +1232,27 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
 
   const seasonToKitsuIdMap = new Map();
   const absoluteToSeasonalMap = new Map();
+  
+  const officialSeasons = (tvdbShow.seasons || [])
+  .filter(s => s.type?.type === 'official')
+  .sort((a, b) => a.number - b.number);
+
+  const seasonPosters = officialSeasons.map(s => s.image);
+
 
   if (enrichmentData.allIds?.malId) {
-    const officialSeasons = (tvdbShow.seasons || [])
-      .filter(s => s.type?.type === 'official' && s.number > 0)
-      .sort((a, b) => a.number - b.number);
 
-    const seasonDetailPromises = officialSeasons.map(s => tvdb.getSeasonExtended(s.id, config));
+    const seasonDetailPromises = officialSeasons.filter(s => s.number > 0).map(s => tvdb.getSeasonExtended(s.id, config));
     const detailedSeasons = (await Promise.all(seasonDetailPromises)).filter(Boolean);
 
-    const kitsuMapPromises = detailedSeasons.map(async (season) => {
+    /*const kitsuMapPromises = detailedSeasons.map(async (season) => {
         const seasonalKitsuId = await idMapper.resolveKitsuIdFromTvdbSeason(tvdbId, season.number);
         if (seasonalKitsuId) {
             seasonToKitsuIdMap.set(season.number, seasonalKitsuId);
         }
     });
     await Promise.all(kitsuMapPromises);
-    console.log(`[ID Builder] Built Season-to-Kitsu map for tvdb:${tvdbId}:`, seasonToKitsuIdMap);
+    console.log(`[ID Builder] Built Season-to-Kitsu map for tvdb:${tvdbId}:`, seasonToKitsuIdMap);*/
 
     if (config.tvdbSeasonType === 'absolute') {
       let cumulativeEpisodes = 0;
@@ -1105,9 +1288,13 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
         } 
         else if (kitsuId && config.providers?.anime_id_provider === 'kitsu') {
           if ((config.tvdbSeasonType === 'default' || config.tvdbSeasonType === 'official')){
-            const seasonalKitsuId = await idMapper.resolveKitsuIdFromTvdbSeason(tvdbId, episode.seasonNumber);        
-            if (seasonalKitsuId) {
-              episodeId = `kitsu:${seasonalKitsuId}:${episode.number}`;
+            const anidbEpisodeInfo = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, episode.seasonNumber, episode.number);
+            if (anidbEpisodeInfo) {
+              // Get Kitsu ID from AniDB ID using the existing idMapper
+              const kitsuMapping = await idMapper.getMappingByAnidbId(anidbEpisodeInfo.anidbId);
+              if (kitsuMapping?.kitsu_id) {
+                episodeId = `kitsu:${kitsuMapping.kitsu_id}:${anidbEpisodeInfo.anidbEpisode}`;
+              }
             }
           } else if (config.tvdbSeasonType === 'absolute') {
             const seasonalInfo = absoluteToSeasonalMap.get(episode.number);
@@ -1121,10 +1308,13 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
         }
         else if(malId && config.providers?.anime_id_provider === 'mal') {
           if ((config.tvdbSeasonType === 'default' || config.tvdbSeasonType === 'official')){
-            const seasonalKitsuId = await idMapper.resolveKitsuIdFromTvdbSeason(tvdbId, episode.seasonNumber);
-            const seasonalMalId = await idMapper.getMappingByKitsuId(seasonalKitsuId)?.mal;
-            if (seasonalMalId) {
-              episodeId = `mal:${seasonalMalId}:${episode.number}`;
+            const anidbEpisodeInfo = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, episode.seasonNumber, episode.number);
+            if (anidbEpisodeInfo) {
+              // Get MAL ID from AniDB ID using the existing idMapper
+              const malMapping = await idMapper.getMappingByAnidbId(anidbEpisodeInfo.anidbId);
+              if (malMapping?.mal_id) {
+                episodeId = `mal:${malMapping.mal_id}:${anidbEpisodeInfo.anidbEpisode}`;
+              }
             }
           } else if (config.tvdbSeasonType === 'absolute') {
             const seasonalInfo = absoluteToSeasonalMap.get(episode.number);
@@ -1193,6 +1383,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     logo: logoUrl,
     videos: videos,
     trailers: trailers,
+    seasonPosters: seasonPosters,
     trailerStreams: trailerStreams,
     links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tvdbCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks],
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
@@ -1202,7 +1393,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   return meta;
 }
 
-async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, config, userUUID) {
+async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, config, userUUID, isAnime = false) {
   const { name, premiered, image, summary, externals } = tvmazeShow;
   const imdbId = externals.imdb;
   const tmdbId = externals.themoviedb;
@@ -1212,12 +1403,22 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, co
   const tvmazePosterUrl = image?.original ? `${image.original}` : null;
   const tvmazeBackgroundUrl = image?.original ? `${image.original}` : null;
   const tvmazeLogoUrl = null;
-  const [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
-    Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvmaze', fallbackPosterUrl: tvmazePosterUrl }, config),
-    Utils.getSeriesBackground({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvmaze', fallbackBackgroundUrl: tvmazeBackgroundUrl }, config),
-    Utils.getSeriesLogo({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvmaze', fallbackLogoUrl: tvmazeLogoUrl }, config),
+  let poster, background, logoUrl, imdbRatingValue;
+  
+  if (isAnime) {
+    const artwork = await getAnimeArtwork(allIds, config, tvmazePosterUrl, tvmazeBackgroundUrl, 'series');
+    poster = artwork.poster;
+    background = artwork.background;
+    logoUrl = artwork.logo;
+    imdbRatingValue = artwork.imdbRatingValue;
+  } else {
+    [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
+      Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvmaze', fallbackPosterUrl: tvmazePosterUrl }, config, isAnime),
+      Utils.getSeriesBackground({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvmaze', fallbackBackgroundUrl: tvmazeBackgroundUrl }, config, isAnime),
+      Utils.getSeriesLogo({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvmaze', fallbackLogoUrl: tvmazeLogoUrl }, config, isAnime),
     getImdbRating(imdbId, 'series')
   ]);
+  }
   const imdbRating = imdbRatingValue || tvmazeShow.rating?.average?.toFixed(1) || "N/A";
 
   const tvmazeCredits = {
@@ -1494,17 +1695,17 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
             thumbnailUrl = posterUrl;
           }
           
-          return {
-            id: `${imdbSeasonInfo.imdbId}:${imdbSeasonInfo.seasonNumber}:${ep.mal_id}`,
+              return {
+                id: `${imdbSeasonInfo.imdbId}:${imdbSeasonInfo.seasonNumber}:${ep.mal_id}`,
             title: episodeTitle,
-            season: 1,
-            episode: ep.mal_id,
+                season: 1,
+                episode: ep.mal_id,
             overview: episodeSynopsis,
-            released: ep.aired? new Date(ep.aired) : null,
-            thumbnail: config.blurThumbs? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
-            available: ep.aired ? new Date(ep.aired) < new Date() : false
-          };
-        });
+                released: ep.aired? new Date(ep.aired) : null,
+                thumbnail: config.blurThumbs? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
+                available: ep.aired ? new Date(ep.aired) < new Date() : false
+              };
+            });
       } 
     }
 

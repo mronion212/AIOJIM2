@@ -301,7 +301,7 @@ async function cacheWrap(key, method, ttl, options = {}) {
 
   try {
     const result = await promise;
-      console.log(`⏳ 📦 [Cache] MISS for ${versionedKey}`);
+      //console.log(`⏳ 📦 [Cache] MISS for ${versionedKey}`);
       updateCacheHealth(versionedKey, 'miss', true);
       
     if (result !== null && result !== undefined) {
@@ -442,13 +442,13 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
 
   try {
     const result = await promise;
-      console.log(`⏳ [Global Cache] MISS for ${truncateCacheKey(versionedKey)}`);
+      //console.log(`⏳ [Global Cache] MISS for ${truncateCacheKey(versionedKey)}`);
       updateCacheHealth(versionedKey, 'miss', true);
 
       const classification = resultClassifier(result, null, key);
       const finalTtl = classification.ttl !== null ? classification.ttl : ttl;
       
-      console.log(`[Global Cache] Classification: ${classification.type}, TTL: ${finalTtl}s`);
+      //console.log(`[Global Cache] Classification: ${classification.type}, TTL: ${finalTtl}s`);
 
       // Skip caching if result classifier says so
       if (classification.type === 'SKIP_CACHE') {
@@ -640,7 +640,7 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
      // Display settings (affect all meta)
      castCount: config.castCount || 0,
      blurThumbs: config.blurThumbs || false,
-     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
+     showMetaProviderAttribution: config.showMetaProviderAttribution || false, 
      
    };
    
@@ -747,10 +747,10 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
    };
    
    // Debug: Log cache keys for different content types
-   console.log(`📦 [Cache] DEBUG: Generated cache keys for ${metaId} (type: ${metaType}):`);
+   /*console.log(`📦 [Cache] DEBUG: Generated cache keys for ${metaId} (type: ${metaType}):`);
    console.log(`📦 [Cache] DEBUG:   metaConfig: ${metaConfigString}`);
    console.log(`📦 [Cache] DEBUG:   poster key: ${componentCacheKeys.poster}`);
-   console.log(`📦 [Cache] DEBUG:   background key: ${componentCacheKeys.background}`);
+   console.log(`📦 [Cache] DEBUG:   background key: ${componentCacheKeys.background}`);*/
    
    const result = await method();
    
@@ -948,10 +948,10 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
        const cached = await redis.get(cacheKey);
        if (cached) {
          const parsed = JSON.parse(cached);
-         console.log(`📦 [Cache] Component HIT: ${componentName} for ${metaId}`);
+         //console.log(`📦 [Cache] Component HIT: ${componentName} for ${metaId}`);
          return { componentName, data: parsed };
        } else {
-         console.log(`📦 [Cache] Component MISS: ${componentName} for ${metaId}`);
+         //console.log(`📦 [Cache] Component MISS: ${componentName} for ${metaId}`);
          return { componentName, data: null };
        }
      } catch (error) {
@@ -1184,10 +1184,10 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
     const cached = await redis.get(cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached);
-      console.log(`📦 [Cache] Component HIT: ${componentName} for ${metaId}`);
+      //console.log(`📦 [Cache] Component HIT: ${componentName} for ${metaId}`);
       return parsed;
     } else {
-      console.log(`📦 [Cache] Component MISS: ${componentName} for ${metaId}`);
+      //console.log(`📦 [Cache] Component MISS: ${componentName} for ${metaId}`);
       return null;
     }
     

@@ -3,6 +3,7 @@ const path = require('path');
 const axios = require('axios');
 const { redis } = require('./getCache'); 
 const kitsu = require('./kitsu');
+const { numberValueTypes } = require('framer-motion');
 
 // from  https://github.com/Fribb/anime-lists
 const REMOTE_MAPPING_URL = 'https://raw.githubusercontent.com/Fribb/anime-lists/refs/heads/master/anime-list-full.json';
@@ -255,7 +256,7 @@ async function buildFranchiseMapFromTvdbId(tvdbId) {
       const bDate = new Date(b.attributes?.startDate || '9999-12-31');
       return aDate - bDate;
     });
-
+    
     const seasonToKitsuMap = new Map();
 
     // Assign main TV series to seasons 1, 2, 3, etc.
@@ -296,6 +297,7 @@ async function resolveKitsuIdFromTvdbSeason(tvdbId, seasonNumber) {
       console.warn(`[ID Mapper] No franchise map available for TVDB ${tvdbId}`);
       return null;
     }
+    console.log(`[ID Mapper] Franchise map for TVDB ${tvdbId}:`, franchiseMap);
     
     const foundKitsuId = franchiseMap.get(seasonNumber) || null;
     if (foundKitsuId) {
@@ -394,31 +396,19 @@ async function resolveKitsuIdFromTmdbSeason(tmdbId, seasonNumber) {
  * @param {Array} cinemetaVideos - Pre-fetched Cinemeta videos array
  * @returns {string|null} The IMDB episode ID in format "imdbId:seasonNumber:episodeNumber", or null if not found
  */
-function getImdbEpisodeIdFromTmdbEpisode(tmdbId, seasonNumber, episodeNumber, episodeAirDate, cinemetaVideos) {
+function getImdbEpisodeIdFromTmdbEpisode(tmdbId, seasonNumber, episodeNumber, episodeAirDate, cinemetaVideos, imdbId) {
     if (!isInitialized) return null;
     
-    // First, try to find the TMDB ID in our mappings
-    const tmdbMappings = Array.from(animeIdMap.values())
-      .filter(mapping => mapping.themoviedb_id === tmdbId);
-    
-    if (tmdbMappings.length === 0) {
-      //console.warn(`[ID Mapper] No TMDB mapping found for TMDB ID ${tmdbId}`);
-      return null;
-    }
-    
-    // Get the IMDB ID from the mapping
-    const imdbId = tmdbMappings[0].imdb_id;
+    // We MUST have the imdbId parameter - no fallback to mapping file
     if (!imdbId) {
-      console.warn(`[ID Mapper] No IMDB ID found in TMDB mapping for ${tmdbId}`);
+      console.warn(`[ID Mapper] No IMDB ID provided for TMDB ${tmdbId} S${seasonNumber}E${episodeNumber}`);
       return null;
     }
     
     if (!cinemetaVideos || !Array.isArray(cinemetaVideos)) {
       console.warn(`[ID Mapper] No valid Cinemeta videos array provided for ${imdbId}`);
       // Fallback: return the base IMDB ID with season/episode
-      const fallbackId = `${imdbId}:${seasonNumber}:${episodeNumber}`;
-      console.log(`[ID Mapper] Using fallback IMDB ID ${fallbackId} for TMDB S${seasonNumber}E${episodeNumber} (no videos data)`);
-      return fallbackId;
+      return null;
     }
     
     // Parse the episode air date
@@ -472,7 +462,7 @@ function getImdbEpisodeIdFromTmdbEpisode(tmdbId, seasonNumber, episodeNumber, ep
     }
     
     // Fallback: return the base IMDB ID with season/episode
-    const fallbackId = `${imdbId}:${seasonNumber}:${episodeNumber}`;
+    const fallbackId = `${tmdbId}:${seasonNumber}:${episodeNumber}`;
     console.log(`[ID Mapper] Using fallback IMDB ID ${fallbackId} for TMDB S${seasonNumber}E${episodeNumber}`);
     return fallbackId;
 }
@@ -493,6 +483,34 @@ async function getCinemetaVideosForImdbSeries(imdbId) {
   try {
     // Fetch episode data from Cinemeta API
     const cinemetaUrl = `https://v3-cinemeta.strem.io/meta/series/${imdbId}.json`;
+    console.log(`[ID Mapper] Fetching Cinemeta videos for IMDB ${imdbId}: ${cinemetaUrl}`);
+    
+    const response = await axios.get(cinemetaUrl, { timeout: 10000 });
+    const cinemetaData = response.data.meta;
+    
+    if (!cinemetaData.videos || !Array.isArray(cinemetaData.videos)) {
+      console.warn(`[ID Mapper] No videos array found in Cinemeta data for ${imdbId}`);
+      return null;
+    }
+    
+    console.log(`[ID Mapper] Successfully fetched ${cinemetaData.videos.length} videos from Cinemeta for IMDB ${imdbId}`);
+    return cinemetaData.videos;
+    
+  } catch (error) {
+    console.error(`[ID Mapper] Error fetching Cinemeta data for IMDB ${imdbId}:`, error.message);
+    return null;
+  }
+}
+
+async function getCinemetaVideosForImdbIoSeries(imdbId) {
+  if (!imdbId) {
+    console.warn(`[ID Mapper] No IMDB ID provided`);
+    return null;
+  }
+  
+  try {
+    // Fetch episode data from Cinemeta API
+    const cinemetaUrl = `https://cinemeta-live.strem.io/meta/series/${imdbId}.json`;
     console.log(`[ID Mapper] Fetching Cinemeta videos for IMDB ${imdbId}: ${cinemetaUrl}`);
     
     const response = await axios.get(cinemetaUrl, { timeout: 10000 });
@@ -1385,6 +1403,141 @@ function cleanup() {
 process.on('SIGINT', cleanup);
 process.on('SIGTERM', cleanup);
 
+/**
+ * Maps TMDB episodes to IMDB episodes when all TMDB seasons map to the same IMDB ID.
+ * This handles cases where TMDB and IMDB have different season structures.
+ * 
+ * @param {string} tmdbId - TMDB series ID
+ * @param {number} tmdbSeasonNumber - TMDB season number
+ * @param {number} tmdbEpisodeNumber - TMDB episode number
+ * @param {string} tmdbAirDate - TMDB episode air date
+ * @param {string} commonImdbId - The IMDB ID that all TMDB seasons map to
+ * @param {Array} cinemetaVideos - All episodes from Cinemeta for the IMDB series
+ * @param {string} tmdbSeasonName - The TMDB season name used for name-to-imdb lookup
+ * @returns {string|null} IMDB episode ID in format "tt123456:season:episode" or null if not found
+ */
+async function getImdbEpisodeIdFromTmdbEpisodeWhenAllSeasonsMapToSameImdb(
+  tmdbId,
+  tmdbSeasonNumber,
+  tmdbEpisodeNumber,
+  tmdbAirDate,
+  commonImdbId,
+  cinemetaVideos,
+  tmdbSeasonName
+) {
+  try {
+    // Get all episodes from the common IMDB ID
+    const imdbEpisodes = cinemetaVideos.filter(ep => ep.season !==0)
+    
+    if (!imdbEpisodes.length) {
+      console.warn(`[ID Mapper] No IMDB episodes found for ${commonImdbId}`);
+      return null;
+    }
+
+    // Group IMDB episodes by season
+    const imdbSeasons = new Map();
+    imdbEpisodes.forEach(ep => {
+      if (!imdbSeasons.has(ep.season)) {
+        imdbSeasons.set(ep.season, []);
+      }
+      imdbSeasons.get(ep.season).push(ep);
+    });
+
+    // Find which IMDB season(s) this TMDB season maps to
+    const mappedImdbSeasons = findImdbSeasonsForTmdbSeason(
+      tmdbSeasonNumber,
+      tmdbSeasonName,
+      imdbSeasons,
+      tmdbAirDate
+    );
+
+    if (!mappedImdbSeasons.length) {
+      console.warn(`[ID Mapper] No IMDB seasons mapped for TMDB season ${tmdbSeasonNumber}`);
+      return null;
+    }
+
+    // Find the specific episode within the mapped IMDB seasons using air date
+    const imdbEpisode = findImdbEpisodeByAirDate(
+      tmdbAirDate,
+      mappedImdbSeasons,
+      2 // ±2 days tolerance
+    );
+
+    if (imdbEpisode) {
+      return `${commonImdbId}:${imdbEpisode.season}:${imdbEpisode.episode}`;
+    }
+
+    console.warn(`[ID Mapper] No IMDB episode found for TMDB S${tmdbSeasonNumber}E${tmdbEpisodeNumber} (air date: ${tmdbAirDate})`);
+    return null;
+
+  } catch (error) {
+    console.error(`[ID Mapper] Error mapping TMDB episode to IMDB:`, error);
+    return null;
+  }
+}
+
+/**
+ * Finds which IMDB seasons a TMDB season maps to based on air date and season structure.
+ */
+function findImdbSeasonsForTmdbSeason(tmdbSeasonNumber, tmdbSeasonName, imdbSeasons, tmdbAirDate) {
+  const imdbSeasonArray = Array.from(imdbSeasons.entries());
+  
+  // Strategy 1: Try to find IMDB seasons with episodes around the TMDB air date
+  const targetDate = new Date(tmdbAirDate);
+  const candidateSeasons = [];
+
+  for (const [imdbSeasonNum, imdbSeasonEpisodes] of imdbSeasonArray) {
+    const seasonEpisodes = imdbSeasonEpisodes.filter(ep => ep.released);
+    if (seasonEpisodes.length === 0) continue;
+
+    const seasonStartDate = new Date(Math.min(...seasonEpisodes.map(ep => new Date(ep.released))));
+    const seasonEndDate = new Date(Math.max(...seasonEpisodes.map(ep => new Date(ep.released))));
+
+    // Check if TMDB air date falls within this IMDB season's date range
+    if (targetDate >= seasonStartDate && targetDate <= seasonEndDate) {
+      candidateSeasons.push([imdbSeasonNum, imdbSeasonEpisodes]);
+    }
+  }
+
+       if (candidateSeasons.length > 0) {
+       return candidateSeasons;
+     }
+
+       // Strategy 2: Fallback to season number matching (1:1 mapping) - only if we have exactly one IMDB season
+     if (imdbSeasons.has(tmdbSeasonNumber) && imdbSeasonArray.length === 1) {
+       return [[tmdbSeasonNumber, imdbSeasons.get(tmdbSeasonNumber)]];
+     }
+
+       // Strategy 3: Return all IMDB seasons if no specific mapping found or multiple IMDB seasons exist
+     return imdbSeasonArray;
+}
+
+/**
+ * Finds an IMDB episode by air date within the given IMDB seasons.
+ */
+function findImdbEpisodeByAirDate(tmdbAirDate, mappedImdbSeasons, toleranceDays = 2) {
+  const targetDate = new Date(tmdbAirDate);
+  const toleranceMs = toleranceDays * 24 * 60 * 60 * 1000;
+
+  for (const [imdbSeasonNum, imdbSeasonEpisodes] of mappedImdbSeasons) {
+    for (const episode of imdbSeasonEpisodes) {
+      if (!episode.released) continue;
+
+      const episodeDate = new Date(episode.released);
+      const dateDiff = Math.abs(targetDate - episodeDate);
+
+      if (dateDiff <= toleranceMs) {
+        return {
+          season: imdbSeasonNum,
+          episode: episode.episode
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
 module.exports = {
   initializeMapper,
   getMappingByMalId,
@@ -1412,6 +1565,8 @@ module.exports = {
   getKitsuToImdbMappingsByImdbId,
   enrichMalEpisodes,
   resolveKitsuIdForEpisodeByTvdb,
+  getImdbEpisodeIdFromTmdbEpisodeWhenAllSeasonsMapToSameImdb,
   getAllMappings,
-  cleanup
+  cleanup,
+  getCinemetaVideosForImdbIoSeries
 };

@@ -147,7 +147,7 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
 }
 
 
-async function performTmdbSearch(type, query, language, config, searchPersons = true) {
+async function performTmdbSearch(type, query, language, config, searchPersons = true, page = 1) {
     const searchResults = new Map();
     const rawResults = new Map();
 
@@ -163,12 +163,14 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
     const includeAdult = ['R', 'NC-17'].includes(config.ageRating);
 
     if (type === 'movie') {
-        const movieRes = await moviedb.searchMovie({ query, language, include_adult: includeAdult }, config);
+        const movieRes = await moviedb.searchMovie({ query, language, include_adult: includeAdult, page: page }, config);
         movieRes.results.forEach(addRawResult);
     } else { 
-        const seriesRes = await moviedb.searchTv({ query, language, include_adult: includeAdult }, config);
+        const seriesRes = await moviedb.searchTv({ query, language, include_adult: includeAdult, page: page }, config);
         seriesRes.results.forEach(addRawResult);
     }
+
+    console.log(`[Search] Raw results:`, JSON.stringify(rawResults));
     
     if (searchPersons){
       const personRes = await moviedb.searchPerson({ query, language }, config);
@@ -242,6 +244,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
           stremioId = `tmdb:${media.id}`; 
         }
         parsed.id = stremioId;
+        const logoUrl = type === 'movie' ? await moviedb.getTmdbMovieLogo(media.id, config) : await moviedb.getTmdbSeriesLogo(media.id, config);
+        parsed.logo = logoUrl;
         return parsed;
     });
 
@@ -256,7 +260,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
     const finalResults = Array.from(searchResults.values());
     
     let filteredResults = finalResults;
-          if (config.ageRating) {
+          if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
         filteredResults = finalResults.filter(result => {
           if (!result.certification) return true;
           
@@ -265,7 +269,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
           const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
           
           // Determine which hierarchy to use based on the certification format
-          const isTvRating = result.certification.startsWith('TV-');
+          const isTvRating = type === 'series';
           const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
           //console.log(`[Search] result title ${result.name} and rating ${result.certification} where user rating is ${config.ageRating} with type ${type}`);
           
@@ -300,7 +304,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
       console.log(`[Search] Filtered ${finalResults.length} results to ${filteredResults.length} based on age rating: ${config.ageRating}`);
     }
     
-    return Utils.sortSearchResults(filteredResults, query);
+    return filteredResults;
 }
 
 
@@ -428,7 +432,7 @@ async function performTvdbSearch(type, query, language, config) {
 
   // Apply age rating filtering if configured
   let ageFilteredResults = filteredResults;
-  if (config.ageRating) {
+  if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
     ageFilteredResults = filteredResults.filter(result => {
       if (!result.certification) return true;
       
@@ -437,7 +441,7 @@ async function performTvdbSearch(type, query, language, config) {
       const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
       
       // Determine which hierarchy to use based on the certification format
-      const isTvRating = result.certification.startsWith('TV-');
+      const isTvRating = type === 'series';
       const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
       
       let userRating = config.ageRating;
@@ -466,7 +470,7 @@ async function performTvdbSearch(type, query, language, config) {
     console.log(`[Search] TVDB filtered ${filteredResults.length} results to ${ageFilteredResults.length} based on age rating: ${config.ageRating}`);
   }
 
-  return Utils.sortSearchResults(ageFilteredResults, query);
+  return ageFilteredResults;
 }
 
 async function performTvmazeSearch(query, language, config) {
@@ -644,7 +648,7 @@ async function getSearch(id, type, language, extra, config) {
                 metas = await performAnimeSearch('movie', query, language, config, page);
                 break;
               case 'tmdb.search':
-                metas = await performTmdbSearch(type, query, language, config);
+                metas = await performTmdbSearch(type, query, language, config, page);
                 break;
               case 'tvdb.search':
                 metas = await performTvdbSearch(type, query, language, config);

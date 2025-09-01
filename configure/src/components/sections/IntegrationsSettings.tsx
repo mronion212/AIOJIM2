@@ -79,6 +79,7 @@ export function IntegrationsSettings() {
         <ApiKeyInput id="tvdb" label="TheTVDB API Key" linkHref="https://thetvdb.com/api-information" />
         <ApiKeyInput id="fanart" label="Fanart.tv API Key" linkHref="https://fanart.tv/get-an-api-key/" />
         <ApiKeyInput id="rpdb" label="RPDB API Key" linkHref="https://ratingposterdb.com/" />
+        <ApiKeyInput id="mdblist" label="MDBList API Key" linkHref="https://mdblist.com/preferences/#api_key_uid" />
       </div>
     </div>
   );

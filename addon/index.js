@@ -137,7 +137,10 @@ const respond = function (req, res, data, opts) {
           tvdbSeasonType: req.userConfig.tvdbSeasonType,
           castCount: req.userConfig.castCount,
           blurThumbs: req.userConfig.blurThumbs,
-          apiKeys: { rpdb: req.userConfig.apiKeys?.rpdb || '' },
+          apiKeys: { 
+            rpdb: req.userConfig.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
+            mdblist: req.userConfig.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''
+          },
           mal: req.userConfig.mal
         } : {};
         etagContent += crypto.createHash('md5').update(JSON.stringify(metaConfig)).digest('hex').substring(0, 8);
@@ -217,6 +220,9 @@ addon.get("/api/config", (req, res) => {
     tmdb: process.env.TMDB_API || "",
     tvdb: process.env.TVDB_API_KEY || "",
     fanart: process.env.FANART_API_KEY || "",
+    rpdb: process.env.RPDB_API_KEY || "",
+    mdblist: process.env.MDBLIST_API_KEY || "",
+    gemini: process.env.GEMINI_API_KEY || "",
     addonVersion: ADDON_VERSION,
   };
   
@@ -231,6 +237,31 @@ addon.post("/api/config/migrate", configApi.migrateFromLocalStorage.bind(configA
 addon.get('/api/config/is-trusted/:uuid', configApi.isTrusted.bind(configApi));
 // Manual cache clearing endpoint (temporarily disabled due to binding issue)
 // addon.post("/api/config/clear-cache/:userUUID", configApi.clearCache.bind(configApi));
+
+// --- ID Mapping Correction Routes (Admin only) ---
+addon.get("/api/corrections", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  configApi.getCorrections(req, res);
+});
+
+addon.post("/api/corrections/add", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  configApi.addCorrection(req, res);
+});
+
+addon.post("/api/corrections/remove", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  configApi.removeCorrection(req, res);
+});
 
 // --- Admin Configuration Routes ---
 addon.get("/api/config/stats", (req, res) => {
@@ -448,7 +479,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       
       if (id.includes('search')) {
       // Use search-specific cache wrapper
-        const extraArgs = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
+      const extraArgs = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
       const searchKey = `${id}:${type}:${JSON.stringify(extraArgs)}`;
       
       responseData = await cacheWrapSearch(userUUID, searchKey, async () => {

@@ -28,6 +28,7 @@ docker run -d \
   -e MONGODB_URI=your_mongodb_uri \
   -e FANART_API=your_fanart_key \
   -e TMDB_API=your_tmdb_key \
+  -e RPDB_API_KEY=your_rpdb_key \
   -e HOST_NAME=http://your_domain:1337 \
   mrcanelas/tmdb-addon:latest
 ```
@@ -48,6 +49,7 @@ services:
       - MONGODB_URI=your_mongodb_uri
       - FANART_API=your_fanart_key
       - TMDB_API=your_tmdb_key
+      - RPDB_API_KEY=your_rpdb_key
       - HOST_NAME=http://your_domain:1337
     restart: unless-stopped
 ```
@@ -91,6 +93,7 @@ node addon/server.js
 | `MONGODB_URI` | MongoDB connection URI | Yes |
 | `FANART_API` | Fanart.tv API key | Yes |
 | `TMDB_API` | TMDB API key | Yes |
+| `RPDB_API_KEY` | RPDB API key | No |
 | `HOST_NAME` | Public URL of your addon (e.g., http://your_domain:1337) | Yes |
 | `PORT` | Server port (default: 1337) | No |
 
@@ -106,6 +109,11 @@ node addon/server.js
 1. Visit [Fanart.tv API](https://fanart.tv/get-an-api-key/)
 2. Register for an account
 3. Request a personal API key
+
+### RPDB API
+1. Visit [RPDB](https://ratingposterdb.com/)
+2. Register for an account
+3. Request an API key
 
 ### MongoDB
 1. Create an account on [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)

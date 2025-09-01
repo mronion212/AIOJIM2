@@ -12,6 +12,7 @@ const Utils = require('../utils/parseProps');
 const { resolveAllIds } = require('./id-resolver');
 const { cacheWrapTvdbApi } = require('./getCache');
 const { getTVDBContentRatingId } = require('../utils/tvdbContentRating');
+const { getImdbRating } = require('./getImdbRating');
 
 const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
@@ -126,6 +127,7 @@ async function getTvdbCatalog(type, catalogId, genreName, page, language, config
       name: item.name,
       description: item.overview,
       poster: posterProxyUrl,
+      logo: type === 'movie' ? await moviedb.getTmdbMovieLogo(allIds?.tmdbId, config) : await moviedb.getTmdbSeriesLogo(allIds?.tmdbId, config),
       year: item.year || null,
       runtime: Utils.parseRunTime(item.runtime),
       releaseInfo: item.year || null,
@@ -189,7 +191,14 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
   const res = await fetchFunction();
   const metas = await Promise.all(res.results.map(async item => {
     // Resolve IDs for each individual item
-    const allIds = await resolveAllIds(`tmdb:${item.id}`, type, config);
+    const artProvider = await Utils.resolveArtProvider(type, config);
+      // only resolve ids if art provider is not tmdb
+    let allIds;
+    if(artProvider !== 'tmdb') {
+      allIds = await resolveAllIds(`tmdb:${item.id}`, type, config);
+    }
+    const tmdbLogoUrl = type === 'movie' ? await moviedb.getTmdbMovieLogo(item.id, config) : await moviedb.getTmdbSeriesLogo(item.id, config);
+
 
     // Determine preferred meta provider
     let preferredProvider;
@@ -198,16 +207,7 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
     } else {
       preferredProvider = config.providers?.series || 'tvdb';
     }
-    let stremioId;
-    if (preferredProvider === 'tvdb' && allIds.tvdbId) {
-      stremioId = `tvdb:${allIds.tvdbId}`;
-    } else if (preferredProvider === 'tmdb' && allIds.tmdbId) {
-      stremioId = `tmdb:${allIds.tmdbId}`;
-    } else if (preferredProvider === 'imdb' && allIds.imdbId) {
-      stremioId = allIds.imdbId;
-    } else {
-      stremioId = `tmdb:${item.id}`; // fallback
-    }
+
 
     // Poster and background with art provider logic
     const tmdbPosterFullUrl = item.poster_path
@@ -216,52 +216,59 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
     const tmdbBackgroundFullUrl = item.backdrop_path
       ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` 
       : undefined;
-
-    let posterUrl, backgroundUrl;
-    if (type === 'movie') {
-      posterUrl = await Utils.getMoviePoster({
-        tmdbId: allIds.tmdbId,
-        tvdbId: allIds.tvdbId,
-        imdbId: allIds.imdbId,
-        metaProvider: preferredProvider,
-        fallbackPosterUrl: tmdbPosterFullUrl
-      }, config);
-      backgroundUrl = await Utils.getMovieBackground({
-        tmdbId: allIds.tmdbId,
-        tvdbId: allIds.tvdbId,
-        imdbId: allIds.imdbId,
-        metaProvider: preferredProvider,
-        fallbackBackgroundUrl: tmdbBackgroundFullUrl
-      }, config);
-    } else {
-      posterUrl = await Utils.getSeriesPoster({
-        tmdbId: allIds.tmdbId,
-        tvdbId: allIds.tvdbId,
-        imdbId: allIds.imdbId,
-        metaProvider: preferredProvider,
-        fallbackPosterUrl: tmdbPosterFullUrl
-      }, config);
-      backgroundUrl = await Utils.getSeriesBackground({
-        tmdbId: allIds.tmdbId,
-        tvdbId: allIds.tvdbId,
-        imdbId: allIds.imdbId,
-        metaProvider: preferredProvider,
-        fallbackBackgroundUrl: tmdbBackgroundFullUrl
-      }, config);
+    const itemDetails = type === 'movie' ? await moviedb.movieInfo({ id: item.id, append_to_response: "external_ids" }, config) : await moviedb.tvInfo({ id: item.id, append_to_response: "external_ids" }, config);
+    let posterUrl = tmdbPosterFullUrl;
+    let backgroundUrl = tmdbBackgroundFullUrl;
+    if(allIds) {
+      if (type === 'movie') {
+        posterUrl = await Utils.getMoviePoster({
+          tmdbId: allIds.tmdbId,
+          tvdbId: allIds.tvdbId,
+          imdbId: allIds.imdbId,
+          metaProvider: preferredProvider,
+          fallbackPosterUrl: tmdbPosterFullUrl
+        }, config);
+        backgroundUrl = await Utils.getMovieBackground({
+          tmdbId: allIds.tmdbId,
+          tvdbId: allIds.tvdbId,
+          imdbId: allIds.imdbId,
+          metaProvider: preferredProvider,
+          fallbackBackgroundUrl: tmdbBackgroundFullUrl
+        }, config);
+      } else {
+        posterUrl = await Utils.getSeriesPoster({
+          tmdbId: allIds.tmdbId,
+          tvdbId: allIds.tvdbId,
+          imdbId: allIds.imdbId,
+          metaProvider: preferredProvider,
+          fallbackPosterUrl: tmdbPosterFullUrl
+        }, config);
+        backgroundUrl = await Utils.getSeriesBackground({
+          tmdbId: allIds.tmdbId,
+          tvdbId: allIds.tvdbId,
+          imdbId: allIds.imdbId,
+          metaProvider: preferredProvider,
+            fallbackBackgroundUrl: tmdbBackgroundFullUrl
+          }, config);
+      }
     }
-    const posterProxyUrl = `${host}/poster/${type}/${stremioId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-    console.log(`[getCatalog] Stremio ID: ${stremioId}`);
+    const runtime = type === 'movie' ? itemDetails?.runtime || null : itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
+    const posterProxyUrl = `${host}/poster/${type}/${`tmdb:${item.id}`}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+    const imdbRating = await getImdbRating(itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId, type) || item.vote_average?.toFixed(1) || "N/A";
     return {
-      id: stremioId,
+      id: `tmdb:${item.id}`,
       type: type,
-      imdb_id: allIds.imdbId,
+      imdb_id: itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId,
+      logo: tmdbLogoUrl,
       releaseInfo: (item.release_date || item.first_air_date || '').substring(0, 4),
       name: item.title || item.name,
       poster: posterProxyUrl,
       year: (item.release_date || item.first_air_date || '').substring(0, 4),
       background: backgroundUrl,
       description: item.overview,
-      genres: item.genre_ids.map(g => genreList.find(genre => genre.id === g)?.name)
+      runtime: Utils.parseRunTime(runtime),
+      genres: item.genre_ids.map(g => genreList.find(genre => genre.id === g)?.name),
+      imdbRating: imdbRating,
     };
   }));
 

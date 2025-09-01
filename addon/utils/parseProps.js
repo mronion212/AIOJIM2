@@ -8,6 +8,7 @@ const imdb = require('../lib/imdb');
 const { resolveAllIds } = require('../lib/id-resolver');
 const idMapper = require('../lib/id-mapper');
 const { selectFanartImageByLang } = require('./fanart');
+const { getImdbRating } = require('../lib/getImdbRating');
 
 const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
@@ -113,14 +114,14 @@ function parseTrailers(videos) {
     if (!videos || !Array.isArray(videos.results)) return [];
     return videos.results
         .filter((el) => el.site === "YouTube" && el.type === "Trailer")
-        .map((el) => ({ source: el.key, type: el.type, name: el.name, ytId: el.key }));
+        .map((el) => ({ source: el.key, type: el.type, name: el.name, ytId: el.key, lang: el.iso_639_1 }));
 }
 
 function parseTrailerStream(videos) {
     if (!videos || !Array.isArray(videos.results)) return [];
     return videos.results
         .filter((el) => el.site === "YouTube" && el.type === "Trailer")
-        .map((el) => ({ title: el.name, ytId: el.key }));
+        .map((el) => ({ title: el.name, ytId: el.key, lang: el.iso_639_1 }));
 }
 
 function parseImdbLink(vote_average, imdb_id) {
@@ -860,7 +861,9 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
   }
   
   //const kitsuId = mapping?.kitsu_id;
-  //const imdbId = mapping?.imdb_id;
+  const imdbId = mapping?.imdb_id;
+  const tmdbId = mapping?.themoviedb_id;
+  const imdbRating = await getImdbRating(imdbId, stremioType);
   //const metaType = (kitsuId || imdbId) ? stremioType : 'anime';
   if (config.apiKeys?.rpdb) {
 
@@ -899,13 +902,15 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
   return {
     id:  `mal:${malId}`,
     type: stremioType,
+    logo: stremioType === 'movie' ? await tmdb.getTmdbMovieLogo(tmdbId, config) : await tmdb.getTmdbSeriesLogo(tmdbId, config),
     name: anime.title_english || anime.title,
     poster: finalPosterUrl,
     description: descriptionFallback || anime.synopsis,
     year: anime.year,
     imdb_id: mapping?.imdb_id,
     releaseInfo: anime.year,
-    runtime: parseRunTime(anime.runtime),
+    imdbRating: imdbRating,
+    runtime: parseRunTime(anime.duration),
     isAnime: true,
     trailers: trailers,
     trailerStreams: trailerStreams
@@ -922,7 +927,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
   const useAniList = artProvider === 'anilist';
   const useTvdb = artProvider === 'tvdb';
   const useTmdb = artProvider === 'tmdb';
-  console.log(`[parseAnimeCatalogMetaBatch] Art provider: ${artProvider}, useAniList: ${useAniList}, useTvdb: ${useTvdb}, useTmdb: ${useTmdb}`);
+  //console.log(`[parseAnimeCatalogMetaBatch] Art provider: ${artProvider}, useAniList: ${useAniList}, useTvdb: ${useTvdb}, useTmdb: ${useTmdb}`);
   
   // Extract MAL IDs and try to get AniList IDs from mappings
   const malIds = animes.map(anime => anime.mal_id).filter(id => id && typeof id === 'number' && id > 0);
@@ -930,8 +935,8 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
   
   if (useAniList && malIds.length > 0) {
     try {
-      console.log(`[parseAnimeCatalogMetaBatch] Fetching AniList artwork for ${malIds.length} anime in batch`);
-      console.log(`[parseAnimeCatalogMetaBatch] MAL IDs: ${malIds.slice(0, 10).join(', ')}${malIds.length > 10 ? '...' : ''}`);
+      //console.log(`[parseAnimeCatalogMetaBatch] Fetching AniList artwork for ${malIds.length} anime in batch`);
+      //console.log(`[parseAnimeCatalogMetaBatch] MAL IDs: ${malIds.slice(0, 10).join(', ')}${malIds.length > 10 ? '...' : ''}`);
       
       // First, try to get AniList IDs from mappings
       const malToAnilistMap = new Map();
@@ -948,20 +953,20 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
         }
       });
       
-      console.log(`[parseAnimeCatalogMetaBatch] Found ${anilistIds.length} AniList IDs, ${malIdsWithoutAnilist.length} MAL IDs without AniList mapping`);
+      //console.log(`[parseAnimeCatalogMetaBatch] Found ${anilistIds.length} AniList IDs, ${malIdsWithoutAnilist.length} MAL IDs without AniList mapping`);
       
       let anilistArtwork = [];
       
       // Batch fetch using AniList IDs if we have them
       if (anilistIds.length > 0) {
-        console.log(`[parseAnimeCatalogMetaBatch] Fetching via AniList IDs: ${anilistIds.slice(0, 10).join(', ')}${anilistIds.length > 10 ? '...' : ''}`);
+        //console.log(`[parseAnimeCatalogMetaBatch] Fetching via AniList IDs: ${anilistIds.slice(0, 10).join(', ')}${anilistIds.length > 10 ? '...' : ''}`);
         const anilistResults = await anilist.getBatchAnimeArtworkByAnilistIds(anilistIds);
         anilistArtwork.push(...anilistResults);
       }
       
       // Fallback to MAL IDs for those without AniList mappings
       if (malIdsWithoutAnilist.length > 0) {
-        console.log(`[parseAnimeCatalogMetaBatch] Fallback to MAL IDs: ${malIdsWithoutAnilist.slice(0, 10).join(', ')}${malIdsWithoutAnilist.length > 10 ? '...' : ''}`);
+        //console.log(`[parseAnimeCatalogMetaBatch] Fallback to MAL IDs: ${malIdsWithoutAnilist.slice(0, 10).join(', ')}${malIdsWithoutAnilist.length > 10 ? '...' : ''}`);
         const malResults = await anilist.getBatchAnimeArtwork(malIdsWithoutAnilist, config);
         anilistArtwork.push(...malResults);
       }
@@ -970,13 +975,13 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
       anilistArtworkMap = new Map(
         anilistArtwork.map(artwork => [artwork.idMal, artwork])
       );
-      console.log(`[parseAnimeCatalogMetaBatch] Successfully fetched ${anilistArtwork.length} AniList artworks`);
-      console.log(`[parseAnimeCatalogMetaBatch] AniList map keys: ${Array.from(anilistArtworkMap.keys()).slice(0, 5).join(', ')}...`);
-      console.log(`[parseAnimeCatalogMetaBatch] Sample AniList data:`, anilistArtwork[0] ? {
+      //console.log(`[parseAnimeCatalogMetaBatch] Successfully fetched ${anilistArtwork.length} AniList artworks`);
+      //console.log(`[parseAnimeCatalogMetaBatch] AniList map keys: ${Array.from(anilistArtworkMap.keys()).slice(0, 5).join(', ')}...`);
+      /*console.log(`[parseAnimeCatalogMetaBatch] Sample AniList data:`, anilistArtwork[0] ? {
         malId: anilistArtwork[0].idMal,
         id: anilistArtwork[0].id,
         title: anilistArtwork[0].title?.english || anilistArtwork[0].title?.romaji
-      } : 'No data');
+      } : 'No data');*/
     } catch (error) {
       console.warn(`[parseAnimeCatalogMetaBatch] AniList batch fetch failed:`, error.message);
     }
@@ -1014,13 +1019,13 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
       const anilistData = anilistArtworkMap.get(malId);
       const anilistPoster = anilist.getPosterUrl(anilistData);
       if (anilistPoster) {
-        console.log(`[parseAnimeCatalogMetaBatch] Using AniList poster for MAL ID: ${malId}`);
+        //console.log(`[parseAnimeCatalogMetaBatch] Using AniList poster for MAL ID: ${malId}`);
         finalPosterUrl = anilistPoster;
       } else {
-        console.log(`[parseAnimeCatalogMetaBatch] AniList data found but no poster URL for MAL ID: ${malId}`);
+        //console.log(`[parseAnimeCatalogMetaBatch] AniList data found but no poster URL for MAL ID: ${malId}`);
       }
     } else if (useAniList) {
-      console.log(`[parseAnimeCatalogMetaBatch] No AniList data found for MAL ID: ${malId}`);
+      //console.log(`[parseAnimeCatalogMetaBatch] No AniList data found for MAL ID: ${malId}`);
     }
     
     // Check for TVDB poster if configured as art provider
@@ -1032,7 +1037,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
           : await tvdb.getSeriesPoster(mapping.thetvdb_id, config);
         
         if (tvdbPoster) {
-          console.log(`[parseAnimeCatalogMetaBatch] Using TVDB poster for MAL ID: ${malId} (TVDB ID: ${mapping.thetvdb_id}, Type: ${stremioType})`);
+          //console.log(`[parseAnimeCatalogMetaBatch] Using TVDB poster for MAL ID: ${malId} (TVDB ID: ${mapping.thetvdb_id}, Type: ${stremioType})`);
           finalPosterUrl = tvdbPoster;
         }
       } catch (error) {
@@ -1049,7 +1054,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
           : await tmdb.getTmdbSeriesPoster(mapping.themoviedb_id, config);
         
         if (tmdbPoster) {
-          console.log(`[parseAnimeCatalogMetaBatch] Using TMDB poster for MAL ID: ${malId} (TMDB ID: ${mapping.themoviedb_id}, Type: ${stremioType})`);
+          //console.log(`[parseAnimeCatalogMetaBatch] Using TMDB poster for MAL ID: ${malId} (TMDB ID: ${mapping.themoviedb_id}, Type: ${stremioType})`);
           finalPosterUrl = tmdbPoster;
         }
       } catch (error) {
@@ -1075,7 +1080,9 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
         }
       }
     }
-
+    const imdbId = mapping?.imdb_id;
+    const tmdbId = mapping?.themoviedb_id;
+    const imdbRating = await getImdbRating(imdbId, stremioType);
     const trailerStreams = [];
     if (anime.trailer?.youtube_id) {
       trailerStreams.push({
@@ -1095,13 +1102,15 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
     return {
       id:  `mal:${malId}`,
       type: stremioType,
+      logo: stremioType === 'movie' ? await tmdb.getTmdbMovieLogo(tmdbId, config) : await tmdb.getTmdbSeriesLogo(tmdbId, config),
       name: anime.title_english || anime.title,
       poster: finalPosterUrl,
       description: anime.synopsis,
       year: anime.year,
       imdb_id: mapping?.imdb_id,
       releaseInfo: anime.year,
-      runtime: anime.runtime,
+      runtime: parseRunTime(anime.duration),
+      imdbRating: imdbRating,
       trailers: trailers,
       trailerStreams: trailerStreams
       };
@@ -1235,7 +1244,7 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
           return img?.file_path;
         });
         console.log(`[getMoviePoster] Found TMDB poster for movie (TMDB ID: ${tmdbId})`);
-        return `https://image.tmdb.org/t/p/w500${tmdbPoster}`;
+        return `https://image.tmdb.org/t/p/w600_and_h900_bestv2${tmdbPoster}`;
       }
       else {
         if(!tvdbId) return fallbackPosterUrl;
@@ -1631,7 +1640,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const tmdbBackground = await tmdb.tvImages({ id: tmdbId }, config).then(res => {
+        const tmdbBackground = await tmdb.tvImages({ id: tmdbId, include_image_language: null }, config).then(res => {
           const img = selectTmdbImageByLang(res.backdrops, config);
           return img?.file_path;
         });
@@ -1641,7 +1650,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
       else {
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config);
         if(mappedIds.tmdbId) {
-          const tmdbBackground = await tmdb.tvImages({ id: mappedIds.tmdbId }, config).then(res => {
+          const tmdbBackground = await tmdb.tvImages({ id: mappedIds.tmdbId, include_image_language: null }, config).then(res => {
             const img = selectTmdbImageByLang(res.backdrops, config);
             return img?.file_path;
           });
@@ -1700,7 +1709,7 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
         const images = await fanart.getShowImages(tvdbId, config);
         const logo = selectFanartImageByLang(images?.hdtvlogo, config);
         if (logo) {
-          console.log(`[getSeriesLogo] Found Fanart.tv logo for series (TVDB ID: ${tvdbId}, lang: ${logo.lang})`);
+          //console.log(`[getSeriesLogo] Found Fanart.tv logo for series (TVDB ID: ${tvdbId}, lang: ${logo.lang})`);
           return logo.url;
         }
       }
@@ -1711,7 +1720,7 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
           const images = await fanart.getShowImages(mappedIds.tvdbId, config);
           const logo = selectFanartImageByLang(images?.hdtvlogo, config);
           if (logo) {
-            console.log(`[getSeriesLogo] Found Fanart.tv logo for series (TVDB ID: ${tvdbId}, lang: ${logo.lang})`);
+            //console.log(`[getSeriesLogo] Found Fanart.tv logo for series (TVDB ID: ${tvdbId}, lang: ${logo.lang})`);
             return logo.url;
           }
         }
@@ -1936,5 +1945,6 @@ module.exports = {
   processBackgroundImage,
   convertAnilistBannerToBackground,
   getTmdbMovieCertificationForCountry,
-  getTmdbTvCertificationForCountry
+  getTmdbTvCertificationForCountry,
+  resolveArtProvider
 };

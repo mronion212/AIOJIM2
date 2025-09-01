@@ -387,16 +387,18 @@ async function getManifest(config) {
   const isSearchEnabled = config.search?.enabled ?? true;
   const engineEnabled = config.search?.engineEnabled || {};
   const searchProviders = config.search?.providers || {};
+  const movieSearchProviderName = searchProviders.movie.split('.')[0].toUpperCase();
+  const seriesSearchProviderName = searchProviders.series.split('.')[0].toUpperCase();
 
   if (isSearchEnabled) {
     const prefix = showPrefix ? "AIOMetadata - " : "";
     // Movie Search
     if (engineEnabled[searchProviders.movie] !== false) {
-      catalogs.push({ id: 'search', type: 'movie', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
+      catalogs.push({ id: 'search', type: 'movie', name: `${prefix} ${movieSearchProviderName} Search`, extra: [{ name: 'search', isRequired: true }] });
     }
     // Series Search
     if (engineEnabled[searchProviders.series] !== false) {
-      catalogs.push({ id: 'search', type: 'series', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
+      catalogs.push({ id: 'search', type: 'series', name: `${prefix} ${seriesSearchProviderName} Search`, extra: [{ name: 'search', isRequired: true }] });
     }
     // Anime Series Search
     if (engineEnabled[searchProviders.anime_series] !== false) {

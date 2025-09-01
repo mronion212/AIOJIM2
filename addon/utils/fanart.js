@@ -251,7 +251,7 @@ function selectFanartImageByLang(images, config, key = 'lang') {
   let filtered = images.filter(img => img[key] === userLang);
   if (filtered.length === 0) filtered = images.filter(img => img[key] === 'en');
   if (filtered.length === 0) filtered = images;
-  console.log(`[selectFanartImageByLang] Filtered images: ${JSON.stringify(filtered)}`);
+  //console.log(`[selectFanartImageByLang] Filtered images: ${JSON.stringify(filtered)}`);
   // Sort by likes descending (as int)
   filtered.sort((a, b) => parseInt(b.likes || '0') - parseInt(a.likes || '0'));
   return filtered[0];

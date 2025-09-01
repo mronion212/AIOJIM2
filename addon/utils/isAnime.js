@@ -35,7 +35,7 @@ function isAnime(mediaObject, genreList = []) {
   const originalLanguage = mediaObject.original_language || mediaObject.originalLanguage;
   const originalCountry = mediaObject.originalCountry; 
   
-  if (originalLanguage === 'ja' || originalCountry === 'jp' || originalCountry === 'jpn') {
+  if ((originalLanguage === 'ja' || originalCountry === 'jp' || originalCountry === 'jpn') && (hasAnimeGenre || hasAnimationGenre)) {
     return true;
   }
 

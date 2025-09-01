@@ -63,8 +63,8 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
   const queryForUrl = {};
 
   for (const key in params) {
-    if (params[key] !== undefined && params[key] !== null) {
-      queryForUrl[key] = String(params[key]);
+    if (params[key] !== undefined) {
+      queryForUrl[key] = params[key] === null ? null : String(params[key]);
     }
   }
   

@@ -55,7 +55,30 @@ async function getMetaFromImdb(imdbId, type, stremioId) {
       return undefined;
     }
   }
+
+  async function getMetaFromImdbIo(imdbId, type, stremioId) {
+    if (!imdbId) {
+      return undefined;
+    }
   
+    const url = `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`;
+    try {
+        const response = await imdbAxiosInstance.get(url);
+      const meta = response.data?.meta;
+        if (meta) {
+      meta.id = stremioId;
+      return meta;
+        }
+        return undefined;
+    } catch (error) {
+        console.warn(
+            `Could not fetch meta for ${imdbId} from Cinemeta for type ${type}. Error: ${error.message}`
+        );
+      return undefined;
+    }
+  }
+  
+
 async function fetchHtml(url, headers = {}) {
     console.log(`[imdb-scraper] Connecting to: ${url}`);
     try {
@@ -412,5 +435,6 @@ async function scrapeSingleImdbResultByTitle(title, type) {
 
 module.exports = {
     getMetaFromImdb,
-    scrapeSingleImdbResultByTitle
+    scrapeSingleImdbResultByTitle,
+    getMetaFromImdbIo
 };
