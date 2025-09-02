@@ -584,8 +584,14 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, malPosterUrl, mediaType = 'se
       if (mapping && mapping.themoviedb_id) {
         // Use TMDB background for anime
         const tmdbBackground = mediaType === 'movie' 
-          ? await tmdb.getTmdbMovieBackground(mapping.themoviedb_id, config)
-          : await tmdb.getTmdbSeriesBackground(mapping.themoviedb_id, config);
+          ? await tmdb.movieImages({ id: mapping.themoviedb_id, include_image_language: null }, config).then(res => {
+            const img = res.backdrops[0];
+            return img?.file_path;
+          })
+          : await tmdb.tvImages({ id: mapping.themoviedb_id, include_image_language: null }, config).then(res => {
+            const img = res.backdrops[0];
+            return img?.file_path;
+          });
         
         if (tmdbBackground) {
           console.log(`[getAnimeBg] Found TMDB background for MAL ID: ${malId} (TMDB ID: ${mapping.themoviedb_id}, Type: ${mediaType})`);
@@ -598,11 +604,30 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, malPosterUrl, mediaType = 'se
   }
   
   if (config.apiKeys.fanart) {
+    console.log(`[getAnimeBg] Fetching background from Fanart.tv for ${mediaType}`);
     let fanartUrl = null;
-    if (mediaType === 'series' && tvdbId) {
-      fanartUrl = await fanart.getBestSeriesBackground(tvdbId, config);
-    } else if (mediaType === 'movie' && tmdbId) {
-      fanartUrl = await fanart.getBestMovieBackground(tmdbId, config);
+    if (mediaType === 'series') {
+      if (tvdbId) {
+        console.log(`[getAnimeBg] Found TVDB ID for MAL ID: ${malId} (TVDB ID: ${tvdbId})`);
+        fanartUrl = await fanart.getBestSeriesBackground(tvdbId, config);
+      } else {
+        console.log(`[getAnimeBg] No TVDB ID found for MAL ID: ${malId}`);
+        const mapping = idMapper.getMappingByMalId(malId);
+        console.log(`[getAnimeBg] Mapping for MAL ID: ${malId}:`, mapping);
+        if (mapping && mapping.thetvdb_id) {
+          console.log(`[getAnimeBg] Found TVDB ID for MAL ID: ${malId} (TVDB ID: ${mapping.thetvdb_id})`);
+          fanartUrl = await fanart.getBestSeriesBackground(mapping.thetvdb_id, config);
+        }
+      }
+    } else if (mediaType === 'movie') {
+      if (tmdbId) {
+        fanartUrl = await fanart.getBestMovieBackground(tmdbId, config);
+      } else {
+        const mapping = idMapper.getMappingByMalId(malId);
+        if (mapping && mapping.themoviedb_id) {
+          fanartUrl = await fanart.getBestMovieBackground(mapping.themoviedb_id, config);
+        }
+      }
     }
 
     if (fanartUrl) {
@@ -1343,8 +1368,8 @@ async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallba
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const tmdbBackground = await tmdb.movieImages({ id: tmdbId }, config).then(res => {
-          const img = selectTmdbImageByLang(res.backdrops, config);
+        const tmdbBackground = await tmdb.movieImages({ id: tmdbId, include_image_language: null }, config).then(res => {
+          const img = res.backdrops[0];
           return img?.file_path;
         });
         console.log(`[getMovieBackground] Found TMDB background for movie (TMDB ID: ${tmdbId})`);
@@ -1354,8 +1379,8 @@ async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallba
         if(!tvdbId) return fallbackBackgroundUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
         if(mappedIds.tmdbId) {
-          const tmdbBackground = await tmdb.movieImages({ id: mappedIds.tmdbId }, config).then(res => {
-            const img = selectTmdbImageByLang(res.backdrops, config);
+          const tmdbBackground = await tmdb.movieImages({ id: mappedIds.tmdbId, include_image_language: null }, config).then(res => {
+            const img = res.backdrops[0];
             return img?.file_path;
           });
           console.log(`[getMovieBackground] Found TMDB background via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
@@ -1641,7 +1666,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
     try {
       if(tmdbId) {
         const tmdbBackground = await tmdb.tvImages({ id: tmdbId, include_image_language: null }, config).then(res => {
-          const img = selectTmdbImageByLang(res.backdrops, config);
+          const img = res.backdrops[0];
           return img?.file_path;
         });
         console.log(`[getSeriesBackground] Found TMDB background for series (TMDB ID: ${tmdbId})`);
@@ -1651,7 +1676,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config);
         if(mappedIds.tmdbId) {
           const tmdbBackground = await tmdb.tvImages({ id: mappedIds.tmdbId, include_image_language: null }, config).then(res => {
-            const img = selectTmdbImageByLang(res.backdrops, config);
+            const img = res.backdrops[0];
             return img?.file_path;
           });
           console.log(`[getSeriesBackground] Found TMDB background via ID mapping for series (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);

@@ -503,7 +503,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
     
     
     // Fetch artwork (cacheWrapMetaSmart will handle caching)
-    const artwork = await getAnimeArtwork(allIds, config, details.images?.jpg?.large_image_url, details.images?.jpg?.large_image_url, 'anime');
+    const artwork = await getAnimeArtwork(allIds, config, details.images?.jpg?.large_image_url, details.images?.jpg?.large_image_url, type);
     const { background, poster, logo } = artwork;
     
     
@@ -988,7 +988,6 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     released: seriesData.first_air_date ? new Date(seriesData.first_air_date).toISOString() : null,
     runtime: runtime ? `${runtime}min` : null,
     status: seriesData.status,
-    seasonPosters: tmdbSeasonPosters,
     imdbRating,
     poster: config.apiKeys?.rpdb ? posterProxyUrl : poster,
     background: background,
@@ -1000,7 +999,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
       defaultVideoId: null,
       hasScheduledVideos: true,
     },
-    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails }
+    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, seasonPosters: tmdbSeasonPosters }
   };
 }
 
@@ -1383,11 +1382,10 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     logo: logoUrl,
     videos: videos,
     trailers: trailers,
-    seasonPosters: seasonPosters,
     trailerStreams: trailerStreams,
     links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tvdbCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks],
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-    app_extras: { cast: Utils.parseCast(tvdbCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails }
+    app_extras: { cast: Utils.parseCast(tvdbCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, seasonPosters: seasonPosters }
   };
   //console.log(Utils.parseCast(tmdbLikeCredits, castCount));
   return meta;
@@ -1506,7 +1504,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
     let videos = [];
     const seriesId = `mal:${malData.mal_id}`;
     const idProvider = config.providers?.anime_id_provider || 'kitsu';
-    let primaryId = seriesId; 
+
     if (idProvider === 'kitsu' && kitsuId) {
       primaryId = `kitsu:${kitsuId}`;
     }
