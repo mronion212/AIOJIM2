@@ -586,11 +586,11 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, malPosterUrl, mediaType = 'se
         const tmdbBackground = mediaType === 'movie' 
           ? await tmdb.movieImages({ id: mapping.themoviedb_id, include_image_language: null }, config).then(res => {
             const img = res.backdrops[0];
-            return img?.file_path;
+            return img?.file_path ? `https://image.tmdb.org/t/p/original${img?.file_path}` : null;
           })
           : await tmdb.tvImages({ id: mapping.themoviedb_id, include_image_language: null }, config).then(res => {
             const img = res.backdrops[0];
-            return img?.file_path;
+            return img?.file_path ? `https://image.tmdb.org/t/p/original${img?.file_path}` : null;
           });
         
         if (tmdbBackground) {
