@@ -46,14 +46,34 @@ async function getAuthToken(apiKey) {
 async function searchSeries(query, config) {
   const token = await getAuthToken(config.apiKeys?.tvdb);
   if (!token) return [];
+  
+  const startTime = Date.now();
   try {
     const response = await fetch(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=series`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
-    if (!response.ok) return [];
+    
+    const responseTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return [];
+    }
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
     const data = await response.json();
     return data.data || [];
   } catch (error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
     console.error(`Error searching TVDB for series "${query}":`, error.message);
     return [];
   }
@@ -62,15 +82,35 @@ async function searchSeries(query, config) {
 async function searchMovies(query, config) {
   const token = await getAuthToken(config.apiKeys?.tvdb);
   if (!token) return [];
+  
+  const startTime = Date.now();
   try {
     const response = await fetch(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=movie`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
-    if (!response.ok) return [];
+    
+    const responseTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return [];
+    }
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
     const data = await response.json();
     return data.data || [];
   } catch (error) {
-    console.error(`Error searching TVDB for series "${query}":`, error.message);
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
+    console.error(`Error searching TVDB for movies "${query}":`, error.message);
     return [];
   }
 }
@@ -78,14 +118,34 @@ async function searchMovies(query, config) {
 async function searchPeople(query, config) {
   const token = await getAuthToken(config.apiKeys?.tvdb);
   if (!token) return [];
+  
+  const startTime = Date.now();
   try {
     const response = await fetch(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=person`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
-    if (!response.ok) return [];
+    
+    const responseTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return [];
+    }
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
     const data = await response.json();
     return data.data || [];
   } catch (error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
     console.error(`Error searching TVDB for person "${query}":`, error.message);
     return [];
   }
@@ -97,12 +157,31 @@ async function getSeriesExtended(tvdbId, config) {
     if (!token) return null;
 
     const url = `${TVDB_API_URL}/series/${tvdbId}/extended?meta=translations`;
+    const startTime = Date.now();
+    
     try {
       const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-      if (!response.ok) return null;
+      const responseTime = Date.now() - startTime;
+      
+      if (!response.ok) {
+        // Track failed request
+        const requestTracker = require('./requestTracker');
+        requestTracker.trackProviderCall('tvdb', responseTime, false);
+        return null;
+      }
+      
+      // Track successful request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, true);
+      
       const data = await response.json();
       return data.data;
     } catch(error) {
+      // Track failed request
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      
       console.error(`Error fetching extended series data for TVDB ID ${tvdbId}:`, error.message);
       return null; 
     }
@@ -115,13 +194,32 @@ async function getMovieExtended(tvdbId, config) {
     if (!token) return null;
 
     const url = `${TVDB_API_URL}/movies/${tvdbId}/extended?meta=translations`;
+    const startTime = Date.now();
+    
     try {
       const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-      if (!response.ok) return null;
+      const responseTime = Date.now() - startTime;
+      
+      if (!response.ok) {
+        // Track failed request
+        const requestTracker = require('./requestTracker');
+        requestTracker.trackProviderCall('tvdb', responseTime, false);
+        return null;
+      }
+      
+      // Track successful request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, true);
+      
       const data = await response.json();
       return data.data;
     } catch(error) {
-      console.error(`Error fetching extended series data for TVDB ID ${tvdbId}:`, error.message);
+      // Track failed request
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      
+      console.error(`Error fetching extended movie data for TVDB ID ${tvdbId}:`, error.message);
       return null; 
     }
   });
@@ -142,21 +240,37 @@ async function getSeasonExtended(seasonId, config) {
     if (!token) return null;
 
     const url = `${TVDB_API_URL}/seasons/${seasonId}/extended`;
+    const startTime = Date.now();
     
     try {
       const response = await fetch(url, { 
         headers: { 'Authorization': `Bearer ${token}` } 
       });
       
+      const responseTime = Date.now() - startTime;
+      
       if (!response.ok) {
+        // Track failed request
+        const requestTracker = require('./requestTracker');
+        requestTracker.trackProviderCall('tvdb', responseTime, false);
+        
         console.warn(`[TVDB Client] Request for season ${seasonId} failed with status: ${response.status}`);
         return null;
       }
+      
+      // Track successful request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, true);
       
       const data = await response.json();
       return data.data;
 
     } catch(error) {
+      // Track failed request
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      
       console.error(`Error fetching extended season data for TVDB Season ID ${seasonId}:`, error.message);
       return null; 
     }
@@ -170,20 +284,30 @@ async function getAllGenres(config) {
     return [];
   }
   
+  const startTime = Date.now();
   try {
     console.log(`[TVDB] Fetching genres from: ${TVDB_API_URL}/genres`);
     const response = await fetch(`${TVDB_API_URL}/genres`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     
+    const responseTime = Date.now() - startTime;
     console.log(`[TVDB] Genres response status: ${response.status}`);
     
     if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      
       console.error(`[TVDB] Genres request failed with status: ${response.status}`);
       const errorText = await response.text();
       console.error(`[TVDB] Genres error response:`, errorText);
       return [];
     }
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
     
     const data = await response.json();
     console.log(`[TVDB] Genres response data structure:`, Object.keys(data));
@@ -195,6 +319,11 @@ async function getAllGenres(config) {
     
     return data.data || [];
   } catch (error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
     console.error(`[TVDB] Error fetching genres:`, error.message);
     return [];
   }
@@ -204,11 +333,24 @@ async function findByImdbId(imdbId, config) {
   const token = await getAuthToken(config.apiKeys?.tvdb);
   if (!token || !imdbId) return null;
 
+  const startTime = Date.now();
   try {
     const response = await fetch(`${TVDB_API_URL}/search/remoteid/${imdbId}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    if (!response.ok) return null;
+    
+    const responseTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return null;
+    }
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
     
     const data = await response.json();
     const match = data.data?.[0]; 
@@ -218,6 +360,11 @@ async function findByImdbId(imdbId, config) {
     }
     return null;
   } catch (error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
     console.error(`[TVDB] Error in findByImdbId for ${imdbId}:`, error.message);
     return null;
   }
@@ -226,12 +373,32 @@ async function findByImdbId(imdbId, config) {
 async function findByTmdbId(tmdbId, config) {
   const token = await getAuthToken(config.apiKeys?.tvdb);
   if (!token) return null;
+  
+  const startTime = Date.now();
   try {
     const response = await fetch(`${TVDB_API_URL}/search/remoteid/${tmdbId}`, { headers: { 'Authorization': `Bearer ${token}` } });
-    if (!response.ok) return null;
+    
+    const responseTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return null;
+    }
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
     const data = await response.json();
     return data.data;
   } catch (error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
     console.warn(`[TVDB] Error in findByTmdbId for ${tmdbId}:`, error.message);
     return null;
   }
@@ -240,14 +407,34 @@ async function findByTmdbId(tmdbId, config) {
 async function getPersonExtended(personId, config) {
   const token = await getAuthToken(config.apiKeys?.tvdb);
   if (!token) return null;
+  
+  const startTime = Date.now();
   try {
     const response = await fetch(`${TVDB_API_URL}/people/${personId}/extended`, {
         headers: { 'Authorization': `Bearer ${token}` }
     });
-    if (!response.ok) return null;
+    
+    const responseTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return null;
+    }
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
     const data = await response.json();
     return data.data;
   } catch(error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
     console.error(`Error fetching extended person data for Person ID ${personId}:`, error.message);
     return null;
   }

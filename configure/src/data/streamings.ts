@@ -21,30 +21,33 @@ export const streamingServices = [
     { id: "sst", name: "SkyShowtime", icon: "/skyshowtime.webp" },
     { id: "blv", name: "BluTV", icon: "/blu.webp" },
     { id: "cpd", name: "Canal+", icon: "/canal-plus.webp" },
-    { id: "dpe", name: "Discovery+", icon: "/discovery-plus.webp" }
+    { id: "dpe", name: "Discovery+", icon: "/discovery-plus.webp" },
+    { id: "bet", name: "Bet+", icon: "https://image.tmdb.org/t/p/original/2AvUqoIHAq2lLxRy2IxOBUgCYef.jpg" },
+    { id: "mub", name: "MUBI", icon: "https://image.tmdb.org/t/p/original/fj9Y8iIMFUC6952HwxbGixTQPb7.jpg" },
+    { id: "sta", name: "Starz", icon: "https://image.tmdb.org/t/p/original/yIKwylTLP1u8gl84Is7FItpYLGL.jpg" }
   ];
   
   export const regions = {
     'United States': [
-      'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'cru', 'pmp', 'mgl', 'cts', 'hlu', 'pcp', 'dpe'
+      'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'cru', 'pmp', 'mgl', 'cts', 'hlu', 'pcp', 'dpe', 'bet', 'mub', 'sta'
     ],
     'Brazil': [
-      'nfx', 'nfk', 'dnp', 'atp', 'amp', 'pmp', 'hbm', 'cru', 'clv', 'gop', 'mgl', 'cts'
+      'nfx', 'nfk', 'dnp', 'atp', 'amp', 'pmp', 'hbm', 'cru', 'clv', 'gop', 'mgl', 'cts', 'mub'
     ],
     'India': [
-      'hay', 'nfx', 'nfk', 'atp', 'amp', 'cru', 'zee', 'hst', 'mgl', 'cts', 'dpe'
+      'hay', 'nfx', 'nfk', 'atp', 'amp', 'cru', 'zee', 'hst', 'mgl', 'cts', 'dpe', 'mub'
     ],
     'Turkey': [
-      'nfx', 'nfk', 'dnp', 'atp', 'amp', 'cru', 'blv', 'mgl', 'cts'
+      'nfx', 'nfk', 'dnp', 'atp', 'amp', 'cru', 'blv', 'mgl', 'cts', 'mub'
     ],
     'Netherlands': [
-      'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'cru', 'hay', 'vil', 'sst', 'mgl', 'cts', 'nlz', 'dpe'
+      'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'cru', 'hay', 'vil', 'sst', 'mgl', 'cts', 'nlz', 'dpe', 'mub'
     ],
     'France': [
-      'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'hay', 'cpd'
+      'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'hay', 'cpd', 'mub'
     ],
     'Any': [
-      'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'pmp', 'hlu', 'pcp', 'clv', 'gop', 'blv',
+      'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'pmp', 'hlu', 'pcp', 'clv', 'gop', 'blv', 'bet', 'mub', 'sta',
       'zee', 'hst', 'hay', 'vil', 'sst', 'mgl', 'cts', 'cru', 'nlz', 'cpd', 'dpe'
     ]
   };

@@ -18,6 +18,9 @@ async function warmEssentialContent() {
   try {
     console.log('[Cache Warming] Warming essential content...');
     
+    // Record start time for maintenance tracking
+    const startTime = Date.now();
+    
     // Warm TMDB genres
     await getGenreList('tmdb', 'en-US', 'movie', {});
     await getGenreList('tmdb', 'en-US', 'series', {});
@@ -33,7 +36,19 @@ async function warmEssentialContent() {
     // Warm MAL studios
     await cacheWrapJikanApi('mal-studios', async () => {
       return await mal.getStudios(100);
-    }, 30 * 24 * 60 * 60); // Cache for 30 days
+    }, 30 * 24 * 60 * 1000); // Cache for 30 days
+    
+    // Record completion for maintenance tracking
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+    
+    try {
+      const redis = require('./redisClient');
+      await redis.setex('maintenance:last_cache_warming', 86400 * 7, startTime.toString());
+      console.log(`[Cache Warming] Maintenance task tracked: cache warming completed in ${duration}ms`);
+    } catch (trackingError) {
+      console.warn('[Cache Warming] Failed to track maintenance task:', trackingError.message);
+    }
     
     initialWarmingComplete = true;
     console.log('[Cache Warming] Essential content warming completed');
@@ -82,9 +97,19 @@ function scheduleEssentialWarming(intervalMinutes = 30) {
   
   // Schedule recurring warming (initial warming is done separately)
   const intervalMs = intervalMinutes * 60 * 1000;
-  setInterval(() => {
+  setInterval(async () => {
     console.log('[Cache Warming] Running scheduled essential warming...');
-    warmEssentialContent();
+    
+    // Track scheduled maintenance task
+    try {
+      const redis = require('./redisClient');
+      await redis.setex('maintenance:last_cache_warming', 86400 * 7, Date.now().toString());
+      console.log('[Cache Warming] Scheduled maintenance task tracked');
+    } catch (trackingError) {
+      console.warn('[Cache Warming] Failed to track scheduled maintenance:', trackingError.message);
+    }
+    
+    await warmEssentialContent();
   }, intervalMs);
 }
 

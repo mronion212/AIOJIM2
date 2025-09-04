@@ -13,6 +13,7 @@ const { getMeta } = require("./lib/getMeta");
 const { cacheWrap, cacheWrapMeta, cacheWrapMetaSmart, cacheWrapCatalog, cacheWrapSearch, cacheWrapJikanApi, cacheWrapStaticCatalog, cacheWrapGlobal, getCacheHealth, clearCacheHealth, logCacheHealth } = require("./lib/getCache");
 const redis = require("./lib/redisClient");
 const { warmEssentialContent, warmRelatedContent, scheduleEssentialWarming } = require("./lib/cacheWarmer");
+const requestTracker = require("./lib/requestTracker");
 
 // Warm user-specific content based on their config
 async function warmUserContent(userUUID, contentType) {
@@ -58,6 +59,9 @@ const sharp = require('sharp');
 // Parse JSON and URL-encoded bodies for API routes
 addon.use(express.json({ limit: '2mb' }));
 addon.use(express.urlencoded({ extended: true }));
+
+// Add request tracking middleware
+addon.use(requestTracker.middleware());
 
 
 const NO_CACHE = process.env.NO_CACHE === 'true';
@@ -110,6 +114,11 @@ const respond = function (req, res, data, opts) {
     const configString = req.userConfig ? JSON.stringify(req.userConfig) : '';
     const configHash = crypto.createHash('md5').update(configString).digest('hex').substring(0, 8);
     let etagContent = ADDON_VERSION + JSON.stringify(data) + userUUID + configHash;
+    
+    // Force ETag to change when language changes
+    if (req.userConfig && req.userConfig.language) {
+        etagContent += ':lang:' + req.userConfig.language;
+    }
     
     // Add route-specific cache invalidation factors
     if (req.route && req.route.path) {
@@ -435,6 +444,31 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
         // Pass config to request object for ETag generation
         req.userConfig = config;
         
+        // Add configVersion to manifest for cache busting when language changes
+        if (config.configVersion) {
+            manifest.configVersion = config.configVersion;
+        }
+        
+        // Add language to manifest for additional cache busting
+        manifest.language = config.language || DEFAULT_LANGUAGE;
+        
+        // Add aggressive cache-busting headers specifically for manifest
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0, s-maxage=0');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        res.setHeader('X-Manifest-Language', config.language || DEFAULT_LANGUAGE);
+        res.setHeader('X-Manifest-Version', config.configVersion ? config.configVersion.toString() : Date.now().toString());
+        
+        // Add a comment in the manifest to help with debugging
+        manifest._debug = {
+            language: config.language || DEFAULT_LANGUAGE,
+            configVersion: config.configVersion || Date.now(),
+            timestamp: new Date().toISOString()
+        };
+        
+        // Add a timestamp to force cache invalidation
+        manifest._timestamp = Date.now();
+        
         // Use shorter cache time and add cache-busting for catalog changes
         const cacheOpts = { 
             cacheMaxAge: 0, // No cache to force immediate refresh
@@ -479,7 +513,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       
       if (id.includes('search')) {
       // Use search-specific cache wrapper
-      const extraArgs = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
+        const extraArgs = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
       const searchKey = `${id}:${type}:${JSON.stringify(extraArgs)}`;
       
       responseData = await cacheWrapSearch(userUUID, searchKey, async () => {
@@ -662,6 +696,13 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
 
     if (!result || !result.meta) {
       return respond(req, res, { meta: null });
+    }
+    
+    // Capture metadata for dashboard display
+    try {
+      await requestTracker.captureMetadataFromComponents(`${type}:${stremioId}`, result.meta, type);
+    } catch (error) {
+      console.warn('[Meta Route] Failed to capture metadata for dashboard:', error.message);
     }
     
     // Warm related content in the background for public instances
@@ -872,6 +913,51 @@ addon.use(favicon(path.join(__dirname, '../public/favicon.png')));
 addon.use('/configure', express.static(path.join(__dirname, '../dist')));
 addon.use(express.static(path.join(__dirname, '../public')));
 addon.use(express.static(path.join(__dirname, '../dist')));
+
+// Dedicated Dashboard Page Route
+addon.get("/dashboard", (req, res) => {
+  // Serve the same HTML but with dashboard-specific handling
+  const indexPath = path.join(__dirname, '../dist/index.html');
+  const fs = require('fs');
+  
+  try {
+    let html = fs.readFileSync(indexPath, 'utf8');
+    
+    // Inject dashboard-specific meta tags and title
+    html = html.replace(
+      /<title>.*?<\/title>/,
+      '<title>AIO Metadata Dashboard</title>'
+    );
+    
+    // Add dashboard-specific script to auto-navigate to dashboard
+    html = html.replace(
+      '</head>',
+      `  <script>
+        window.DASHBOARD_MODE = true;
+        window.addEventListener('DOMContentLoaded', function() {
+          // Auto-navigate to dashboard tab when page loads
+          setTimeout(function() {
+            const dashboardTab = document.querySelector('[data-value="dashboard"], [value="dashboard"]');
+            if (dashboardTab) {
+              dashboardTab.click();
+            }
+          }, 100);
+        });
+      </script>
+      </head>`
+    );
+    
+    res.send(html);
+  } catch (error) {
+    console.error('Error serving dashboard page:', error);
+    res.status(500).send('Error loading dashboard');
+  }
+});
+
+// Dashboard with trailing slash
+addon.get("/dashboard/", (req, res) => {
+  res.redirect('/dashboard');
+});
 
 addon.get('/api/config/addon-info', (req, res) => {
   res.json({
@@ -1185,6 +1271,209 @@ addon.get('aapi/cache/invalidation-status/:userUUID', async (req, res) => {
       error: 'Failed to get cache status',
       details: error.message 
     });
+  }
+});
+
+// --- Dashboard API Routes (Admin only) ---
+const DashboardAPI = require('./lib/dashboardApi');
+
+addon.get("/api/dashboard/overview", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    // Pass redis client as cache, null for idMapper, and empty object for config
+    const dashboardApi = new DashboardAPI(redis, null, {});
+    dashboardApi.getAllDashboardData()
+      .then(data => res.json(data))
+      .catch(error => {
+        console.error('[Dashboard API] Error:', error);
+        res.status(500).json({ error: 'Failed to fetch dashboard data' });
+      });
+  } catch (error) {
+    console.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard data' });
+  }
+});
+
+addon.get("/api/dashboard/stats", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const dashboardApi = new DashboardAPI(redis, null, {}, database);
+    Promise.all([
+      dashboardApi.getQuickStats(),
+      dashboardApi.getCachePerformance(),
+      dashboardApi.getProviderPerformance()
+    ]).then(([quickStats, cachePerformance, providerPerformance]) => {
+      res.json({ quickStats, cachePerformance, providerPerformance });
+    }).catch(error => {
+      console.error('[Dashboard API] Error:', error);
+      res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+    });
+  } catch (error) {
+    console.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+  }
+});
+
+addon.get("/api/dashboard/system", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const dashboardApi = new DashboardAPI(redis, null, {}, database);
+    Promise.all([
+      dashboardApi.getSystemConfig(),
+      dashboardApi.getResourceUsage(),
+      dashboardApi.getProviderStatus(),
+      dashboardApi.getRecentActivity()
+    ]).then(([systemConfig, resourceUsage, providerStatus, recentActivity]) => {
+      res.json({ systemConfig, resourceUsage, providerStatus, recentActivity });
+    }).catch(error => {
+      console.error('[Dashboard API] Error:', error);
+      res.status(500).json({ error: 'Failed to fetch system data' });
+    });
+  } catch (error) {
+    console.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch system data' });
+  }
+});
+
+addon.get("/api/dashboard/operations", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const dashboardApi = new DashboardAPI(redis, null, {}, database);
+    Promise.all([
+      dashboardApi.getErrorLogs(),
+      dashboardApi.getMaintenanceTasks()
+    ]).then(([errorLogs, maintenanceTasks]) => {
+      res.json({ errorLogs, maintenanceTasks });
+    }).catch(error => {
+      console.error('[Dashboard API] Error:', error);
+      res.status(500).json({ error: 'Failed to fetch operations data' });
+    });
+  } catch (error) {
+    console.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch operations data' });
+  }
+});
+
+addon.post("/api/dashboard/cache/clear", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const { type } = req.body;
+    if (!type) {
+      return res.status(400).json({ error: 'Cache type is required' });
+    }
+    
+    const dashboardApi = new DashboardAPI(redis, null, {}, database);
+    dashboardApi.clearCache(type)
+      .then(result => res.json(result))
+      .catch(error => {
+        console.error('[Dashboard API] Error:', error);
+        res.status(500).json({ error: 'Failed to clear cache' });
+      });
+  } catch (error) {
+    console.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to clear cache' });
+  }
+});
+
+addon.get("/api/dashboard/analytics", async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const [stats, hourlyStats, topEndpoints, providerHourlyData] = await Promise.all([
+      requestTracker.getStats(),
+      requestTracker.getHourlyStats(24),
+      requestTracker.getTopEndpoints(10),
+      requestTracker.getHourlyProviderStats(24)
+    ]);
+
+    res.json({ 
+      requestStats: stats, 
+      hourlyData: hourlyStats,
+      topEndpoints: topEndpoints,
+      providerHourlyData: providerHourlyData
+    });
+  } catch (error) {
+    console.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch analytics data' });
+  }
+});
+
+addon.post("/api/dashboard/uptime/reset", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    // Reset the persistent uptime counter
+    redis.set('addon:start_time', Date.now().toString()).then(() => {
+      res.json({ 
+        success: true, 
+        message: 'Uptime counter reset successfully',
+        newStartTime: new Date().toISOString()
+      });
+    }).catch(error => {
+      console.error('[Dashboard API] Error resetting uptime:', error);
+      res.status(500).json({ error: 'Failed to reset uptime counter' });
+    });
+  } catch (error) {
+    console.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to reset uptime counter' });
+  }
+});
+
+addon.get("/api/dashboard/content", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    Promise.all([
+      requestTracker.getPopularContent(10),
+      requestTracker.getSearchPatterns(10),
+      requestTracker.getStats() // For content quality metrics
+    ]).then(([popularContent, searchPatterns, stats]) => {
+      res.json({ 
+        popularContent,
+        searchPatterns,
+        contentQuality: {
+          missingMetadata: 0, // TODO: Implement real tracking
+          failedMappings: 0,  // TODO: Implement real tracking
+          correctionRequests: 0, // TODO: Implement real tracking
+          successRate: parseFloat(100 - stats.errorRate)
+        }
+      });
+    }).catch(error => {
+      console.error('[Dashboard API] Error:', error);
+      res.status(500).json({ error: 'Failed to fetch content data' });
+    });
+  } catch (error) {
+    console.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch content data' });
   }
 });
 

@@ -124,14 +124,14 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
       searchResults = await jikan.searchAnime('movie', query, 25, config, page);
       break;
     case 'series':
-      const desiredTvTypes = new Set(['tv', 'ova', 'ona']);
+      const desiredTvTypes = new Set(['tv', 'ova', 'ona', 'tv special']);
       searchResults = await jikan.searchAnime('anime', query, 25, config, page);
       searchResults = searchResults.filter(item => {
         return typeof item?.type === 'string' && desiredTvTypes.has(item.type.toLowerCase());
       });
       break;
     default:
-      const desiredTypes = new Set(['tv', 'movie', 'ova', 'ona']);
+      const desiredTypes = new Set(['tv', 'movie', 'ova', 'ona', 'tv special']);
       searchResults = await jikan.searchAnime('anime', query, 25, config, page);
       searchResults = searchResults.filter(item => {
     return typeof item?.type === 'string' && desiredTypes.has(item.type.toLowerCase());
@@ -170,7 +170,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         seriesRes.results.forEach(addRawResult);
     }
 
-    console.log(`[Search] Raw results:`, JSON.stringify(rawResults));
+    //console.log(`[Search] Raw results:`, JSON.stringify(rawResults));
     
     if (searchPersons){
       const personRes = await moviedb.searchPerson({ query, language }, config);
@@ -304,7 +304,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
       console.log(`[Search] Filtered ${finalResults.length} results to ${filteredResults.length} based on age rating: ${config.ageRating}`);
     }
     
-    return filteredResults;
+    return Utils.sortSearchResults(filteredResults, query);
 }
 
 
@@ -551,14 +551,14 @@ function parseTvmazeResult(show, config) {
   } else {
     stremioId = `tvmaze:${show.id}`;
   }
-  var fallbackImage = show.image === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : show.image.original;
-  const posterProxyUrl = `${host}/poster/series/${imdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`;
+  var fallbackImage = show.image?.original === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : show.image.original;
+  const posterProxyUrl = imdbId ? `${host}/poster/series/${imdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`: `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`;
   return {
     id: stremioId,
     type: 'series',
     name: show.name,
-    poster: show.image ? show.image.medium : null,
-    background: config.apiKeys?.rpdb ? posterProxyUrl : fallbackImage,
+    poster: config.apiKeys?.rpdb ? posterProxyUrl : fallbackImage,
+    background: show.image?.original ? `${show.image.original}` : null,
     description: show.summary ? show.summary.replace(/<[^>]*>?/gm, '') : '',
     genres: show.genres || [],
     year: show.premiered ? show.premiered.substring(0, 4) : '',

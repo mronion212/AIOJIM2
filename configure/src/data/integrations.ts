@@ -30,6 +30,12 @@ export const integrations: Integration[] = [
     icon: "https://mdblist.com/static/mdblist.png",
     description: "Integrate your MDBList lists to expand your content library.",
   },
+  {
+    id: "stremthru",
+    name: "StremThru",
+    icon: "https://emojiapi.dev/api/v1/sparkles/256.png",
+    description: "Import curated catalogs from StremThru to expand your content library with Trakt, AniList, and streaming service lists.",
+  },
     {
     id: "gemini",
     name: "Gemini AI Search",

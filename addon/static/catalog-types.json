@@ -228,6 +228,24 @@
       "watchProviderId": 584,
       "country": "US",
       "extraSupported": ["genre", "skip"]
+    },
+    "bet": {
+      "nameKey": "bet",
+      "watchProviderId": 343,
+      "country": "US",
+      "extraSupported": ["genre", "skip"]
+    },
+    "mub": {
+      "nameKey": "mub",
+      "watchProviderId": 11,
+      "country": "US",
+      "extraSupported": ["genre", "skip"]
+    },
+    "sta": {
+      "nameKey": "sta",
+      "watchProviderId": 43,
+      "country": "US",
+      "extraSupported": ["genre", "skip"]
     }
   }
 }

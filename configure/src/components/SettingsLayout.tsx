@@ -10,6 +10,7 @@ import { FiltersSettings } from './sections/FiltersSettings';
 import { CatalogsSettings } from './sections/CatalogsSettings';
 import { SearchSettings } from './sections/SearchSettings';
 import { ConfigurationManager } from './ConfigurationManager';
+import { Dashboard } from './Dashboard';
 
 const settingsPages = [
   { value: 'general', title: 'General', component: <GeneralSettings /> },
@@ -28,6 +29,9 @@ const settingsPages = [
 export function SettingsLayout() {
   // Use our custom hook to determine if we're on a mobile-sized screen.
   const { isMobile } = useBreakpoint();
+  
+  // Check if we're in dashboard mode
+  const isDashboardMode = typeof window !== 'undefined' && (window as any).DASHBOARD_MODE;
 
   // --- RENDER ACCORDION ON MOBILE ---
   if (isMobile) {
@@ -47,6 +51,15 @@ export function SettingsLayout() {
           </AccordionItem>
         ))}
       </Accordion>
+    );
+  }
+
+  // If in dashboard mode, show only the dashboard
+  if (isDashboardMode) {
+    return (
+      <div className="w-full">
+        <Dashboard />
+      </div>
     );
   }
 

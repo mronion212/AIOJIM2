@@ -73,6 +73,7 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
   
   const url = `${TMDB_API_URL}${endpoint}?${queryParams.toString()}`;
 
+  const startTime = Date.now();
   try {
     const response = await fetch(url, {
       method: method,
@@ -82,12 +83,27 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
       signal: AbortSignal.timeout(15000)
     });
 
+    const responseTime = Date.now() - startTime;
+
     if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tmdb', responseTime, false);
+      
       const errorBody = await response.json().catch(() => ({}));
       const errorMessage = errorBody.status_message || `Request failed with status ${response.status}`;
       console.error(`[TMDB] Request failed for ${endpoint}: ${errorMessage}`);
       throw new Error(errorMessage);
     }
+
+    // Track successful request with rate limit headers
+    const requestTracker = require('./requestTracker');
+    const rateLimitHeaders = {
+      limit: response.headers.get('x-ratelimit-limit'),
+      remaining: response.headers.get('x-ratelimit-remaining'),
+      reset: response.headers.get('x-ratelimit-reset')
+    };
+    requestTracker.trackProviderCall('tmdb', responseTime, true, rateLimitHeaders);
     
     const data = await response.json();
     const isMovieDetailEndpoint = endpoint.match(/^\/movie\/(\d+)$/);
@@ -130,6 +146,11 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
 
     return data;
   } catch (error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tmdb', responseTime, false);
+    
     throw new Error(`[TMDB] Request to ${endpoint} failed: ${error.message}`);
   }
 }

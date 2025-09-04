@@ -550,7 +550,8 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     
-
+    // Streaming configuration (affects streaming catalog results)
+    streaming: config.streaming || [],
     
     // Anime-specific settings (for MAL catalogs)
     mal: config.mal || {}

@@ -2,6 +2,7 @@ require("dotenv").config();
 const { getGenreList } = require("./getGenreList");
 const { getLanguages } = require("./getLanguages");
 const { getGenresFromMDBList } = require("../utils/mdbList");
+const { getGenresFromStremThruCatalog, fetchStremThruCatalog } = require("../utils/stremthru");
 const packageJson = require("../../package.json");
 const catalogsTranslations = require("../static/translations.json");
 const CATALOG_TYPES = require("../static/catalog-types.json");
@@ -180,6 +181,58 @@ async function createMDBListCatalog(userCatalog, mdblistKey) {
   }
 }
 
+async function createStremThruCatalog(userCatalog) {
+  try {
+    //console.log(`[Manifest] Creating StremThru catalog: ${userCatalog.id} (${userCatalog.type})`);
+    
+    // Extract catalog info from the StremThru catalog ID
+    // Format: stremthru.{manifestId}.{catalogId}
+    const parts = userCatalog.id.split(".");
+    if (parts.length < 3) {
+      console.warn(`[Manifest] Invalid StremThru catalog ID format: ${userCatalog.id}`);
+      return null;
+    }
+    
+    const manifestId = parts[1];
+    const catalogId = parts[2];
+    
+    // Get the catalog URL from the user catalog source
+    const catalogUrl = userCatalog.source;
+    if (!catalogUrl) {
+      console.warn(`[Manifest] No source URL found for StremThru catalog: ${userCatalog.id}`);
+      return null;
+    }
+    
+    // Get genres from the manifest - they're already available in the userCatalog
+    let genres = [];
+    if (userCatalog.genres && Array.isArray(userCatalog.genres)) {
+      genres = userCatalog.genres;
+      //console.log(`[Manifest] Using genres from manifest: ${genres.length} genres`);
+    } else {
+      console.warn(`[Manifest] No genres found in manifest for ${userCatalog.id}, catalog may not support genre filtering`);
+      genres = ['None']; // Single option for catalogs without genre support
+    }
+    
+    const catalog = {
+      id: userCatalog.id,
+      type: userCatalog.type,
+      name: userCatalog.name,
+      pageSize: 20,
+      extra: [
+        { name: "genre", options: genres, isRequired: userCatalog.showInHome ? false : true },
+        { name: "skip" },
+      ],
+      showInHome: userCatalog.showInHome
+    };
+    
+   // console.log(`[Manifest] StremThru catalog created successfully: ${catalog.id}`);
+    return catalog;
+  } catch (error) {
+    console.error(`[Manifest] Error creating StremThru catalog ${userCatalog.id}:`, error.message);
+    return null; // Return null instead of throwing to prevent manifest failure
+  }
+}
+
 async function getManifest(config) {
   const startTime = Date.now();
   console.log('[Manifest] Starting manifest generation...');
@@ -197,6 +250,7 @@ async function getManifest(config) {
   const enabledCatalogs = userCatalogs.filter(c => c.enabled);
   console.log(`[Manifest] Total catalogs: ${userCatalogs.length}, Enabled: ${enabledCatalogs.length}`);
   console.log(`[Manifest] MDBList catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('mdblist.')).map(c => c.id));
+  //console.log(`[Manifest] StremThru catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('stremthru.')).map(c => c.id));
   
   const years = generateArrayOfYears(20);
   
@@ -296,7 +350,11 @@ async function getManifest(config) {
     .filter(userCatalog => {
       const catalogDef = getCatalogDefinition(userCatalog.id);
       if (isMDBList(userCatalog.id)) {
-        console.log(`[Manifest] MDBList catalog ${userCatalog.id} passed filter`);
+        //console.log(`[Manifest] MDBList catalog ${userCatalog.id} passed filter`);
+        return true;
+      }
+      if (userCatalog.id.startsWith('stremthru.')) {
+        //console.log(`[Manifest] StremThru catalog ${userCatalog.id} passed filter`);
         return true;
       }
       if (!catalogDef) {
@@ -314,6 +372,12 @@ async function getManifest(config) {
           console.log(`[Manifest] Processing MDBList catalog: ${userCatalog.id}`);
           const result = await createMDBListCatalog(userCatalog, config.apiKeys?.mdblist);
           console.log(`[Manifest] MDBList catalog result:`, result ? 'success' : 'failed');
+          return result;
+      }
+      if (userCatalog.id.startsWith('stremthru.')) {
+          //console.log(`[Manifest] Processing StremThru catalog: ${userCatalog.id}`);
+          const result = await createStremThruCatalog(userCatalog);
+          //console.log(`[Manifest] StremThru catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       const catalogDef = getCatalogDefinition(userCatalog.id);
@@ -394,11 +458,11 @@ async function getManifest(config) {
     const prefix = showPrefix ? "AIOMetadata - " : "";
     // Movie Search
     if (engineEnabled[searchProviders.movie] !== false) {
-      catalogs.push({ id: 'search', type: 'movie', name: `${prefix} ${movieSearchProviderName} Search`, extra: [{ name: 'search', isRequired: true }] });
+      catalogs.push({ id: 'search', type: 'movie', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
     }
     // Series Search
     if (engineEnabled[searchProviders.series] !== false) {
-      catalogs.push({ id: 'search', type: 'series', name: `${prefix} ${seriesSearchProviderName} Search`, extra: [{ name: 'search', isRequired: true }] });
+      catalogs.push({ id: 'search', type: 'series', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
     }
     // Anime Series Search
     if (engineEnabled[searchProviders.anime_series] !== false) {
@@ -487,7 +551,7 @@ async function getManifest(config) {
     name: "AIOMetadata",
     description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source. Also includes an optional AI search powered by Gemini.",
     resources: ["catalog", "meta"],
-    types: ["movie", "series", "anime.movie", "anime.series", "anime"],
+    types: ["movie", "series", "anime.movie", "anime.series", "anime", "Trakt"],
     idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:", "tvdbc:"],
     //stremioAddonsConfig,
     behaviorHints: {

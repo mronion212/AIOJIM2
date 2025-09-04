@@ -2,6 +2,7 @@ require("dotenv").config();
 const { getGenreList } = require("./getGenreList");
 const { getLanguages } = require("./getLanguages");
 const { fetchMDBListItems, parseMDBListItems } = require("../utils/mdbList");
+const { fetchStremThruCatalog, parseStremThruItems } = require("../utils/stremthru");
 const CATALOG_TYPES = require("../static/catalog-types.json");
 const moviedb = require("./getTmdb");
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
@@ -34,6 +35,11 @@ async function getCatalog(type, language, page, id, genre, config, userUUID) {
       console.log(`[getCatalog] Routing to TMDB/MDBList catalog handler for id: ${id}`);
       const tmdbResults = await getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID);
       return { metas: tmdbResults };
+    }
+    else if (id.startsWith('stremthru.')) {
+      console.log(`[getCatalog] Routing to StremThru catalog handler for id: ${id}`);
+      const stremthruResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID);
+      return { metas: stremthruResults };
     }
 
     else {
@@ -277,7 +283,7 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
 
 async function buildParameters(type, language, page, id, genre, genreList, config) {
   const languages = await getLanguages(config);
-  const parameters = { language, page, 'vote_count.gte': 10 };
+  const parameters = { language, page};
 
   if (id === 'tmdb.top' && type === 'series') {
     console.log('[TMDB Filter] Applying genre exclusion for popular series catalog.');
@@ -318,6 +324,7 @@ async function buildParameters(type, language, page, id, genre, genreList, confi
 
   if (id.includes("streaming")) {
     const provider = findProvider(id.split(".")[1]);
+    console.log(`[getCatalog] Found provider: ${JSON.stringify(provider)}`);
 
     parameters.with_genres = genre ? findGenreId(genre, genreList) : undefined;
     parameters.with_watch_providers = provider.watchProviderId
@@ -364,7 +371,56 @@ function findProvider(providerId) {
   return provider;
 }
 
+/**
+ * Handles StremThru catalog requests
+ * @param {string} type - Content type ('movie' or 'series')
+ * @param {string} catalogId - The StremThru catalog ID
+ * @param {string} genre - Optional genre filter
+ * @param {number} page - Page number
+ * @param {string} language - Language code
+ * @param {Object} config - Addon configuration
+ * @param {string} userUUID - User UUID
+ * @returns {Promise<Array>} Array of meta items
+ */
+async function getStremThruCatalog(type, catalogId, genre, page, language, config, userUUID) {
+  try {
+    console.log(`[✨ StremThru] Processing catalog request: ${catalogId}, type: ${type}, genre: ${genre || 'none'}, page: ${page}`);
+    
+    // Find the user catalog configuration to get the source URL
+    const userCatalog = config.catalogs?.find(c => c.id === catalogId);
+    if (!userCatalog || (!userCatalog.sourceUrl && !userCatalog.source)) {
+      console.error(`[✨ StremThru] No source URL found for catalog: ${catalogId}`);
+      return [];
+    }
+    
+    // Use sourceUrl for StremThru catalogs, fallback to source for backward compatibility
+    const catalogUrl = userCatalog.sourceUrl || userCatalog.source;
+    // sparkle emoji
+    console.log(`[✨ StremThru] Using catalog URL: ${catalogUrl}`);
+    
+    // Fetch catalog items from StremThru with proper pagination
+    const items = await fetchStremThruCatalog(catalogUrl);
+    if (!items || items.length === 0) {
+      console.warn(`[StremThru] No items returned from catalog: ${catalogUrl} (page: ${page})`);
+      return [];
+    }
 
-
+    // Apply client-side pagination
+    const pageSize = 20;
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedItems = items.slice(startIndex, endIndex);
+    
+    // Parse items into Stremio format
+    const metas = await parseStremThruItems(paginatedItems, type, genre, language, config);
+    
+    console.log(`[StremThru] Successfully processed ${metas.length} items for catalog: ${catalogId} (page: ${page})`);
+    return metas;
+    
+  } catch (error) {
+    console.error(`[StremThru] Error processing catalog ${catalogId}:`, error.message);
+    return [];
+  }
+}
 
 module.exports = { getCatalog };

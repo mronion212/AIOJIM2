@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { MDBListIntegration } from './MDBListIntegration';
+import { StremThruIntegration } from './StremThruIntegration';
 import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -28,6 +29,7 @@ const sourceBadgeStyles = {
   tvdb: "bg-green-800/80 text-green-200 border-green-600/50 hover:bg-green-800",
   mal: "bg-indigo-800/80 text-indigo-200 border-indigo-600/50 hover:bg-indigo-800",
   mdblist: "bg-yellow-800/80 text-yellow-200 border-yellow-600/50 hover:bg-yellow-800",
+  stremthru: "bg-purple-800/80 text-purple-200 border-purple-600/50 hover:bg-purple-800",
 };
 
 const CollapsibleSection = ({ title, children }: { title: string, children: React.ReactNode }) => {
@@ -193,7 +195,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
           </Tooltip>
          
 
-          {(catalog.source === 'mdblist' || catalog.source === 'streaming') && (
+          {(catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru') && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog">
@@ -288,6 +290,7 @@ const StreamingProvidersSettings = ({ open, onClose, selectedProviders, setSelec
 export function CatalogsSettings() {
   const { config, setConfig } = useConfig();
   const [isMdbListOpen, setIsMdbListOpen] = useState(false);
+  const [isStremThruOpen, setIsStremThruOpen] = useState(false);
   const [streamingDialogOpen, setStreamingDialogOpen] = useState(false);
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
@@ -465,6 +468,9 @@ export function CatalogsSettings() {
           <Button onClick={() => setIsMdbListOpen(true)} className="flex-1 sm:flex-none min-w-0">
             <span className="truncate">Manage MDBList Integration</span>
           </Button>
+          <Button onClick={() => setIsStremThruOpen(true)} className="flex-1 sm:flex-none min-w-0">
+            <span className="truncate">Import StremThru Catalogs</span>
+          </Button>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -496,6 +502,10 @@ export function CatalogsSettings() {
       <MDBListIntegration
         isOpen={isMdbListOpen}
         onClose={() => setIsMdbListOpen(false)}
+      />
+      <StremThruIntegration
+        isOpen={isStremThruOpen}
+        onClose={() => setIsStremThruOpen(false)}
       />
     </div>
   );

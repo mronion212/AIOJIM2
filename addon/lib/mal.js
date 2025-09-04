@@ -78,7 +78,26 @@ function enqueueRequest(task, url) {
 
 async function _makeJikanRequest(url) {
   console.log(`Jikan request for: ${url}`);
-  return axios.get(url, { timeout: 15000, httpsAgent: robustAgent });
+  const startTime = Date.now();
+  
+  try {
+    const response = await axios.get(url, { timeout: 15000, httpsAgent: robustAgent });
+    const responseTime = Date.now() - startTime;
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('mal', responseTime, true);
+    
+    return response;
+  } catch (error) {
+    const responseTime = Date.now() - startTime;
+    
+    // Track failed request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('mal', responseTime, false);
+    
+    throw error;
+  }
 }
 
 async function searchAnime(type, query, limit = 25, config = {}, page = 1) {

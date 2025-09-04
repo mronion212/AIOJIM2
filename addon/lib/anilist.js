@@ -47,8 +47,14 @@ class AniListAPI {
       await new Promise(resolve => setTimeout(resolve, waitTime));
     }
     
+    const startTime = Date.now();
     try {
       const response = await requestFn();
+      const responseTime = Date.now() - startTime;
+      
+      // Track successful request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('anilist', responseTime, true);
       
       // Update rate limit info from headers
       if (response.headers) {
@@ -65,6 +71,12 @@ class AniListAPI {
       return response;
       
     } catch (error) {
+      const responseTime = Date.now() - startTime;
+      
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('anilist', responseTime, false);
+      
       if (error.response?.status === 429) {
         // Rate limit exceeded
         const retryAfter = error.response.headers['retry-after'];
@@ -86,7 +98,7 @@ class AniListAPI {
         
         // Retry the request
         if (retries > 0) {
-          console.log(`[AniList] Retrying request after rate limit (${retries} retries left)`);
+          console.log(`[AniList] Rate limit exceeded, waiting ${waitTime}ms until reset`);
           return this.makeRateLimitedRequest(requestFn, retries - 1);
         }
       }

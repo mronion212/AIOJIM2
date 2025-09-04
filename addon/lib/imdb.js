@@ -36,48 +36,75 @@ imdbAxiosInstance.interceptors.response.use(response => {
 
 async function getMetaFromImdb(imdbId, type, stremioId) {
     if (!imdbId) {
-      return undefined;
+        return undefined;
     }
-  
+
     const url = `https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`;
     try {
         const response = await imdbAxiosInstance.get(url);
-      const meta = response.data?.meta;
+        const meta = response.data?.meta;
         if (meta) {
-      meta.id = stremioId;
-      return meta;
+            if(stremioId) {
+        meta.id = stremioId;
+            }
+        return meta;
         }
         return undefined;
     } catch (error) {
         console.warn(
             `Could not fetch meta for ${imdbId} from Cinemeta for type ${type}. Error: ${error.message}`
         );
-      return undefined;
+        return undefined;
     }
-  }
+}
 
-  async function getMetaFromImdbIo(imdbId, type, stremioId) {
+async function getMetaFromImdbIo(imdbId, type, stremioId) {
     if (!imdbId) {
-      return undefined;
+        return undefined;
     }
-  
+
     const url = `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`;
     try {
         const response = await imdbAxiosInstance.get(url);
-      const meta = response.data?.meta;
+        const meta = response.data?.meta;
         if (meta) {
-      meta.id = stremioId;
-      return meta;
+            if(stremioId) {
+                meta.id = stremioId;
+            }
+            return meta;
         }
         return undefined;
     } catch (error) {
         console.warn(
             `Could not fetch meta for ${imdbId} from Cinemeta for type ${type}. Error: ${error.message}`
         );
-      return undefined;
+        return undefined;
     }
-  }
-  
+}
+
+function getLogoFromImdb(imdbId) {
+    if (!imdbId) {
+        return null;
+    }
+    return `https://images.metahub.space/logo/medium/${imdbId}/img`;
+}
+
+function getBackgroundFromImdb(imdbId) {
+    if (!imdbId) {
+        return null;
+    }
+    return `https://images.metahub.space/background/medium/${imdbId}/img`;
+}
+
+function getPosterFromImdb(imdbId) {
+    if (!imdbId) {
+        return null;
+    }
+    return `https://images.metahub.space/poster/medium/${imdbId}/img`;
+}
+
+
+
 
 async function fetchHtml(url, headers = {}) {
     console.log(`[imdb-scraper] Connecting to: ${url}`);
@@ -436,5 +463,8 @@ async function scrapeSingleImdbResultByTitle(title, type) {
 module.exports = {
     getMetaFromImdb,
     scrapeSingleImdbResultByTitle,
-    getMetaFromImdbIo
+    getMetaFromImdbIo,
+    getLogoFromImdb,
+    getBackgroundFromImdb,
+    getPosterFromImdb
 };

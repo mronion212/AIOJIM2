@@ -14,25 +14,48 @@ const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
+function normalize(str) {
+  return str
+    .normalize("NFD") //seperate letters from accents
+    .replace(/[\u0300-\u036f]/g, "") //Remove accents, tildes, etc
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, "")  // Remove everything except letters, numbers, and whitespace
+    .replace(/^the\s+/, "")  //skip 'the' article *experimental*
+    .trim();
+}
+
 function sortSearchResults(results, query) {
-  const lowerCaseQuery = query.toLowerCase();
+  const normalizedQuery = normalize(query);
+  
   results.sort((a, b) => {
-    const titleA = (a.name || '').toLowerCase();
-    const titleB = (b.name || '').toLowerCase();
-    if (titleA === lowerCaseQuery && titleB !== lowerCaseQuery) return -1;
-    if (titleA !== lowerCaseQuery && titleB === lowerCaseQuery) return 1;
-    const startsWithA = titleA.startsWith(lowerCaseQuery);
-    const startsWithB = titleB.startsWith(lowerCaseQuery);
-    if (startsWithA && !startsWithB) return -1;
-    if (!startsWithA && startsWithB) return 1;
+    const titleA = normalize(a.name || '');
+    const titleB = normalize(b.name || '');
+    
+    // Exact match priority (only if popularity > 3.5)
+    const minPopularityForExactMatch = 3.5;
     const scoreA = a.popularity || a.score || 0;
     const scoreB = b.popularity || b.score || 0;
+    
+    if (titleA === normalizedQuery && titleB !== normalizedQuery && scoreA > minPopularityForExactMatch) return -1;
+    if (titleA !== normalizedQuery && titleB === normalizedQuery && scoreB > minPopularityForExactMatch) return 1;
+    
+    // Starts with query priority
+    const startsWithA = titleA.startsWith(normalizedQuery);
+    const startsWithB = titleB.startsWith(normalizedQuery);
+    if (startsWithA && !startsWithB) return -1;
+    if (!startsWithA && startsWithB) return 1;
+    
+    // Score/popularity priority
     if (scoreA !== scoreB) return scoreB - scoreA;
+    
+    // Year priority (newer first)
     const yearA = parseInt(a.year, 10) || 0;
     const yearB = parseInt(b.year, 10) || 0;
     if (yearA !== yearB) return yearB - yearA;
+    
     return 0;
   });
+  
   return results;
 }
 
@@ -577,21 +600,26 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, malPosterUrl, mediaType = 'se
       console.warn(`[getAnimeBg] TVDB background fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
-  
+
+  if (artProvider === 'imdb' && malId) {
+    try {
+      const mapping = idMapper.getMappingByMalId(malId);
+      if (mapping && mapping.imdb_idmdbId) {
+        return imdb.getBackgroundFromImdb(mapping.imdb_id);
+      }
+    } catch (error) {
+      console.warn(`[getAnimeBg] IMDB background fetch failed for MAL ID ${malId}:`, error.message);
+    }
+  }
+
   if (artProvider === 'tmdb' && malId) {
     try {
       const mapping = idMapper.getMappingByMalId(malId);
       if (mapping && mapping.themoviedb_id) {
         // Use TMDB background for anime
         const tmdbBackground = mediaType === 'movie' 
-          ? await tmdb.movieImages({ id: mapping.themoviedb_id, include_image_language: null }, config).then(res => {
-            const img = res.backdrops[0];
-            return img?.file_path ? `https://image.tmdb.org/t/p/original${img?.file_path}` : null;
-          })
-          : await tmdb.tvImages({ id: mapping.themoviedb_id, include_image_language: null }, config).then(res => {
-            const img = res.backdrops[0];
-            return img?.file_path ? `https://image.tmdb.org/t/p/original${img?.file_path}` : null;
-          });
+          ? await tmdb.getTmdbMovieBackground(mapping.themoviedb_id, config)
+          : await tmdb.getTmdbSeriesBackground(mapping.themoviedb_id, config);
         
         if (tmdbBackground) {
           console.log(`[getAnimeBg] Found TMDB background for MAL ID: ${malId} (TMDB ID: ${mapping.themoviedb_id}, Type: ${mediaType})`);
@@ -748,7 +776,17 @@ async function getAnimePoster({ malId, malPosterUrl, mediaType = 'series' }, con
       console.warn(`[getAnimePoster] TVDB poster fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
-  
+
+  if (artProvider === 'imdb' && malId) {
+    try {
+      const mapping = idMapper.getMappingByMalId(malId);
+      if (mapping && mapping.imdb_id) {
+        return imdb.getPosterFromImdb(mapping.imdb_id);
+      }
+    } catch (error) {
+      console.warn(`[getAnimePoster] IMDB poster fetch failed for MAL ID ${malId}:`, error.message);
+    }
+  }
   if (artProvider === 'tmdb' && malId) {
     try {
       const mapping = idMapper.getMappingByMalId(malId);
@@ -951,6 +989,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
   const artProvider = resolveArtProvider('anime', config);
   const useAniList = artProvider === 'anilist';
   const useTvdb = artProvider === 'tvdb';
+  const useImdb = artProvider === 'imdb';
   const useTmdb = artProvider === 'tmdb';
   //console.log(`[parseAnimeCatalogMetaBatch] Art provider: ${artProvider}, useAniList: ${useAniList}, useTvdb: ${useTvdb}, useTmdb: ${useTmdb}`);
   
@@ -1084,6 +1123,14 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
         }
       } catch (error) {
         console.warn(`[parseAnimeCatalogMetaBatch] TMDB poster fetch failed for MAL ID ${malId}:`, error.message);
+      }
+    }
+
+    if (useImdb && mapping && mapping.imdb_id) {
+      try {
+        finalPosterUrl = imdb.getPosterFromImdb(mapping.imdb_id);
+      } catch (error) {
+        console.warn(`[parseAnimeCatalogMetaBatch] IMDB poster fetch failed for MAL ID ${malId}:`, error.message);
       }
     }
     
@@ -1289,18 +1336,11 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
   }
   else if (artProvider === 'imdb' && metaProvider != 'imdb') {
     if(imdbId) {
-      const meta = await imdb.getMetaFromImdb(imdbId, 'movie', config);
-
-      if (meta) {
-        return meta.poster;
-      }
+      return imdb.getPosterFromImdb(imdbId);
     } else if(tvdbId) {
       const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
       if (mappedIds.imdbId) {
-        const meta = await imdb.getMetaFromImdb(mappedIds.imdbId, 'movie', config);
-        if (meta) {
-          return meta.poster;
-        }
+        return imdb.getPosterFromImdb(mappedIds.imdbId);
       }
     }
   }
@@ -1393,10 +1433,7 @@ async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallba
   }
   else if (artProvider === 'imdb' && metaProvider != 'imdb') {
     if(imdbId) {
-      const meta = await imdb.getMetaFromImdb(imdbId, 'movie', config);
-      if (meta) {
-        return meta.background;
-      }
+      return imdb.getBackgroundFromImdb(imdbId);
     }
   }
   return fallbackBackgroundUrl;
@@ -1490,17 +1527,11 @@ async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogo
   }
   else if (artProvider === 'imdb' && metaProvider != 'imdb') {
     if(imdbId) {
-      const meta = await imdb.getMetaFromImdb(imdbId, 'movie', config);
-      if (meta) {
-        return meta.logo;
-      }
+      return imdb.getLogoFromImdb(imdbId);
     } else if(tvdbId) {
       const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
       if(mappedIds.imdbId) {
-        const meta = await imdb.getMetaFromImdb(mappedIds.imdbId, 'movie', config);
-        if (meta) {
-          return meta.logo;
-        }
+        return imdb.getLogoFromImdb(mappedIds.imdbId);
       }
     }
   }
@@ -1590,17 +1621,11 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
   }
   else if (artProvider === 'imdb' && metaProvider != 'imdb') {
     if(imdbId) {
-      const meta = await imdb.getMetaFromImdb(imdbId, 'series', config);
-      if (meta) {
-        return meta.poster;
-      }
+      return imdb.getPosterFromImdb(imdbId);
     } else if(tvdbId) {
       const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config);
       if(mappedIds.imdbId) {
-        const meta = await imdb.getMetaFromImdb(mappedIds.imdbId, 'series', config);
-        if (meta) {
-          return meta.poster;
-        }
+        return imdb.getPosterFromImdb(mappedIds.imdbId);
       }
     }
   }
@@ -1689,10 +1714,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
   }
   else if (artProvider === 'imdb' && metaProvider != 'imdb') {
     if(imdbId) {
-      const meta = await imdb.getMetaFromImdb(imdbId, 'series', config);
-      if (meta) {
-        return meta.background;
-      }
+      return imdb.getBackgroundFromImdb(imdbId);
     }
   }
   // Fallback to meta background
@@ -1790,10 +1812,7 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
   }
   else if ((artProvider === 'imdb' || fallbackLogoUrl === null) && metaProvider != 'imdb') {
     if(imdbId) {
-      const meta = await imdb.getMetaFromImdb(imdbId, 'series', config);
-      if (meta) {
-        return meta.logo;
-      }
+      return imdb.getLogoFromImdb(imdbId);
     }
   }
   return fallbackLogoUrl;

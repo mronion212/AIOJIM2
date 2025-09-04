@@ -407,7 +407,7 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
       console.log(`[SeriesMeta] Attempting preferred provider TVmaze with ID: ${allIds.tvmazeId}`);
     try {
       const seriesData = await tvmaze.getShowDetails(allIds.tvmazeId);
-      return await buildSeriesResponseFromTvmaze(stremioId, seriesData, language, config, userUUID);
+      return await buildSeriesResponseFromTvmaze(stremioId, seriesData, language, config, { allIds }, userUUID);
     } catch (e) {
       console.warn(`[SeriesMeta] Preferred provider 'tvmaze' failed for ${stremioId}. Falling back. ${e.message}`);
     }
@@ -466,7 +466,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
         //console.log(`[AnimeMeta] Attempting preferred provider TVmaze with ID: ${allIds.tvmazeId}`);
         const seriesData = await tvmaze.getShowDetails(allIds.tvmazeId);
-        return await buildSeriesResponseFromTvmaze(stremioId, seriesData, language, config, userUUID, isAnime);
+        return await buildSeriesResponseFromTvmaze(stremioId, seriesData, language, config, userUUID, { allIds }, isAnime);
       }
       if (preferredProvider === 'imdb' && allIds?.imdbId) {
         if(type === 'series') {
@@ -900,13 +900,13 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
                       tmdbSeasonName
                     );
                     
-                    if (imdbEpisodeId) {
-                      episodeId = imdbEpisodeId;
-                    } else {
+            if (imdbEpisodeId) {
+              episodeId = imdbEpisodeId;
+            } else {
                       // Fallback to TMDB ID
                       episodeId = `tmdb:${tmdbId}:${ep.season_number}:${ep.episode_number}`;
-                    }
-                    } else {
+            }
+          } else {
                           // Fallback to TMDB ID
                       episodeId = `tmdb:${tmdbId}:${ep.season_number}:${ep.episode_number}`;
                     }
@@ -956,7 +956,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
         episodeId = `tmdb:${tmdbId}:${ep.season_number}:${ep.episode_number}`;
       }
 
-      const thumbnailUrl = ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : poster;
+      const thumbnailUrl = ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : null;
       const finalThumbnail = config.blurThumbs && thumbnailUrl
         ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
         : thumbnailUrl;
@@ -976,7 +976,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   const videos = (await Promise.all(videosPromises)).filter(Boolean);
   const runtime = seriesData.episode_run_time?.[0] ?? seriesData.last_episode_to_air?.runtime ?? seriesData.next_episode_to_air?.runtime ?? null;
 
-  return {
+  const meta = {
     id: stremioId,
     type: 'series',
     name: name,
@@ -986,7 +986,6 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     description: addMetaProviderAttribution(seriesData.overview, 'TMDB', config),
     year: seriesData.first_air_date ? seriesData.first_air_date.substring(0, 4) : "",
     released: seriesData.first_air_date ? new Date(seriesData.first_air_date).toISOString() : null,
-    runtime: runtime ? `${runtime}min` : null,
     status: seriesData.status,
     imdbRating,
     poster: config.apiKeys?.rpdb ? posterProxyUrl : poster,
@@ -1001,6 +1000,10 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     },
     app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, seasonPosters: tmdbSeasonPosters }
   };
+  if (runtime) {
+    meta.runtime = Utils.parseRunTime(runtime);
+  }
+  return meta;
 }
 
 async function buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, enrichmentData = {}, isAnime = false) {
@@ -1231,10 +1234,10 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
 
   const seasonToKitsuIdMap = new Map();
   const absoluteToSeasonalMap = new Map();
-  
-  const officialSeasons = (tvdbShow.seasons || [])
+
+    const officialSeasons = (tvdbShow.seasons || [])
   .filter(s => s.type?.type === 'official')
-  .sort((a, b) => a.number - b.number);
+      .sort((a, b) => a.number - b.number);
 
   const seasonPosters = officialSeasons.map(s => s.image);
 
@@ -1358,6 +1361,9 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
         };
       })
   );
+  if(!logoUrl && imdbId){
+    logoUrl =  imdb.getLogoFromImdb(imdbId);
+  }
  
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
   const meta = {
@@ -1391,11 +1397,12 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   return meta;
 }
 
-async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, config, userUUID, isAnime = false) {
+async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, config, userUUID, enrichmentData = {}, isAnime = false) {
+  const { allIds } = enrichmentData;
   const { name, premiered, image, summary, externals } = tvmazeShow;
-  const imdbId = externals.imdb;
-  const tmdbId = externals.themoviedb;
-  const tvdbId = externals.thetvdb;
+  const imdbId = externals.imdb || allIds?.imdbId;
+  const tmdbId = externals.themoviedb || allIds?.tmdbId;
+  const tvdbId = externals.thetvdb || allIds?.tvdbId;
   const castCount = config.castCount === 0 ? undefined : config.castCount;
 
   const tvmazePosterUrl = image?.original ? `${image.original}` : null;
@@ -1466,6 +1473,9 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, co
     released: new Date(episode.airstamp),
     available: new Date(episode.airstamp) < new Date(),
   }));
+  if(!logoUrl && imdbId){
+    logoUrl =  imdb.getLogoFromImdb(imdbId);
+  }
 
   const meta = {
     id: stremioId,
@@ -1483,7 +1493,8 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, co
     imdbRating,
     poster: config.apiKeys?.rpdb ? posterProxyUrl : poster, 
     background: background,
-    logo: processLogo(logoUrl), videos,
+    logo: processLogo(logoUrl), 
+    videos,
     links: [...Utils.buildLinks(imdbRating, imdbId, name, 'series', tvmazeShow.genres.map(g => ({ name: g })), tvmazeCredits, language, castCount, userUUID, false, 'tvmaze'), ...producerLinks, ...writerLinks],
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
     app_extras: { cast: Utils.parseCast(tvmazeCredits, castCount, 'tvmaze'), producers: producerDetails, writers: writerDetails }
@@ -1509,7 +1520,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       primaryId = `kitsu:${kitsuId}`;
     }
     const posterUrl = malData.images?.jpg?.large_image_url;
-    
+
     // Use AniList poster if available and configured
     let finalPosterUrl = enrichmentData.bestPosterUrl || posterUrl; 
 
@@ -1563,26 +1574,10 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
             })
         );
       }
-      
-      // Start IMDB season resolution (non-blocking)
-      if (idProvider === 'imdb' && kitsuId) {
-        enhancementPromises.push(
-          idMapper.resolveImdbSeasonFromKitsu(kitsuId)
-            .then(info => {
-              imdbSeasonInfo = info;
-            })
-            .catch(error => {
-              console.warn(`[Anime Meta] Failed to resolve IMDB season:`, error.message);
-            })
-        );
-      }
     }
     
     // Process episodes while API calls are running
-    if (stremioType === 'series' && malData.status !== 'Not yet aired' && episodeData && episodeData.length > 0) {
-      const cinemetaVideos = await idMapper.getCinemetaVideosForImdbSeries(imdbId);
-      const nonZeroSeasonsVideos = cinemetaVideos?.filter(s => s.season !== 0) || [];
-      // Filter episodes once
+    if (stremioType === 'series' && malData.status !== 'Not yet aired' && episodeData && episodeData.length > 0) {      // Filter episodes once
       const filteredEpisodes = (episodeData || []).filter(ep => {
         if (config.mal?.skipFiller && ep.filler) return false;
         if (config.mal?.skipRecap && ep.recap) return false;
@@ -1592,119 +1587,74 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       // Wait for enhancement data
       await Promise.all(enhancementPromises);
       
-      // Process episodes with enhancement data (non-IMDB providers)
-      if (idProvider !== 'imdb' || !imdbSeasonInfo) {
-        console.log(`[Anime Meta] Starting non-IMDB season processing for ${seriesId}`);
-        videos = filteredEpisodes.map(ep => {
+      // Process episodes with enhancement data        
+      videos = filteredEpisodes.map(ep => {
             let episodeId = `${seriesId}:${ep.mal_id}`;
-            const cinemetaVideo = (ep.mal_id > 0 && ep.mal_id <= nonZeroSeasonsVideos.length) 
-              ? nonZeroSeasonsVideos[ep.mal_id - 1] 
-              : null;
             if (idProvider === 'kitsu' && kitsuId) {
               episodeId = `kitsu:${kitsuId}:${ep.mal_id}`;
-          } else if (idProvider === 'imdb' && (imdbId || kitsuId)) {
-            episodeId = `kitsu:${kitsuId}:${ep.mal_id}`;
-          } 
-          
-          // Try to enhance with Kitsu data
-          let thumbnailUrl = null;
-          let episodeTitle = ep.title;
-          let episodeSynopsis = ep.synopsis;
-          const kitsuEpisode = kitsuEpisodeMap.get(ep.mal_id);
-          
-          if (kitsuEpisode) {
-            if (kitsuEpisode.thumbnail?.original) {
-              thumbnailUrl = kitsuEpisode.thumbnail.original;
-            }
-            
-            if (kitsuEpisode.synopsis) {
-              episodeSynopsis = kitsuEpisode.synopsis;
-            }
-            
-            if (kitsuEpisode.titles?.en_us) {
-              episodeTitle = kitsuEpisode.titles.en_us;
-            } else if (kitsuEpisode.titles?.en_jp) {
-              episodeTitle = kitsuEpisode.titles.en_jp;
-            } else if (kitsuEpisode.titles?.en) {
-              episodeTitle = kitsuEpisode.titles.en;
-            } else if (kitsuEpisode.canonicalTitle) {
-              episodeTitle = kitsuEpisode.canonicalTitle;
-            }
+        } else if (idProvider === 'imdb' && (imdbId || kitsuId)) {
+          episodeId = `kitsu:${kitsuId}:${ep.mal_id}`;
+        } 
+        
+        // Try to enhance with Kitsu data
+        let thumbnailUrl = null;
+        let episodeTitle = ep.title;
+        let episodeSynopsis = ep.synopsis;
+        const kitsuEpisode = kitsuEpisodeMap.get(ep.mal_id);
+        
+        if (kitsuEpisode) {
+          if (kitsuEpisode.thumbnail?.original) {
+            thumbnailUrl = kitsuEpisode.thumbnail.original;
           }
+          
+          if (kitsuEpisode.synopsis) {
+            episodeSynopsis = kitsuEpisode.synopsis;
+          }
+          
+          if (kitsuEpisode.titles?.en_us) {
+            episodeTitle = kitsuEpisode.titles.en_us;
+          } else if (kitsuEpisode.titles?.en_jp) {
+            episodeTitle = kitsuEpisode.titles.en_jp;
+          } else if (kitsuEpisode.titles?.en) {
+            episodeTitle = kitsuEpisode.titles.en;
+          } else if (kitsuEpisode.canonicalTitle) {
+            episodeTitle = kitsuEpisode.canonicalTitle;
+          }
+        }
 
-          if (cinemetaVideo) {
-            if (!episodeSynopsis) {
-              episodeSynopsis = cinemetaVideo.synopsis;
-            }
-            if (cinemetaVideo.thumbnail) {
-              thumbnailUrl = cinemetaVideo.thumbnail;
-            }
-          }
-
-          if (!thumbnailUrl) {
-            thumbnailUrl = posterUrl;
-          }
-          
-          return {
-            id: episodeId,
-            title: episodeTitle,
-            season: 1,
-            episode: ep.mal_id,
-            released: ep.aired? new Date(ep.aired) : null,
-            thumbnail: config.blurThumbs? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
-            available: ep.aired ? new Date(ep.aired) < new Date() : false,
-            overview: episodeSynopsis
-          };
-        });
-      }
-      
-      // Special processing for IMDB provider with season info
-      if (idProvider === 'imdb' && imdbSeasonInfo) {
-        console.log(`[Anime Meta] Starting IMDB season processing for ${imdbId} with season ${imdbSeasonInfo.seasonNumber}`);
-        videos = filteredEpisodes.map(ep => {
-          let thumbnailUrl = null;
-          let episodeTitle = ep.title;
-          let episodeSynopsis = ep.synopsis;
-          const kitsuEpisode = kitsuEpisodeMap.get(ep.mal_id);
-          
-          if (kitsuEpisode) {
-            if (kitsuEpisode.thumbnail?.original) {
-              thumbnailUrl = kitsuEpisode.thumbnail.original;
-            }
-            
-            if (kitsuEpisode.synopsis) {
-              episodeSynopsis = kitsuEpisode.synopsis;
-            }
-          }
-          const cinemetaVideo = (ep.mal_id > 0 && ep.mal_id <= nonZeroSeasonsVideos.length) 
-            ? nonZeroSeasonsVideos[ep.mal_id - 1] 
-            : null;
-          console.log(`[Anime Meta] Found Cinemeta video for ${ep.mal_id}: ${cinemetaVideo?.name}`);
-          if (cinemetaVideo) {
-            if (!episodeSynopsis) {
-              episodeSynopsis = cinemetaVideo.synopsis;
-            }
-            if (cinemetaVideo.thumbnail) {
-              thumbnailUrl = cinemetaVideo.thumbnail;
-            }
-          }
-
-          if (!thumbnailUrl) {
-            thumbnailUrl = posterUrl;
-          }
-          
+        if (!thumbnailUrl) {
+          thumbnailUrl = posterUrl;
+        }
+        
               return {
-                id: `${imdbSeasonInfo.imdbId}:${imdbSeasonInfo.seasonNumber}:${ep.mal_id}`,
-            title: episodeTitle,
+          id: episodeId,
+          title: episodeTitle,
                 season: 1,
                 episode: ep.mal_id,
-            overview: episodeSynopsis,
                 released: ep.aired? new Date(ep.aired) : null,
                 thumbnail: config.blurThumbs? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
-                available: ep.aired ? new Date(ep.aired) < new Date() : false
+          available: ep.aired ? new Date(ep.aired) < new Date() : false,
+          overview: episodeSynopsis
               };
             });
-      } 
+      
+      
+      // Special processing for IMDB provider with season info
+      if (idProvider === 'imdb') {
+        try {
+          const enrichedVideos = await idMapper.enrichMalEpisodes(videos, kitsuId);
+          if (enrichedVideos && Array.isArray(enrichedVideos) && enrichedVideos.length > 0) {
+            videos = enrichedVideos;
+            
+            console.log(`[getMeta] Successfully enriched ${enrichedVideos.length} episodes with IMDB data`);
+          } else {
+            console.warn(`[getMeta] enrichMalEpisodes returned invalid data:`, enrichedVideos);
+          }
+        } catch (error) {
+          console.error(`[getMeta] Error enriching MAL episodes:`, error.message);
+          // Keep original videos if enrichment fails
+        }
+      }  
     }
 
     // Optimize cast processing with pre-computed replacements
@@ -1774,7 +1724,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       director: [],
       writers: [],
       behaviorHints: {
-        defaultVideoId: stremioType === 'movie' ? ((kitsuId && idProvider === 'kitsu') ? `kitsu:${kitsuId}` : null) || (imdbId && idProvider === 'imdb') ? imdbId : stremioId : null,
+        defaultVideoId: (stremioType === 'movie' || (malData.type.toLowerCase() === 'tv special' && (episodeData === null || episodeData?.length == 0))) ? ((kitsuId && idProvider === 'kitsu') ? `kitsu:${kitsuId}` : (imdbId && idProvider === 'imdb') ? imdbId : stremioId) : null,
         hasScheduledVideos: stremioType === 'series',
       },
       videos: videos,

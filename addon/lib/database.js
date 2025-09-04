@@ -255,6 +255,13 @@ class Database {
     return row;
   }
 
+  // Get all user UUIDs for dashboard aggregation
+  async getAllUserUUIDs() {
+    const query = 'SELECT user_uuid FROM user_configs';
+    const rows = await this.allQuery(query);
+    return rows ? rows.map(row => row.user_uuid) : [];
+  }
+
   // ID Mapping Cache Methods
   async getCachedIdMapping(contentType, tmdbId = null, tvdbId = null, imdbId = null, tvmazeId = null) {
     const conditions = [];
