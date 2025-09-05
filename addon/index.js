@@ -726,6 +726,19 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
     
   } catch (error) {
     console.error(`CRITICAL ERROR in meta route for ${stremioId}:`, error);
+    
+    // Log error for dashboard
+    try {
+      await requestTracker.logError('error', `Meta route failed for ${stremioId}`, {
+        stremioId,
+        type,
+        error: error.message,
+        stack: error.stack
+      });
+    } catch (logError) {
+      console.warn('Failed to log error:', logError.message);
+    }
+    
     res.status(500).send("Internal Server Error");
   }
 });
@@ -1357,9 +1370,10 @@ addon.get("/api/dashboard/operations", (req, res) => {
     const dashboardApi = new DashboardAPI(redis, null, {}, database);
     Promise.all([
       dashboardApi.getErrorLogs(),
-      dashboardApi.getMaintenanceTasks()
-    ]).then(([errorLogs, maintenanceTasks]) => {
-      res.json({ errorLogs, maintenanceTasks });
+      dashboardApi.getMaintenanceTasks(),
+      dashboardApi.getCachePerformance()
+    ]).then(([errorLogs, maintenanceTasks, cacheStats]) => {
+      res.json({ errorLogs, maintenanceTasks, cacheStats });
     }).catch(error => {
       console.error('[Dashboard API] Error:', error);
       res.status(500).json({ error: 'Failed to fetch operations data' });
@@ -1442,6 +1456,41 @@ addon.post("/api/dashboard/uptime/reset", (req, res) => {
   } catch (error) {
     console.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to reset uptime counter' });
+  }
+});
+
+// Test endpoint to generate sample error logs
+addon.post("/api/dashboard/test-errors", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    // Generate some test error logs
+    requestTracker.logError('error', 'Test error: Failed to fetch from AniList API', {
+      endpoint: '/anime/12345',
+      status: 500,
+      responseTime: 2500
+    });
+    
+    requestTracker.logError('warning', 'Test warning: TMDB rate limit approaching', {
+      remaining: 5,
+      resetTime: Date.now() + 3600000
+    });
+    
+    requestTracker.logError('info', 'Test info: Cache warming completed', {
+      itemsWarmed: 150,
+      duration: '2.5s'
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Test error logs generated successfully'
+    });
+  } catch (error) {
+    console.error('[Dashboard API] Error generating test errors:', error);
+    res.status(500).json({ error: 'Failed to generate test errors' });
   }
 });
 

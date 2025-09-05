@@ -6,6 +6,11 @@ class RequestTracker {
     this.dailyKey = `requests:${new Date().toISOString().split('T')[0]}`;
     this.hourlyKey = `requests:${new Date().toISOString().substring(0, 13)}`;
     this.errorKey = `errors:${new Date().toISOString().split('T')[0]}`;
+    
+    // Clean up any corrupted keys on startup
+    this.cleanupCorruptedKeys().catch(error => {
+      console.warn('[Request Tracker] Failed to cleanup on startup:', error.message);
+    });
   }
 
   // Middleware to track all requests
@@ -560,13 +565,31 @@ class RequestTracker {
       const providerStats = await Promise.all(
         providers.map(async (provider) => {
           try {
-            // Get response times for the last 2 days
-            const [todayTimes, yesterdayTimes] = await Promise.all([
-              redis.lrange(`provider_response_times:${provider}:${today}`, 0, -1),
-              redis.lrange(`provider_response_times:${provider}:${yesterday}`, 0, -1)
-            ]);
+            // Get response times for the last 24 hours (multiple hourly buckets)
+            const now = new Date();
+            const hours = [];
+            for (let i = 0; i < 24; i++) {
+              const hour = new Date(now.getTime() - (i * 3600000)).toISOString().substring(0, 13);
+              hours.push(hour);
+            }
             
-            const allTimes = [...(todayTimes || []), ...(yesterdayTimes || [])].map(t => parseFloat(t));
+            // Get response times from all hourly buckets
+            const timePromises = hours.map(async hour => {
+              try {
+                return await redis.lrange(`provider_response_times:${provider}:${hour}`, 0, -1);
+              } catch (error) {
+                // Handle WRONGTYPE errors gracefully
+                if (error.message.includes('WRONGTYPE')) {
+                  console.warn(`[Request Tracker] Wrong data type for ${provider}:${hour}, skipping`);
+                  return [];
+                }
+                throw error;
+              }
+            });
+            const timeResults = await Promise.all(timePromises);
+            
+            // Flatten all response times
+            const allTimes = timeResults.flat().map(t => parseFloat(t)).filter(t => !isNaN(t));
             const avgResponseTime = allTimes.length > 0 ? Math.round(allTimes.reduce((a, b) => a + b, 0) / allTimes.length) : 0;
             
             // Get success/error rates
@@ -862,6 +885,114 @@ class RequestTracker {
     } catch (error) {
       console.error('[Request Tracker] Failed to get active users:', error);
       return 0;
+    }
+  }
+
+  // Log detailed error for dashboard
+  async logError(level, message, details = {}) {
+    try {
+      const errorId = Date.now().toString();
+      const timestamp = new Date().toISOString();
+      
+      const errorLog = {
+        id: errorId,
+        level: level, // 'error', 'warning', 'info'
+        message: message,
+        details: details,
+        timestamp: timestamp,
+        count: 1
+      };
+      
+      // Store in Redis with 7 day TTL
+      await redis.set(`error_log:${errorId}`, JSON.stringify(errorLog), 'EX', 86400 * 7);
+      
+      // Also track in a sorted set by timestamp for easy retrieval
+      await redis.zadd('error_logs', Date.now(), errorId);
+      await redis.expire('error_logs', 86400 * 7);
+      
+      console.log(`[Request Tracker] Logged ${level}: ${message}`);
+    } catch (error) {
+      console.warn('[Request Tracker] Failed to log error:', error.message);
+    }
+  }
+
+  // Get recent error logs
+  async getErrorLogs(limit = 50) {
+    try {
+      // Get recent error IDs from sorted set
+      const errorIds = await redis.zrevrange('error_logs', 0, limit - 1);
+      
+      if (errorIds.length === 0) {
+        return [];
+      }
+      
+      // Get error details for each ID
+      const errorLogs = await Promise.all(
+        errorIds.map(async (errorId) => {
+          try {
+            const errorStr = await redis.get(`error_log:${errorId}`);
+            if (errorStr) {
+              const errorLog = JSON.parse(errorStr);
+              
+              // Calculate time ago
+              const timeAgo = this.getTimeAgo(new Date(errorLog.timestamp));
+              errorLog.timeAgo = timeAgo;
+              
+              return errorLog;
+            }
+            return null;
+          } catch (error) {
+            console.warn('[Request Tracker] Failed to parse error log:', error.message);
+            return null;
+          }
+        })
+      );
+      
+      // Filter out null values and return
+      return errorLogs.filter(log => log !== null);
+    } catch (error) {
+      console.error('[Request Tracker] Failed to get error logs:', error);
+      return [];
+    }
+  }
+
+  // Helper function to calculate time ago
+  getTimeAgo(date) {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  }
+
+  // Clean up corrupted Redis keys that might cause WRONGTYPE errors
+  async cleanupCorruptedKeys() {
+    try {
+      const providers = ['tmdb', 'tvdb', 'mal', 'anilist', 'kitsu', 'fanart', 'tvmaze'];
+      const today = new Date().toISOString().split('T')[0];
+      
+      for (const provider of providers) {
+        // Check for daily keys that should be hourly
+        const dailyKey = `provider_response_times:${provider}:${today}`;
+        try {
+          const keyType = await redis.type(dailyKey);
+          if (keyType !== 'none' && keyType !== 'list') {
+            console.log(`[Request Tracker] Cleaning up corrupted key: ${dailyKey} (type: ${keyType})`);
+            await redis.del(dailyKey);
+          }
+        } catch (error) {
+          console.warn(`[Request Tracker] Failed to check/clean key ${dailyKey}:`, error.message);
+        }
+      }
+      
+      console.log('[Request Tracker] Corrupted key cleanup completed');
+    } catch (error) {
+      console.warn('[Request Tracker] Failed to cleanup corrupted keys:', error.message);
     }
   }
 }

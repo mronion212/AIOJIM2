@@ -52,6 +52,10 @@ class Database {
         this.db.run('PRAGMA foreign_keys = ON');
         this.db.run('PRAGMA journal_mode = WAL');
         this.db.run('PRAGMA busy_timeout = 5000');
+        this.db.run('PRAGMA synchronous = NORMAL');
+        this.db.run('PRAGMA cache_size = 10000');
+        this.db.run('PRAGMA temp_store = MEMORY');
+        this.db.run('PRAGMA mmap_size = 268435456'); // 256MB
         resolve();
       });
     });
@@ -268,6 +272,10 @@ class Database {
     const params = [];
     let paramIndex = 1;
 
+    // Add content type parameter first
+    params.push(contentType);
+    const contentTypeCondition = this.type === 'sqlite' ? 'content_type = ?' : `content_type = $${paramIndex++}`;
+
     if (tmdbId) {
       conditions.push(this.type === 'sqlite' ? 'tmdb_id = ?' : `tmdb_id = $${paramIndex++}`);
       params.push(tmdbId);
@@ -285,10 +293,9 @@ class Database {
       params.push(tvmazeId);
     }
 
-    if (conditions.length === 0) return null;
-
-    const contentTypeCondition = this.type === 'sqlite' ? 'content_type = ?' : `content_type = $${paramIndex++}`;
-    params.push(contentType);
+    if (conditions.length === 0) {
+      return null;
+    }
 
     const query = `
       SELECT tmdb_id, tvdb_id, imdb_id, tvmaze_id 
@@ -297,7 +304,8 @@ class Database {
       LIMIT 1
     `;
 
-    return await this.getQuery(query, params);
+    const result = await this.getQuery(query, params);
+    return result;
   }
 
   async saveIdMapping(contentType, tmdbId = null, tvdbId = null, imdbId = null, tvmazeId = null) {
@@ -327,7 +335,6 @@ class Database {
   async getCachedMappingByAnyId(contentType, tmdbId = null, tvdbId = null, imdbId = null, tvmazeId = null) {
     const cached = await this.getCachedIdMapping(contentType, tmdbId, tvdbId, imdbId, tvmazeId);
     if (cached) {
-      console.log(`[ID Cache] Found cached mapping for ${contentType}:`, cached);
       return cached;
     }
     return null;
@@ -464,6 +471,43 @@ class Database {
       : 'DELETE FROM id_mappings';
     await this.runQuery(query);
     console.log('[Database] Pruned all id_mappings.');
+  }
+
+  /**
+   * Get total count of ID mappings
+   */
+  async getTotalIdMappingCount() {
+    const query = 'SELECT COUNT(*) as count FROM id_mappings';
+    const result = await this.getQuery(query);
+    return result ? result.count : 0;
+  }
+
+  /**
+   * Get ID mappings in batches for migration
+   */
+  async getIdMappingsBatch(offset, limit) {
+    let query, params;
+    
+    if (this.type === 'sqlite') {
+      query = `
+        SELECT content_type, tmdb_id, tvdb_id, imdb_id, tvmaze_id 
+        FROM id_mappings 
+        ORDER BY id 
+        LIMIT ? OFFSET ?
+      `;
+      params = [limit, offset];
+    } else {
+      // PostgreSQL syntax
+      query = `
+        SELECT content_type, tmdb_id, tvdb_id, imdb_id, tvmaze_id 
+        FROM id_mappings 
+        ORDER BY id 
+        LIMIT $1 OFFSET $2
+      `;
+      params = [limit, offset];
+    }
+    
+    return await this.getQuery(query, params);
   }
 
   async close() {

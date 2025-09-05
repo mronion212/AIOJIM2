@@ -2,7 +2,9 @@ const { startServerWithCacheWarming } = require('./index.js')
 const PORT = process.env.PORT || 1337;
 const { initializeMapper } = require('./lib/id-mapper');
 const { initializeAnimeListMapper } = require('./lib/anime-list-mapper');
-const geminiService = require('./utils/gemini-service'); 
+const geminiService = require('./utils/gemini-service');
+const { autoMigrateIdCache } = require('./lib/auto-migrate');
+const database = require('./lib/database'); 
 
 async function startServer() {
   console.log('--- Addon Starting Up ---');
@@ -28,6 +30,13 @@ async function startServer() {
   console.log('Initializing Anime List Mapper...');
   await initializeAnimeListMapper();
   console.log('Anime List Mapper initialization complete.');
+
+  console.log('Initializing Database...');
+  await database.initialize();
+  console.log('Database initialization complete.');
+
+  // Auto-migrate ID cache from SQLite to Redis if needed
+  await autoMigrateIdCache();
 
   const addon = await startServerWithCacheWarming();
 

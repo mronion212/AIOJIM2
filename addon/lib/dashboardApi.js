@@ -709,12 +709,12 @@ class DashboardAPI {
   // Get error logs
   async getErrorLogs() {
     try {
-      // TODO: Implement real error logging system
-      return [
-        { id: 1, level: 'warning', message: 'TMDB rate limit approaching', timestamp: '2 minutes ago', count: 3 },
-        { id: 2, level: 'error', message: 'Failed to fetch from AniList API', timestamp: '15 minutes ago', count: 1 },
-        { id: 3, level: 'info', message: 'Cache warming completed', timestamp: '1 hour ago', count: 1 }
-      ];
+      // Get real error logs from request tracker
+      const requestTracker = require('./requestTracker');
+      const errorLogs = await requestTracker.getErrorLogs(20);
+      
+      // If no real errors, return empty array (no mock data)
+      return errorLogs;
     } catch (error) {
       console.error('[Dashboard API] Error getting error logs:', error);
       return [];
@@ -946,8 +946,20 @@ class DashboardAPI {
           }
           break;
         case 'expired':
-          // TODO: Implement expired cache clearing
-          // Redis automatically expires keys, so this is mostly for manual cleanup
+          // Clear keys that are close to expiration (TTL < 1 hour)
+          const allKeys = await this.cache.keys('*');
+          const expiredKeys = [];
+          
+          for (const key of allKeys) {
+            const ttl = await this.cache.ttl(key);
+            if (ttl > 0 && ttl < 3600) { // Less than 1 hour remaining
+              expiredKeys.push(key);
+            }
+          }
+          
+          if (expiredKeys.length > 0) {
+            await this.cache.del(...expiredKeys);
+          }
           break;
         case 'metadata':
           // Clear metadata-related keys

@@ -42,8 +42,22 @@ async function getTrending(type, language, page, genre, config, userUUID) {
       const artProvider = await Utils.resolveArtProvider(type, config);
       // only resolve ids if art provider is not tmdb
       let allIds;
-      if(artProvider !== 'tmdb') {
-        allIds = await resolveAllIds(`tmdb:${item.id}`, type, config);
+      let stremioId = `tmdb:${item.id}`;
+      if(artProvider !== 'tmdb' || preferredProvider !== 'tmdb') {
+        let targetProvider = [];
+        if (preferredProvider === artProvider) {
+          targetProvider.push(artProvider);
+        } else {
+          targetProvider = [artProvider, preferredProvider];
+        }
+        allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, targetProvider);
+      }
+      if(preferredProvider === 'tvdb' && allIds?.tvdbId) {
+        stremioId = `tvdb:${allIds.tvdbId}`;
+      } else if(preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
+        stremioId = `tvmaze:${allIds.tvmazeId}`;
+      } else if(preferredProvider === 'imdb' && allIds?.imdbId) {
+        stremioId = allIds.imdbId;
       }
 
       const tmdbLogoUrl = type === 'movie' ? await moviedb.getTmdbMovieLogo(item.id, config) : await moviedb.getTmdbSeriesLogo(item.id, config);
@@ -73,7 +87,7 @@ async function getTrending(type, language, page, genre, config, userUUID) {
       const imdbRating = await getImdbRating(itemDetails?.imdb_id || itemDetails?.external_ids?.imdb_id || null, type);
       const posterProxyUrl = `${host}/poster/${type}/${`tmdb:${item.id}`}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
       return {
-        id: `tmdb:${item.id}`,
+        id: stremioId,
         imdbId: itemDetails?.imdb_id || itemDetails?.external_ids?.imdb_id || null,
         type: type,
         logo: tmdbLogoUrl,

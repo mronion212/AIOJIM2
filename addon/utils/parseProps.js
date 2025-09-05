@@ -604,7 +604,7 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, malPosterUrl, mediaType = 'se
   if (artProvider === 'imdb' && malId) {
     try {
       const mapping = idMapper.getMappingByMalId(malId);
-      if (mapping && mapping.imdb_idmdbId) {
+      if (mapping && mapping.imdb_id) {
         return imdb.getBackgroundFromImdb(mapping.imdb_id);
       }
     } catch (error) {
@@ -696,7 +696,17 @@ async function getAnimeLogo({ malId, mediaType = 'series' }, config) {
       console.warn(`[getAnimeLogo] TVDB logo fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
-  
+
+  if (artProvider === 'imdb' && malId) {
+    try {
+      const mapping = idMapper.getMappingByMalId(malId);
+      if (mapping && mapping.imdb_id) {
+        return imdb.getLogoFromImdb(mapping.imdb_id);
+      }
+    } catch (error) {
+      console.warn(`[getAnimeLogo] IMDB logo fetch failed for MAL ID ${malId}:`, error.message);
+    }
+  }
   if (artProvider === 'tmdb' && malId) {
     try {
       const mapping = idMapper.getMappingByMalId(malId);
@@ -1554,7 +1564,7 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
       }
       else {
         if(!tmdbId) return fallbackPosterUrl;
-        const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config);
+        const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config, null, ['tvdb']);
         if(mappedIds.tvdbId) {
           const tvdbPoster = await tvdb.getSeriesPoster(mappedIds.tvdbId, config);
           return tvdbPoster;
@@ -1576,7 +1586,7 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
         }
       }
       else if(tmdbId) {
-        const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config);
+        const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config, null, ['tvdb']);
         if(mappedIds.tvdbId) {
           const images = await fanart.getShowImages(mappedIds.tvdbId, config);
           const poster = selectFanartImageByLang(images?.tvposter, config);
@@ -1604,7 +1614,7 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
       }
       else {
         if(!tvdbId) return fallbackPosterUrl;
-        const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config);
+        const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config, null, ['tmdb']);
         if(mappedIds.tmdbId) {
           const tmdbPoster = await tmdb.tvImages({ id: mappedIds.tmdbId }, config).then(res => {
             const img = selectTmdbImageByLang(res.posters, config);
@@ -1623,7 +1633,7 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
     if(imdbId) {
       return imdb.getPosterFromImdb(imdbId);
     } else if(tvdbId) {
-      const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config);
+      const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config, null, ['imdb']);
       if(mappedIds.imdbId) {
         return imdb.getPosterFromImdb(mappedIds.imdbId);
       }
@@ -1649,7 +1659,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
       }
       else {
         if(!tmdbId) return fallbackBackgroundUrl;
-        const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config);
+        const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config, null, ['tvdb']);
         if(mappedIds.tvdbId) {
           const tvdbBackground = await tvdb.getSeriesBackground(mappedIds.tvdbId, config);
           console.log(`[getSeriesBackground] Found TVDB background via ID mapping for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
@@ -1698,7 +1708,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
         return `https://image.tmdb.org/t/p/original${tmdbBackground}`;
       }
       else {
-        const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config);
+        const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config, null, ['tmdb']);
         if(mappedIds.tmdbId) {
           const tmdbBackground = await tmdb.tvImages({ id: mappedIds.tmdbId, include_image_language: null }, config).then(res => {
             const img = res.backdrops[0];
@@ -1738,7 +1748,7 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
       }
       else {
         if(!tmdbId) return fallbackLogoUrl;
-        const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config);
+        const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config, null, ['tvdb']);
         if(mappedIds.tvdbId) {
           const tvdbLogo = await tvdb.getSeriesLogo(mappedIds.tvdbId, config);
           console.log(`[getSeriesLogo] Found TVDB logo via ID mapping for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
@@ -1761,7 +1771,7 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
         }
       }
       else if(tmdbId) {
-        const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config);
+        const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config, null, ['tvdb']);
         if(mappedIds.tvdbId) {
           console.log(`[getSeriesLogo] Fetching Fanart.tv logo for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
           const images = await fanart.getShowImages(mappedIds.tvdbId, config);

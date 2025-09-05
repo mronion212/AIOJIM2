@@ -990,6 +990,16 @@ function DashboardOperations() {
           const data = await response.json();
           setErrorLogs(data.errorLogs || []);
           setMaintenanceTasks(data.maintenanceTasks || []);
+          
+          // Update cache stats from API response
+          if (data.cacheStats) {
+            setCacheStats({
+              totalKeys: data.cacheStats.totalKeys || 0,
+              memoryUsage: data.cacheStats.memoryUsage ? `${data.cacheStats.memoryUsage}%` : '0%',
+              hitRate: data.cacheStats.hitRate || 0,
+              evictionRate: data.cacheStats.evictionRate || 0
+            });
+          }
         } else {
           console.error('Failed to fetch operations data:', response.status);
         }
@@ -1003,9 +1013,47 @@ function DashboardOperations() {
     fetchOperationsData();
   }, []);
 
-  const handleClearCache = (type) => {
-    // TODO: Implement cache clearing logic
-    console.log(`Clearing ${type} cache...`);
+  const handleClearCache = async (type) => {
+    try {
+      console.log(`Clearing ${type} cache...`);
+      
+      const response = await fetch('/api/dashboard/cache/clear', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ type })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Cache cleared successfully:', result.message);
+        
+        // Refresh the cache stats after clearing
+        const operationsResponse = await fetch('/api/dashboard/operations');
+        if (operationsResponse.ok) {
+          const data = await operationsResponse.json();
+          if (data.cacheStats) {
+            setCacheStats({
+              totalKeys: data.cacheStats.totalKeys || 0,
+              memoryUsage: data.cacheStats.memoryUsage ? `${data.cacheStats.memoryUsage}%` : '0%',
+              hitRate: data.cacheStats.hitRate || 0,
+              evictionRate: data.cacheStats.evictionRate || 0
+            });
+          }
+        }
+        
+        // Show success message (you could add a toast notification here)
+        alert(`Cache ${type} cleared successfully!`);
+      } else {
+        const error = await response.json();
+        console.error('Failed to clear cache:', error.error);
+        alert(`Failed to clear cache: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error clearing cache:', error);
+      alert(`Error clearing cache: ${error.message}`);
+    }
   };
 
   const handleRetryError = (errorId) => {

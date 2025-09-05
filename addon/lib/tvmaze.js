@@ -1,6 +1,15 @@
 const axios = require('axios');
 const TVMAZE_API_URL = 'https://api.tvmaze.com';
-const DEFAULT_TIMEOUT = 10000; // 10-second timeout for all requests
+const DEFAULT_TIMEOUT = 15000; // 15-second timeout for all requests
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // 1 second base delay
+
+/**
+ * Sleep function for retry delays
+ */
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 /**
  * A helper to check for 404s and returns a specific value, otherwise logs the error.
@@ -10,8 +19,42 @@ function handleAxiosError(error, context) {
     console.log(`${context}: Resource not found (404).`);
     return { notFound: true };
   }
-  console.error(`Error in ${context}:`, error.message);
+  
+  // Log network errors more concisely
+  if (error.code === 'ETIMEDOUT' || error.code === 'ENETUNREACH' || error.code === 'ECONNREFUSED') {
+    console.error(`${context}: Network error (${error.code}) - ${error.message}`);
+  } else {
+    console.error(`Error in ${context}:`, error.message || 'No error message available');
+  }
+  
   return { error: true };
+}
+
+/**
+ * Retry wrapper for API calls
+ */
+async function retryApiCall(apiCall, context, retries = MAX_RETRIES) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await apiCall();
+    } catch (error) {
+      const isLastAttempt = attempt === retries;
+      const isRetryableError = error.code === 'ETIMEDOUT' || 
+                              error.code === 'ENETUNREACH' || 
+                              error.code === 'ECONNREFUSED' ||
+                              (error.response && error.response.status >= 500);
+      
+      if (isLastAttempt || !isRetryableError) {
+        const { notFound } = handleAxiosError(error, context);
+        return notFound ? null : null;
+      }
+      
+      // Exponential backoff: 1s, 2s, 4s
+      const delay = RETRY_DELAY * Math.pow(2, attempt - 1);
+      console.log(`${context}: Attempt ${attempt} failed, retrying in ${delay}ms...`);
+      await sleep(delay);
+    }
+  }
 }
 
 
@@ -20,13 +63,12 @@ function handleAxiosError(error, context) {
  */
 async function getShowByImdbId(imdbId) {
   const url = `${TVMAZE_API_URL}/lookup/shows?imdb=${imdbId}`;
-  try {
+  const context = `getShowByImdbId for IMDb ${imdbId}`;
+  
+  return await retryApiCall(async () => {
     const response = await axios.get(url, { timeout: DEFAULT_TIMEOUT });
     return response.data;
-  } catch (error) {
-    const { notFound } = handleAxiosError(error, `getShowByImdbId for IMDb ${imdbId}`);
-    return notFound ? null : null; 
-  }
+  }, context);
 }
 
 /**
@@ -34,26 +76,25 @@ async function getShowByImdbId(imdbId) {
  */
 async function getShowDetails(tvmazeId) {
   const url = `${TVMAZE_API_URL}/shows/${tvmazeId}?embed[]=episodes&embed[]=cast&embed[]=crew`;
-  try {
+  const context = `getShowDetails for TVmaze ID ${tvmazeId}`;
+  
+  return await retryApiCall(async () => {
     const response = await axios.get(url, { timeout: DEFAULT_TIMEOUT });
     return response.data;
-  } catch (error) {
-    const { notFound } = handleAxiosError(error, `getShowDetails for TVmaze ID ${tvmazeId}`);
-    return notFound ? null : null;
-  }
+  }, context);
 }
+
 /**
  * Gets the full show namely to retrieve external ids, using a TVmaze ID.
  */
 async function getShowById(tvmazeId) {
   const url = `${TVMAZE_API_URL}/shows/${tvmazeId}`;
-  try {
+  const context = `getShowById for TVmaze ID ${tvmazeId}`;
+  
+  return await retryApiCall(async () => {
     const response = await axios.get(url, { timeout: DEFAULT_TIMEOUT });
     return response.data;
-  } catch (error) {
-    const { notFound } = handleAxiosError(error, `getShowById for TVmaze ID ${tvmazeId}`);
-    return notFound ? null : null;
-  }
+  }, context);
 }
 
 
@@ -62,13 +103,12 @@ async function getShowById(tvmazeId) {
  */
 async function searchShows(query) {
   const url = `${TVMAZE_API_URL}/search/shows?q=${encodeURIComponent(query)}`;
-  try {
+  const context = `searchShows for query "${query}"`;
+  
+  return await retryApiCall(async () => {
     const response = await axios.get(url, { timeout: DEFAULT_TIMEOUT });
     return response.data;
-  } catch (error) {
-    handleAxiosError(error, `searchShows for query "${query}"`);
-    return []; 
-  }
+  }, context) || [];
 }
 
 /**
@@ -76,13 +116,12 @@ async function searchShows(query) {
  */
 async function getShowByTvdbId(tvdbId) {
   const url = `${TVMAZE_API_URL}/lookup/shows?thetvdb=${tvdbId}`;
-  try {
+  const context = `getShowByTvdbId for TVDB ${tvdbId}`;
+  
+  return await retryApiCall(async () => {
     const response = await axios.get(url, { timeout: DEFAULT_TIMEOUT });
     return response.data;
-  } catch (error) {
-    const { notFound } = handleAxiosError(error, `getShowByTvdbId for TVDB ${tvdbId}`);
-    return notFound ? null : null;
-  }
+  }, context);
 }
 
 /**
@@ -90,13 +129,12 @@ async function getShowByTvdbId(tvdbId) {
  */
 async function searchPeople(query) {
   const url = `${TVMAZE_API_URL}/search/people?q=${encodeURIComponent(query)}`;
-  try {
+  const context = `searchPeople for person "${query}"`;
+  
+  return await retryApiCall(async () => {
     const response = await axios.get(url, { timeout: DEFAULT_TIMEOUT });
     return response.data;
-  } catch (error) {
-    handleAxiosError(error, `searchPeople for person "${query}"`);
-    return [];
-  }
+  }, context) || [];
 }
 
 /**
@@ -104,13 +142,12 @@ async function searchPeople(query) {
  */
 async function getPersonCastCredits(personId) {
   const url = `${TVMAZE_API_URL}/people/${personId}/castcredits?embed=show`;
-  try {
+  const context = `getPersonCastCredits for person ID ${personId}`;
+  
+  return await retryApiCall(async () => {
     const response = await axios.get(url, { timeout: DEFAULT_TIMEOUT });
     return response.data;
-  } catch (error) {
-    handleAxiosError(error, `getPersonCastCredits for person ID ${personId}`);
-    return [];
-  }
+  }, context) || [];
 }
 
 module.exports = {

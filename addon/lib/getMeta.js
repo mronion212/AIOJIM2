@@ -325,15 +325,30 @@ async function getMeta(type, language, stremioId, config = {}, userUUID) {
     }
     let meta;
     console.log(`[Meta] Starting process for ${stremioId} (type: ${type}, language: ${language})`);
-    const allIds = await resolveAllIds(stremioId, type, config);
+    let preferredProvider;
+    if (type === 'movie') {
+      preferredProvider = config.providers?.movie || 'tmdb';
+    } else {
+      preferredProvider = config.providers?.series || 'tvdb';
+    }
+    const artProvider = await Utils.resolveArtProvider(type, config);
+    // imdbId is always a target provider for movies and series
+    let targetProviders = [preferredProvider];
+    if(preferredProvider !== artProvider) {
+      targetProviders.push(artProvider);
+    }
+    if(!targetProviders.includes('imdb')) {
+      targetProviders.push('imdb');
+    }
+    const allIds = await resolveAllIds(stremioId, type, config, null, targetProviders);
     const isAnime = stremioId.startsWith('mal:') || stremioId.startsWith('kitsu:') || stremioId.startsWith('anidb:') || stremioId.startsWith('anilist:');
     const finalType = isAnime ? 'anime' : type;
     switch (finalType) {
       case 'movie':
-        meta = await getMovieMeta(stremioId, config.providers?.movie, language, config, userUUID, allIds);
+        meta = await getMovieMeta(stremioId, preferredProvider, language, config, userUUID, allIds);
         break;
       case 'series':
-        meta = await getSeriesMeta(config.providers?.series, stremioId, language, config, userUUID, allIds);
+        meta = await getSeriesMeta(preferredProvider, stremioId, language, config, userUUID, allIds);
         break;
       case 'anime':
         meta = await getAnimeMeta(config.providers?.anime, stremioId, language, config, userUUID, allIds, type, isAnime);
@@ -1089,6 +1104,10 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   }));
   
   const { trailers, trailerStreams } = Utils.parseTvdbTrailers(movieData.trailers, translatedName);
+
+  if(!logoUrl && imdbId){
+    logoUrl =  imdb.getLogoFromImdb(imdbId);
+  }
 
   return {
     id: stremioId,

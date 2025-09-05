@@ -130,23 +130,34 @@ async function parseMDBListItems(items, type, genreFilter, language, config) {
     .filter(item => item.mediatype === targetMediaType)
     .map(async item => {
       try {
-        const allIds = await resolveAllIds(`tmdb:${item.id}`, type, config);
+        let allIds;
         let preferredProvider;
         if (type === 'movie') {
           preferredProvider = config.providers?.movie || 'tmdb';
         } else {
           preferredProvider = config.providers?.series || 'tvdb';
         }
-        let stremioId;
-        if (preferredProvider === 'tvdb' && allIds.tvdbId) {
-          stremioId = `tvdb:${allIds.tvdbId}`;
-        } else if (preferredProvider === 'tmdb' && allIds.tmdbId) {
-          stremioId = `tmdb:${item.id}`;
-        } else if (preferredProvider === 'imdb' && allIds.imdbId) {
-          stremioId = allIds.imdbId;
-        } else {
-          stremioId = `tmdb:${item.id}`;
+        const artProvider = await Utils.resolveArtProvider(type, config);
+      // only resolve ids if art provider is not tmdb
+        let stremioId = `tmdb:${item.id}`;
+        if(artProvider !== 'tmdb' || preferredProvider !== 'tmdb') {
+          let targetProvider = [];
+          if (preferredProvider === artProvider) {
+            targetProvider.push(artProvider);
+          } else {
+            targetProvider = [artProvider, preferredProvider];
+          }
+          allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, targetProvider);
         }
+
+        if(preferredProvider === 'tvdb' && allIds?.tvdbId) {
+          stremioId = `tvdb:${allIds.tvdbId}`;
+        } else if(preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
+          stremioId = `tvmaze:${allIds.tvmazeId}`;
+        } else if(preferredProvider === 'imdb' && allIds?.imdbId) {
+          stremioId = allIds.imdbId;
+        }
+
         const batchMediaItem = batchMediaInfo.find(media => media.ids?.tmdb === item.id);
         const posterPath = batchMediaItem?.poster || item.poster;
         const tmdbPosterFullUrl = posterPath 

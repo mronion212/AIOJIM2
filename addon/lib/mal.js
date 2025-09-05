@@ -47,6 +47,15 @@ async function processQueue() {
         `Jikan rate limit hit. Retrying in ${Math.round(nextDelay)}ms. ` +
         `(Attempt ${requestTask.retries}/${MAX_RETRIES})`
       );
+      
+      // Log rate limit warning for dashboard
+      const requestTracker = require('./requestTracker');
+      requestTracker.logError('warning', `MAL API rate limit hit`, {
+        retries: requestTask.retries,
+        maxRetries: MAX_RETRIES,
+        backoffTime: Math.round(nextDelay),
+        url: requestTask.url
+      });
 
       requestQueue.unshift(requestTask);
     } else {
@@ -95,6 +104,14 @@ async function _makeJikanRequest(url) {
     // Track failed request
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('mal', responseTime, false);
+    
+    // Log error for dashboard
+    requestTracker.logError('error', `MAL API request failed: ${error.message}`, {
+      url: url,
+      responseTime: responseTime,
+      status: error.response?.status,
+      retries: requestTask?.retries || 0
+    });
     
     throw error;
   }

@@ -5,7 +5,7 @@ const moviedb = require("./getTmdb");
 const axios = require('axios');
 const database = require('./database');
 
-async function resolveAllIds(stremioId, type, config, prefetcheIds) {
+async function resolveAllIds(stremioId, type, config, prefetcheIds, targetProviders = []) {
   console.log(`🔗 [ID Resolver] Resolving ${stremioId} (type: ${type})`);
  
   
@@ -40,15 +40,43 @@ async function resolveAllIds(stremioId, type, config, prefetcheIds) {
     );
     
     if (cachedMapping) {
+      //console.log(`🔗 [ID Resolver] Cached mapping:`, JSON.stringify(cachedMapping));
       // Merge cached data with existing IDs
       allIds.tmdbId = allIds.tmdbId || cachedMapping.tmdb_id;
       allIds.tvdbId = allIds.tvdbId || cachedMapping.tvdb_id;
       allIds.imdbId = allIds.imdbId || cachedMapping.imdb_id;
       allIds.tvmazeId = allIds.tvmazeId || cachedMapping.tvmaze_id;
+
+      if(targetProviders.length > 0) {
+        // check if we have the target provider id
+        if(targetProviders.includes('tmdb')) {
+          allIds.tmdbId = allIds.tmdbId || cachedMapping.tmdb_id;
+        } else if(targetProviders.includes('tvdb')) {
+          allIds.tvdbId = allIds.tvdbId || cachedMapping.tvdb_id;
+        } else if(targetProviders.includes('imdb')) {
+          allIds.imdbId = allIds.imdbId || cachedMapping.imdb_id;
+        } else if(targetProviders.includes('tvmaze')) {
+          allIds.tvmazeId = allIds.tvmazeId || cachedMapping.tvmaze_id;
+        }
+      }
+
+      //console.log(`🔗 [ID Resolver] All IDs for target providers:`, JSON.stringify(allIds));
+      // if we have found all the target providers, return early
+      if(targetProviders.length > 0 && targetProviders.every(provider => allIds[provider])) {
+        //console.log(`🔗 [ID Resolver] Using cached mapping for ${stremioId}`);
+        return allIds;
+      }
+      
+      
       
       // If we have all the IDs we need, return early
-      if (allIds.tmdbId && allIds.tvdbId && allIds.imdbId && allIds.tvmazeId) {
-        console.log(`🔗 [ID Resolver] Using cached mapping for ${stremioId}`);
+      if (type === 'series' && allIds.tmdbId && allIds.tvdbId && allIds.imdbId && allIds.tvmazeId) {
+        //console.log(`🔗 [ID Resolver] Using cached mapping for ${stremioId}`);
+        return allIds;
+      }
+      
+      if(type === 'movie' && allIds.tmdbId && allIds.imdbId && allIds.tvdbId) {
+        //console.log(`🔗 [ID Resolver] Using cached mapping for ${stremioId}`);
         return allIds;
       }
     }
@@ -119,6 +147,19 @@ async function resolveAllIds(stremioId, type, config, prefetcheIds) {
       }
     }
 
+    if (allIds.tvdbId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvmazeId)) {
+      let tvdbDetails;
+      if (type === 'movie') {
+        tvdbDetails = await tvdb.getMovieExtended(allIds.tvdbId, config);
+      } else {
+          tvdbDetails = await tvdb.getSeriesExtended(allIds.tvdbId, config);
+      }
+      
+      allIds.imdbId = allIds.imdbId || tvdbDetails.remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
+      allIds.tmdbId = allIds.tmdbId || tvdbDetails.remoteIds?.find(id => id.sourceName === 'TheMovieDB.com')?.id;
+      allIds.tvmazeId = allIds.tvmazeId || tvdbDetails.remoteIds?.find(id => id.sourceName === "TV Maze")?.id || (await tvmaze.getShowByTvdbId(allIds.tvdbId, config))?.id;
+    }
+
 
     if (allIds.imdbId && (!allIds.tmdbId || !allIds.tvdbId || !allIds.tvmazeId)) {
       // get external IDs from Cinemeta
@@ -150,19 +191,6 @@ async function resolveAllIds(stremioId, type, config, prefetcheIds) {
         const tvmazeMatch = await tvmaze.getShowByImdbId(allIds.imdbId);
         if (tvmazeMatch && tvmazeMatch.id) allIds.tvmazeId = tvmazeMatch.id;
       }
-    }
-    
-    if (allIds.tvdbId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvmazeId)) {
-        let tvdbDetails;
-        if (type === 'movie') {
-          tvdbDetails = await tvdb.getMovieExtended(allIds.tvdbId, config);
-        } else {
-            tvdbDetails = await tvdb.getSeriesExtended(allIds.tvdbId, config);
-        }
-        
-        allIds.imdbId = allIds.imdbId || tvdbDetails.remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
-        allIds.tmdbId = allIds.tmdbId || tvdbDetails.remoteIds?.find(id => id.sourceName === 'TheMovieDB.com')?.id;
-        allIds.tvmazeId = allIds.tvmazeId || tvdbDetails.remoteIds?.find(id => id.sourceName === "TV Maze")?.id ;
     }
 
     if (allIds.tvmazeId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvdbId)) {
