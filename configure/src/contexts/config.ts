@@ -31,9 +31,21 @@ export interface AppConfig {
     anime_id_provider: 'kitsu' | 'mal' | 'imdb';
   };
   artProviders: {
-    movie: 'meta' | 'tmdb' | 'tvdb' | 'fanart';
-    series: 'meta' | 'tmdb' | 'tvdb' | 'fanart';
-    anime: 'meta' | 'mal' | 'anilist' | 'tvdb' | 'fanart';
+    movie: 'meta' | 'tmdb' | 'tvdb' | 'fanart' | 'imdb' | {
+      poster: 'meta' | 'tmdb' | 'tvdb' | 'fanart' | 'imdb';
+      background: 'meta' | 'tmdb' | 'tvdb' | 'fanart' | 'imdb';
+      logo: 'meta' | 'tmdb' | 'tvdb' | 'fanart' | 'imdb';
+    };
+    series: 'meta' | 'tmdb' | 'tvdb' | 'fanart' | 'imdb' | {
+      poster: 'meta' | 'tmdb' | 'tvdb' | 'fanart' | 'imdb';
+      background: 'meta' | 'tmdb' | 'tvdb' | 'fanart' | 'imdb';
+      logo: 'meta' | 'tmdb' | 'tvdb' | 'fanart' | 'imdb';
+    };
+    anime: 'meta' | 'mal' | 'anilist' | 'tvdb' | 'fanart' | 'imdb' | {
+      poster: 'meta' | 'mal' | 'anilist' | 'tvdb' | 'fanart' | 'imdb';
+      background: 'meta' | 'mal' | 'anilist' | 'tvdb' | 'fanart' | 'imdb';
+      logo: 'meta' | 'mal' | 'anilist' | 'tvdb' | 'fanart' | 'imdb';
+    };
   };
   tvdbSeasonType: string;
   mal: {

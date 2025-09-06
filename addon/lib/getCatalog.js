@@ -197,10 +197,10 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
   const res = await fetchFunction();
   const metas = await Promise.all(res.results.map(async item => {
     // Resolve IDs for each individual item
-    const artProvider = await Utils.resolveArtProvider(type, config);
- 
-      // only resolve ids if art provider is not tmdb
-    let allIds;
+    // Check all three art types and collect non-meta providers
+    const posterProvider = Utils.resolveArtProvider(type, 'poster', config);
+    const backgroundProvider = Utils.resolveArtProvider(type, 'background', config);
+    const logoProvider = Utils.resolveArtProvider(type, 'logo', config);
 
     // Determine preferred meta provider
     let preferredProvider;
@@ -210,15 +210,18 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
       preferredProvider = config.providers?.series || 'tvdb';
     }
 
+    // Collect all unique non-meta providers
+    const targetProviders = new Set();
+    if (posterProvider !== preferredProvider && posterProvider !== 'tmdb' && posterProvider !== 'fanart') targetProviders.add(posterProvider);
+    if (backgroundProvider !== preferredProvider && backgroundProvider !== 'tmdb' && backgroundProvider !== 'fanart') targetProviders.add(backgroundProvider);
+    if (logoProvider !== preferredProvider && logoProvider !== 'tmdb' && logoProvider !== 'fanart') targetProviders.add(logoProvider);
+    if (preferredProvider !== 'tmdb') targetProviders.add(preferredProvider);
+    if ((posterProvider === 'fanart' || backgroundProvider === 'fanart' || logoProvider === 'fanart') && type === 'series') targetProviders.add('tvdb');
 
-    if(artProvider !== 'tmdb' || preferredProvider !== 'tmdb') {
-      let targetProvider = [];
-      if (preferredProvider === artProvider) {
-        targetProvider.push(artProvider);
-      } else {
-        targetProvider = [artProvider, preferredProvider];
-      }
-      allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, targetProvider);
+    let allIds;
+    if (targetProviders.size > 0) {
+      const targetProviderArray = Array.from(targetProviders);
+      allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, targetProviderArray);
     }
     const tmdbLogoUrl = type === 'movie' ? await moviedb.getTmdbMovieLogo(item.id, config) : await moviedb.getTmdbSeriesLogo(item.id, config);
 

@@ -331,16 +331,25 @@ async function getMeta(type, language, stremioId, config = {}, userUUID) {
     } else {
       preferredProvider = config.providers?.series || 'tvdb';
     }
-    const artProvider = await Utils.resolveArtProvider(type, config);
+    const posterProvider = Utils.resolveArtProvider(type, 'poster', config);
+    const backgroundProvider = Utils.resolveArtProvider(type, 'background', config);
+    const logoProvider = Utils.resolveArtProvider(type, 'logo', config);
     // imdbId is always a target provider for movies and series
-    let targetProviders = [preferredProvider];
-    if(preferredProvider !== artProvider) {
-      targetProviders.push(artProvider);
+    const targetProviders = new Set();
+    targetProviders.add(preferredProvider);
+    if(preferredProvider !== posterProvider) {
+      targetProviders.add(posterProvider);
     }
-    if(!targetProviders.includes('imdb')) {
-      targetProviders.push('imdb');
+    if(preferredProvider !== backgroundProvider) {
+      targetProviders.add(backgroundProvider);
     }
-    const allIds = await resolveAllIds(stremioId, type, config, null, targetProviders);
+    if(preferredProvider !== logoProvider) {
+      targetProviders.add(logoProvider);
+    }
+    if(!targetProviders.has('imdb')) {
+      targetProviders.add('imdb');
+    }
+    const allIds = await resolveAllIds(stremioId, type, config, null, Array.from(targetProviders));
     const isAnime = stremioId.startsWith('mal:') || stremioId.startsWith('kitsu:') || stremioId.startsWith('anidb:') || stremioId.startsWith('anilist:');
     const finalType = isAnime ? 'anime' : type;
     switch (finalType) {

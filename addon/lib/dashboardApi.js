@@ -518,14 +518,56 @@ class DashboardAPI {
 
       // Art providers
       if (config.artProviders) {
-        const movieArt = config.artProviders.movie || config.providers?.movie || 'tmdb';
-        stats.artProviders.movie[movieArt] = (stats.artProviders.movie[movieArt] || 0) + 1;
+        // Handle movie art providers
+        const movieArtConfig = config.artProviders.movie;
+        if (typeof movieArtConfig === 'string') {
+          // Legacy string format
+          const movieArt = movieArtConfig || config.providers?.movie || 'tmdb';
+          stats.artProviders.movie[movieArt] = (stats.artProviders.movie[movieArt] || 0) + 1;
+        } else if (typeof movieArtConfig === 'object' && movieArtConfig !== null) {
+          // New nested object format - track each art type
+          const posterProvider = movieArtConfig.poster || config.providers?.movie || 'tmdb';
+          const backgroundProvider = movieArtConfig.background || config.providers?.movie || 'tmdb';
+          const logoProvider = movieArtConfig.logo || config.providers?.movie || 'tmdb';
+          
+          stats.artProviders.movie[`${posterProvider} (poster)`] = (stats.artProviders.movie[`${posterProvider} (poster)`] || 0) + 1;
+          stats.artProviders.movie[`${backgroundProvider} (background)`] = (stats.artProviders.movie[`${backgroundProvider} (background)`] || 0) + 1;
+          stats.artProviders.movie[`${logoProvider} (logo)`] = (stats.artProviders.movie[`${logoProvider} (logo)`] || 0) + 1;
+        }
         
-        const seriesArt = config.artProviders.series || config.providers?.series || 'tvdb';
-        stats.artProviders.series[seriesArt] = (stats.artProviders.series[seriesArt] || 0) + 1;
+        // Handle series art providers
+        const seriesArtConfig = config.artProviders.series;
+        if (typeof seriesArtConfig === 'string') {
+          // Legacy string format
+          const seriesArt = seriesArtConfig || config.providers?.series || 'tvdb';
+          stats.artProviders.series[seriesArt] = (stats.artProviders.series[seriesArt] || 0) + 1;
+        } else if (typeof seriesArtConfig === 'object' && seriesArtConfig !== null) {
+          // New nested object format - track each art type
+          const posterProvider = seriesArtConfig.poster || config.providers?.series || 'tvdb';
+          const backgroundProvider = seriesArtConfig.background || config.providers?.series || 'tvdb';
+          const logoProvider = seriesArtConfig.logo || config.providers?.series || 'tvdb';
+          
+          stats.artProviders.series[`${posterProvider} (poster)`] = (stats.artProviders.series[`${posterProvider} (poster)`] || 0) + 1;
+          stats.artProviders.series[`${backgroundProvider} (background)`] = (stats.artProviders.series[`${backgroundProvider} (background)`] || 0) + 1;
+          stats.artProviders.series[`${logoProvider} (logo)`] = (stats.artProviders.series[`${logoProvider} (logo)`] || 0) + 1;
+        }
         
-        const animeArt = config.artProviders.anime || config.providers?.anime || 'mal';
-        stats.artProviders.anime[animeArt] = (stats.artProviders.anime[animeArt] || 0) + 1;
+        // Handle anime art providers
+        const animeArtConfig = config.artProviders.anime;
+        if (typeof animeArtConfig === 'string') {
+          // Legacy string format
+          const animeArt = animeArtConfig || config.providers?.anime || 'mal';
+          stats.artProviders.anime[animeArt] = (stats.artProviders.anime[animeArt] || 0) + 1;
+        } else if (typeof animeArtConfig === 'object' && animeArtConfig !== null) {
+          // New nested object format - track each art type
+          const posterProvider = animeArtConfig.poster || config.providers?.anime || 'mal';
+          const backgroundProvider = animeArtConfig.background || config.providers?.anime || 'mal';
+          const logoProvider = animeArtConfig.logo || config.providers?.anime || 'mal';
+          
+          stats.artProviders.anime[`${posterProvider} (poster)`] = (stats.artProviders.anime[`${posterProvider} (poster)`] || 0) + 1;
+          stats.artProviders.anime[`${backgroundProvider} (background)`] = (stats.artProviders.anime[`${backgroundProvider} (background)`] || 0) + 1;
+          stats.artProviders.anime[`${logoProvider} (logo)`] = (stats.artProviders.anime[`${logoProvider} (logo)`] || 0) + 1;
+        }
       }
 
       // Feature usage

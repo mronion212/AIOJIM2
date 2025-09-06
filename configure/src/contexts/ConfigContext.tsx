@@ -91,7 +91,11 @@ const initialConfig: AppConfig = {
   castCount: 10,
   sfw: false,
   providers: { movie: 'tmdb', series: 'tvdb', anime: 'mal', anime_id_provider: 'imdb', },
-  artProviders: { movie: 'meta', series: 'meta', anime: 'tvdb' },
+  artProviders: { 
+    movie: { poster: 'meta', background: 'meta', logo: 'meta' },
+    series: { poster: 'meta', background: 'meta', logo: 'meta' },
+    anime: { poster: 'tvdb', background: 'tvdb', logo: 'tvdb' }
+  },
   tvdbSeasonType: 'default',
   mal: {
     skipFiller: false, 
@@ -186,7 +190,35 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
         ...preloadedConfig,
         apiKeys: { ...initialConfig.apiKeys, ...preloadedConfig.apiKeys },
         providers: { ...initialConfig.providers, ...preloadedConfig.providers },
-        artProviders: { ...initialConfig.artProviders, ...preloadedConfig.artProviders },
+        artProviders: (() => {
+          const defaultArtProviders = initialConfig.artProviders;
+          const userArtProviders = preloadedConfig.artProviders;
+          
+          if (!userArtProviders) return defaultArtProviders;
+          
+          // Migrate legacy string format to new nested format
+          const migratedArtProviders = { ...defaultArtProviders };
+          
+          ['movie', 'series', 'anime'].forEach(contentType => {
+            const userValue = userArtProviders[contentType];
+            if (typeof userValue === 'string') {
+              // Legacy format: convert single string to nested object
+              migratedArtProviders[contentType] = {
+                poster: userValue,
+                background: userValue,
+                logo: userValue
+              };
+            } else if (userValue && typeof userValue === 'object') {
+              // New format: merge with defaults
+              migratedArtProviders[contentType] = {
+                ...defaultArtProviders[contentType],
+                ...userValue
+              };
+            }
+          });
+          
+          return migratedArtProviders;
+        })(),
         search: {
           ...initialConfig.search,
           ...preloadedConfig.search,

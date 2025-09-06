@@ -139,9 +139,26 @@ class ConfigApi {
           
           // Art provider changes - affects all art-related components
           if (config.artProviders && oldConfig?.artProviders) {
-            const artProvidersChanged = Object.keys(config.artProviders).some(key => 
-              config.artProviders[key] !== oldConfig.artProviders?.[key]
-            );
+            const artProvidersChanged = Object.keys(config.artProviders).some(key => {
+              const newValue = config.artProviders[key];
+              const oldValue = oldConfig.artProviders?.[key];
+              
+              // Handle legacy string format
+              if (typeof newValue === 'string' && typeof oldValue === 'string') {
+                return newValue !== oldValue;
+              }
+              
+              // Handle new nested object format
+              if (typeof newValue === 'object' && typeof oldValue === 'object') {
+                return newValue.poster !== oldValue.poster || 
+                       newValue.background !== oldValue.background || 
+                       newValue.logo !== oldValue.logo;
+              }
+              
+              // Handle mixed formats (legacy to new or vice versa)
+              return true;
+            });
+            
             if (artProvidersChanged) {
               patterns.push(`meta:*`);
               patterns.push(`meta-*:*`);

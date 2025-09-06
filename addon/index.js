@@ -698,13 +698,6 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
       return respond(req, res, { meta: null });
     }
     
-    // Capture metadata for dashboard display
-    try {
-      await requestTracker.captureMetadataFromComponents(`${type}:${stremioId}`, result.meta, type);
-    } catch (error) {
-      console.warn('[Meta Route] Failed to capture metadata for dashboard:', error.message);
-    }
-    
     // Warm related content in the background for public instances
     if (ENABLE_CACHE_WARMING && !NO_CACHE) {
       // Don't await this - let it run in background

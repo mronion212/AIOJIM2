@@ -20,7 +20,7 @@ interface SavedConfig {
 }
 
 export function ConfigurationManager({ children }: ConfigurationManagerProps) {
-  const { config, auth, setAuth, loadConfigFromDatabase } = useConfig();
+  const { config, auth, setAuth } = useConfig();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -75,9 +75,31 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
 
   const validateRequiredKeys = () => {
     const requiredKeys = ['tmdb', 'tvdb'];
-    const isFanartSelected = config.artProviders?.movie === 'fanart' || 
-                            config.artProviders?.series === 'fanart' || 
-                            config.artProviders?.anime === 'fanart';
+    
+    // Check if fanart is selected in any art provider (handles both legacy and new formats)
+    const isFanartSelected = (() => {
+      const artProviders = config.artProviders;
+      if (!artProviders) return false;
+      
+      return ['movie', 'series', 'anime'].some(contentType => {
+        const provider = artProviders[contentType];
+        
+        // Handle legacy string format
+        if (typeof provider === 'string') {
+          return provider === 'fanart';
+        }
+        
+        // Handle new nested object format
+        if (typeof provider === 'object' && provider !== null) {
+          return provider.poster === 'fanart' || 
+                 provider.background === 'fanart' || 
+                 provider.logo === 'fanart';
+        }
+        
+        return false;
+      });
+    })();
+    
     if (isFanartSelected && !requiredKeys.includes('fanart')) {
       requiredKeys.push('fanart');
     }
@@ -191,7 +213,12 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
     setIsLoading(true);
     setError("");
     try {
-      const success = await loadConfigFromDatabase(auth.userUUID, password);
+      const response = await fetch(`/api/config/load/${auth.userUUID}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      const success = response.ok;
       if (success) {
         setAuth({ authenticated: true, userUUID: auth.userUUID, password });
         setShowPasswordDialog(false);

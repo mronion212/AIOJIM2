@@ -540,14 +540,38 @@ async function parsePoster(type, ids, fallbackFullUrl, language, rpdbkey) {
   return fallbackFullUrl;
 }
 
-// Helper to resolve art provider, using meta provider if artProvider is 'meta'
-function resolveArtProvider(type, config) {
-  const artProvider = config.artProviders?.[type];
-  if (artProvider === 'meta' || !artProvider) {
-    // Use the selected meta provider for this type
-    return config.providers?.[type] || (type === 'anime' ? 'mal' : type === 'movie' ? 'tmdb' : 'tvdb');
+// Helper to resolve art provider for specific art type, using meta provider if artProvider is 'meta'
+function resolveArtProvider(contentType, artType, config) {
+  const artProviderConfig = config.artProviders?.[contentType];
+  
+  // Handle legacy string format
+  if (typeof artProviderConfig === 'string') {
+    if (artProviderConfig === 'meta' || !artProviderConfig) {
+      return config.providers?.[contentType] || getDefaultProvider(contentType);
+    }
+    return artProviderConfig;
   }
-  return artProvider;
+  
+  // Handle new nested object format
+  if (typeof artProviderConfig === 'object' && artProviderConfig !== null) {
+    const provider = artProviderConfig[artType];
+    if (provider === 'meta' || !provider) {
+      return config.providers?.[contentType] || getDefaultProvider(contentType);
+    }
+    return provider;
+  }
+  
+  // Fallback to meta provider
+  return config.providers?.[contentType] || getDefaultProvider(contentType);
+}
+
+function getDefaultProvider(contentType) {
+  switch (contentType) {
+    case 'anime': return 'mal';
+    case 'movie': return 'tmdb';
+    case 'series': return 'tvdb';
+    default: return 'tmdb';
+  }
 }
 
 async function getAnimeBg({ tvdbId, tmdbId, malId, malPosterUrl, mediaType = 'series' }, config) {
@@ -555,7 +579,7 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, malPosterUrl, mediaType = 'se
   console.log(`[getAnimeBg] Fetching background for ${mediaType} with TVDB ID: ${tvdbId}, TMDB ID: ${tmdbId}, MAL ID: ${malId}`);
   
   // Check art provider preference
-  const artProvider = resolveArtProvider('anime', config);
+  const artProvider = resolveArtProvider('anime', 'background', config);
   
   if (artProvider === 'anilist' && malId) {
     try {
@@ -673,7 +697,7 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, malPosterUrl, mediaType = 'se
  * Get anime logo with art provider preference
  */
 async function getAnimeLogo({ malId, mediaType = 'series' }, config) {
-  const artProvider = resolveArtProvider('anime', config);
+  const artProvider = resolveArtProvider('anime', 'logo', config);
   const mapping = idMapper.getMappingByMalId(malId);
   const tvdbId = mapping?.thetvdb_id;
   const tmdbId = mapping?.themoviedb_id;
@@ -749,7 +773,7 @@ async function getAnimeLogo({ malId, mediaType = 'series' }, config) {
  * Get anime poster with art provider preference
  */
 async function getAnimePoster({ malId, malPosterUrl, mediaType = 'series' }, config) {
-  const artProvider = resolveArtProvider('anime', config);
+  const artProvider = resolveArtProvider('anime', 'poster', config);
   const mapping = idMapper.getMappingByMalId(malId);
   const tvdbId = mapping?.thetvdb_id;
   const tmdbId = mapping?.themoviedb_id;
@@ -841,7 +865,7 @@ async function getAnimePoster({ malId, malPosterUrl, mediaType = 'series' }, con
  * Get batch anime artwork for catalog usage
  */
 async function getBatchAnimeArtwork(malIds, config) {
-  const artProvider = resolveArtProvider('anime', config);
+  const artProvider = resolveArtProvider('anime', 'poster', config);
   
   if (artProvider === 'anilist' && malIds && malIds.length > 0) {
     try {
@@ -883,7 +907,7 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
   let finalPosterUrl = malPosterUrl || `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
   
   // Check art provider preference
-  const artProvider = resolveArtProvider('anime', config);
+  const artProvider = resolveArtProvider('anime', 'poster', config);
   if (artProvider === 'anilist' && malId) {
     try {
       const anilistData = await anilist.getAnimeArtwork(malId);
@@ -996,7 +1020,7 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
 async function parseAnimeCatalogMetaBatch(animes, config, language) {
   if (!animes || animes.length === 0) return [];
 
-  const artProvider = resolveArtProvider('anime', config);
+  const artProvider = resolveArtProvider('anime', 'poster', config);
   const useAniList = artProvider === 'anilist';
   const useTvdb = artProvider === 'tvdb';
   const useImdb = artProvider === 'imdb';
@@ -1266,7 +1290,7 @@ function parseTvdbTrailers(tvdbTrailers, defaultTitle = 'Official Trailer') {
  * Get movie poster with art provider preference
  */
 async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPosterUrl }, config) {
-  const artProvider = resolveArtProvider('movie', config);
+  const artProvider = resolveArtProvider('movie', 'poster', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
     try {
@@ -1362,7 +1386,7 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
  * Get movie background with art provider preference
  */
 async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallbackBackgroundUrl }, config) {
-  const artProvider = resolveArtProvider('movie', config);
+  const artProvider = resolveArtProvider('movie', 'background', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
     try {
@@ -1453,7 +1477,7 @@ async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallba
  * Get movie logo with art provider preference
  */
 async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogoUrl }, config) {
-  const artProvider = resolveArtProvider('movie', config);
+  const artProvider = resolveArtProvider('movie', 'logo', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
     try {
@@ -1553,7 +1577,7 @@ async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogo
  * Get series poster with art provider preference
  */
 async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPosterUrl }, config) {
-  const artProvider = resolveArtProvider('series', config);
+  const artProvider = resolveArtProvider('series', 'poster', config);
   
   if (artProvider === 'tvdb') {
     try {
@@ -1646,7 +1670,7 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
  * Get series background with art provider preference
  */
 async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallbackBackgroundUrl }, config) {
-  const artProvider = resolveArtProvider('series', config);
+  const artProvider = resolveArtProvider('series', 'background', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
     try {
@@ -1735,7 +1759,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
  * Get series logo with art provider preference
  */
 async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogoUrl }, config) {
-  const artProvider = resolveArtProvider('series', config);
+  const artProvider = resolveArtProvider('series', 'logo', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
     try {

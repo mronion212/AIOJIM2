@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { GeneralSettings } from './sections/GeneralSettings';
 import { IntegrationsSettings } from './sections/IntegrationsSettings';
 import { ProvidersSettings } from './sections/ProvidersSettings';
+import { ArtProviderSettings } from './sections/ArtProviderSettings';
 import { FiltersSettings } from './sections/FiltersSettings';
 import { CatalogsSettings } from './sections/CatalogsSettings';
 import { SearchSettings } from './sections/SearchSettings';
@@ -15,7 +16,8 @@ import { Dashboard } from './Dashboard';
 const settingsPages = [
   { value: 'general', title: 'General', component: <GeneralSettings /> },
   { value: 'integrations', title: 'Integrations', component: <IntegrationsSettings /> },
-  { value: 'providers', title: 'Providers', component: <ProvidersSettings /> },
+  { value: 'providers', title: 'Meta Providers', component: <ProvidersSettings /> },
+  { value: 'art-providers', title: 'Art Providers', component: <ArtProviderSettings /> },
   { value: 'filters', title: 'Filters', component: <FiltersSettings /> },
   { value: 'search', title: 'Search', component: <SearchSettings /> },
   { value: 'catalogs', title: 'Catalogs', component: <CatalogsSettings /> },

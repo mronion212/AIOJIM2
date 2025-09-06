@@ -50,6 +50,38 @@ const SELF_HEALING_CONFIG = {
 const inFlightRequests = new Map();
 const cacheValidator = require('./cacheValidator');
 
+// Helper to resolve art provider for specific art type
+function resolveArtProvider(contentType, artType, config) {
+  const artProviderConfig = config.artProviders?.[contentType];
+  
+  // Handle legacy string format
+  if (typeof artProviderConfig === 'string') {
+    return artProviderConfig === 'meta' 
+      ? config.providers?.[contentType] || getDefaultProvider(contentType)
+      : artProviderConfig;
+  }
+  
+  // Handle new nested object format
+  if (artProviderConfig && typeof artProviderConfig === 'object') {
+    const provider = artProviderConfig[artType];
+    return provider === 'meta' 
+      ? config.providers?.[contentType] || getDefaultProvider(contentType)
+      : provider || getDefaultProvider(contentType);
+  }
+  
+  // Fallback to meta provider
+  return config.providers?.[contentType] || getDefaultProvider(contentType);
+}
+
+function getDefaultProvider(contentType) {
+  switch (contentType) {
+    case 'anime': return 'mal';
+    case 'movie': return 'tmdb';
+    case 'series': return 'tvdb';
+    default: return 'tmdb';
+  }
+}
+
 /**
  * Truncate long cache keys for better log readability
  */
@@ -648,7 +680,11 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
    // Add context-specific settings based on meta type
    if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
-     metaConfig.artProvider = config.artProviders?.anime || 'mal';
+     metaConfig.artProvider = {
+       poster: resolveArtProvider('anime', 'poster', config),
+       background: resolveArtProvider('anime', 'background', config),
+       logo: resolveArtProvider('anime', 'logo', config)
+     };
      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
      metaConfig.mal = {
       skipFiller: config.mal?.skipFiller || false,
@@ -656,10 +692,18 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
     };
    } else if (metaType === 'movie') {
      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
-     metaConfig.artProvider = config.artProviders?.movie || config.providers?.movie || 'tmdb';
+     metaConfig.artProvider = {
+       poster: resolveArtProvider('movie', 'poster', config),
+       background: resolveArtProvider('movie', 'background', config),
+       logo: resolveArtProvider('movie', 'logo', config)
+     };
    } else if (metaType === 'series') {
      metaConfig.metaProvider = config.providers?.series || 'tvdb';
-     metaConfig.artProvider = config.artProviders?.series || config.providers?.series || 'tvdb';
+     metaConfig.artProvider = {
+       poster: resolveArtProvider('series', 'poster', config),
+       background: resolveArtProvider('series', 'background', config),
+       logo: resolveArtProvider('series', 'logo', config)
+     };
      // TVDB season type only matters for TVDB series
      if (prefix === 'tvdb') {
        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
@@ -713,7 +757,11 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
    
    if (isAnime) {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
-     metaConfig.artProvider = config.artProviders?.anime || 'mal';
+     metaConfig.artProvider = {
+       poster: resolveArtProvider('anime', 'poster', config),
+       background: resolveArtProvider('anime', 'background', config),
+       logo: resolveArtProvider('anime', 'logo', config)
+     };
      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
      metaConfig.mal = {
        skipFiller: config.mal?.skipFiller || false,
@@ -721,10 +769,18 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      };
    } else if (metaType === 'movie') {
      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
-     metaConfig.artProvider = config.artProviders?.movie || config.providers?.movie || 'tmdb';
+     metaConfig.artProvider = {
+       poster: resolveArtProvider('movie', 'poster', config),
+       background: resolveArtProvider('movie', 'background', config),
+       logo: resolveArtProvider('movie', 'logo', config)
+     };
    } else if (metaType === 'series') {
      metaConfig.metaProvider = config.providers?.series || 'tvdb';
-     metaConfig.artProvider = config.artProviders?.series || config.providers?.series || 'tvdb';
+     metaConfig.artProvider = {
+       poster: resolveArtProvider('series', 'poster', config),
+       background: resolveArtProvider('series', 'background', config),
+       logo: resolveArtProvider('series', 'logo', config)
+     };
      if (prefix === 'tvdb') {
        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
      }
@@ -757,10 +813,18 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
    
    const meta = result?.meta || result;
    
-   if (!meta || !meta.id || !meta.name || !meta.type) {
-           console.warn(`📦 [Cache] No valid meta object returned for ${metaId}`);
-     return { meta: null };
-   }
+  if (!meta || !meta.id || !meta.name || !meta.type) {
+          console.warn(`📦 [Cache] No valid meta object returned for ${metaId}`);
+    return { meta: null };
+  }
+  
+  // Capture metadata for dashboard display
+  try {
+    const requestTracker = require('./requestTracker');
+    await requestTracker.captureMetadataFromComponents(metaId, meta, meta.type);
+  } catch (error) {
+    console.warn(`[Cache] Failed to capture metadata for dashboard: ${error.message}`);
+  }
    
    const componentPromises = [];
    
@@ -909,7 +973,11 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    
    if (isAnime) {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
-     metaConfig.artProvider = config.artProviders?.anime || 'mal';
+     metaConfig.artProvider = {
+       poster: resolveArtProvider('anime', 'poster', config),
+       background: resolveArtProvider('anime', 'background', config),
+       logo: resolveArtProvider('anime', 'logo', config)
+     };
      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
      metaConfig.mal = {
        skipFiller: config.mal?.skipFiller || false,
@@ -917,10 +985,18 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      };
    } else if (metaType === 'movie') {
      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
-     metaConfig.artProvider = config.artProviders?.movie || config.providers?.movie || 'tmdb';
+     metaConfig.artProvider = {
+       poster: resolveArtProvider('movie', 'poster', config),
+       background: resolveArtProvider('movie', 'background', config),
+       logo: resolveArtProvider('movie', 'logo', config)
+     };
    } else if (metaType === 'series') {
      metaConfig.metaProvider = config.providers?.series || 'tvdb';
-     metaConfig.artProvider = config.artProviders?.series || config.providers?.series || 'tvdb';
+     metaConfig.artProvider = {
+       poster: resolveArtProvider('series', 'poster', config),
+       background: resolveArtProvider('series', 'background', config),
+       logo: resolveArtProvider('series', 'logo', config)
+     };
      if (prefix === 'tvdb') {
        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
      }
@@ -1009,15 +1085,23 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      }
    });
    
-   // Validate the reconstructed meta
-   if (!reconstructedMeta.id || !reconstructedMeta.name || !reconstructedMeta.type) {
-     console.warn(`📦 [Cache] Reconstructed meta missing required fields for ${metaId}`);
-     return null;
-   }
-   
-   console.log(`📦 [Cache] Successfully reconstructed meta for ${metaId} from ${availableComponents.length} components`);
-   
-   return { meta: reconstructedMeta };
+  // Validate the reconstructed meta
+  if (!reconstructedMeta.id || !reconstructedMeta.name || !reconstructedMeta.type) {
+    console.warn(`📦 [Cache] Reconstructed meta missing required fields for ${metaId}`);
+    return null;
+  }
+  
+  // Capture metadata for dashboard display
+  try {
+    const requestTracker = require('./requestTracker');
+    await requestTracker.captureMetadataFromComponents(metaId, reconstructedMeta, reconstructedMeta.type);
+  } catch (error) {
+    console.warn(`[Cache] Failed to capture metadata for dashboard: ${error.message}`);
+  }
+  
+  console.log(`📦 [Cache] Successfully reconstructed meta for ${metaId} from ${availableComponents.length} components`);
+  
+  return { meta: reconstructedMeta };
 }
 
 /**
@@ -1093,7 +1177,11 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
     
     if (isAnime) {
       metaConfig.metaProvider = config.providers?.anime || 'mal';
-      metaConfig.artProvider = config.artProviders?.anime || 'mal';
+      metaConfig.artProvider = {
+       poster: resolveArtProvider('anime', 'poster', config),
+       background: resolveArtProvider('anime', 'background', config),
+       logo: resolveArtProvider('anime', 'logo', config)
+     };
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
       metaConfig.mal = {
         skipFiller: config.mal?.skipFiller || false,
@@ -1101,10 +1189,18 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
       };
     } else if (metaType === 'movie') {
       metaConfig.metaProvider = config.providers?.movie || 'tmdb';
-      metaConfig.artProvider = config.artProviders?.movie || config.providers?.movie || 'tmdb';
+      metaConfig.artProvider = {
+       poster: resolveArtProvider('movie', 'poster', config),
+       background: resolveArtProvider('movie', 'background', config),
+       logo: resolveArtProvider('movie', 'logo', config)
+     };
     } else if (metaType === 'series') {
       metaConfig.metaProvider = config.providers?.series || 'tvdb';
-      metaConfig.artProvider = config.artProviders?.series || config.providers?.series || 'tvdb';
+      metaConfig.artProvider = {
+       poster: resolveArtProvider('series', 'poster', config),
+       background: resolveArtProvider('series', 'background', config),
+       logo: resolveArtProvider('series', 'logo', config)
+     };
       if (prefix === 'tvdb') {
         metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
       }
@@ -1161,7 +1257,11 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
     
     if (isAnime) {
       metaConfig.metaProvider = config.providers?.anime || 'mal';
-      metaConfig.artProvider = config.artProviders?.anime || 'mal';
+      metaConfig.artProvider = {
+       poster: resolveArtProvider('anime', 'poster', config),
+       background: resolveArtProvider('anime', 'background', config),
+       logo: resolveArtProvider('anime', 'logo', config)
+     };
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
       metaConfig.mal = {
         skipFiller: config.mal?.skipFiller || false,
@@ -1169,10 +1269,18 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
       };
     } else if (metaType === 'movie') {
       metaConfig.metaProvider = config.providers?.movie || 'tmdb';
-      metaConfig.artProvider = config.artProviders?.movie || config.providers?.movie || 'tmdb';
+      metaConfig.artProvider = {
+       poster: resolveArtProvider('movie', 'poster', config),
+       background: resolveArtProvider('movie', 'background', config),
+       logo: resolveArtProvider('movie', 'logo', config)
+     };
     } else if (metaType === 'series') {
       metaConfig.metaProvider = config.providers?.series || 'tvdb';
-      metaConfig.artProvider = config.artProviders?.series || config.providers?.series || 'tvdb';
+      metaConfig.artProvider = {
+       poster: resolveArtProvider('series', 'poster', config),
+       background: resolveArtProvider('series', 'background', config),
+       logo: resolveArtProvider('series', 'logo', config)
+     };
       if (prefix === 'tvdb') {
         metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
       }

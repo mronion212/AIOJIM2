@@ -39,18 +39,25 @@ async function getTrending(type, language, page, genre, config, userUUID) {
       } else {
         preferredProvider = config.providers?.series || 'tvdb';
       }
-      const artProvider = await Utils.resolveArtProvider(type, config);
-      // only resolve ids if art provider is not tmdb
+      
+      // Check all three art types and collect non-meta providers
+      const posterProvider = Utils.resolveArtProvider(type, 'poster', config);
+      const backgroundProvider = Utils.resolveArtProvider(type, 'background', config);
+      const logoProvider = Utils.resolveArtProvider(type, 'logo', config);
+
+      // Collect all unique non-meta providers
+      const targetProviders = new Set();
+      if (posterProvider !== preferredProvider && posterProvider !== 'tmdb' && posterProvider !== 'fanart') targetProviders.add(posterProvider);
+      if (backgroundProvider !== preferredProvider && backgroundProvider !== 'tmdb' && backgroundProvider !== 'fanart') targetProviders.add(backgroundProvider);
+      if (logoProvider !== preferredProvider && logoProvider !== 'tmdb' && logoProvider !== 'fanart') targetProviders.add(logoProvider);
+      if (preferredProvider !== 'tmdb') targetProviders.add(preferredProvider);
+      if ((posterProvider === 'fanart' || backgroundProvider === 'fanart' || logoProvider === 'fanart') && type === 'series') targetProviders.add('tvdb');
+
       let allIds;
       let stremioId = `tmdb:${item.id}`;
-      if(artProvider !== 'tmdb' || preferredProvider !== 'tmdb') {
-        let targetProvider = [];
-        if (preferredProvider === artProvider) {
-          targetProvider.push(artProvider);
-        } else {
-          targetProvider = [artProvider, preferredProvider];
-        }
-        allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, targetProvider);
+      if (targetProviders.size > 0) {
+        const targetProviderArray = Array.from(targetProviders);
+        allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, targetProviderArray);
       }
       if(preferredProvider === 'tvdb' && allIds?.tvdbId) {
         stremioId = `tvdb:${allIds.tvdbId}`;
