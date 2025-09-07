@@ -563,7 +563,7 @@ async function parseTvmazeResult(show, config) {
   }
   var fallbackImage = show.image?.original === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : show.image.original;
   const posterProxyUrl = imdbId ? `${host}/poster/series/${imdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`: `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`;
-  const logoUrl = imdbId ? await imdb.getSeriesLogo(imdbId, config) : tvdbId ? await tvdb.getSeriesLogo(tvdbId, config) : null;
+  const logoUrl = imdbId ? imdb.getLogoFromImdb(imdbId) : tvdbId ? await tvdb.getSeriesLogo(tvdbId, config) : null;
   return {
     id: stremioId,
     type: 'series',
