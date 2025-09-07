@@ -653,8 +653,14 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, malPosterUrl, mediaType = 'se
       if (mapping && mapping.themoviedb_id) {
         // Use TMDB background for anime
         const tmdbBackground = mediaType === 'movie' 
-          ? await tmdb.getTmdbMovieBackground(mapping.themoviedb_id, config)
-          : await tmdb.getTmdbSeriesBackground(mapping.themoviedb_id, config);
+          ? await tmdb.movieImages({ id: tmdbId, include_image_language: null }, config).then(res => {
+            const img = res.backdrops[0];
+            return `https://image.tmdb.org/t/p/original${img?.file_path}`;
+          })
+          : await tmdb.tvImages({ id: tmdbId, include_image_language: null }, config).then(res => {
+            const img = res.backdrops[0];
+            return `https://image.tmdb.org/t/p/original${img?.file_path}`;
+          });
         
         if (tmdbBackground) {
           console.log(`[getAnimeBg] Found TMDB background for MAL ID: ${malId} (TMDB ID: ${mapping.themoviedb_id}, Type: ${mediaType})`);
