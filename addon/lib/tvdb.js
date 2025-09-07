@@ -7,15 +7,51 @@ const TVDB_API_URL = 'https://api4.thetvdb.com/v4';
 const GLOBAL_TVDB_KEY = process.env.TVDB_API_KEY;
 const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com/banners/images/';
 
-const tokenCache = new Map();
+const tokenCache = new Map(); // Global cache for self-hosted instances
+const userTokenCaches = new Map(); // Per-user cache for public instances
 
-async function getAuthToken(apiKey) {
+async function getAuthToken(apiKey, userUUID = null) {
   const key = apiKey || GLOBAL_TVDB_KEY;
   if (!key) {
     console.error('TVDB API Key is not configured.');
     return null;
   }
 
+  // For public instances (with userUUID), use per-user cache
+  if (userUUID) {
+    if (!userTokenCaches.has(userUUID)) {
+      userTokenCaches.set(userUUID, new Map());
+    }
+    
+    const userCache = userTokenCaches.get(userUUID);
+    const cached = userCache.get(key);
+    if (cached && Date.now() < cached.expiry) {
+      return cached.token;
+    }
+
+    try {
+      const response = await fetch(`${TVDB_API_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apikey: key }),
+      });
+      if (!response.ok) {
+        console.error(`Failed to get TVDB auth token for user ${userUUID} with key ...${key.slice(-4)}: ${response.statusText}`);
+        return null;
+      }
+      const data = await response.json();
+      const token = data.data.token;
+      const expiry = Date.now() + (28 * 24 * 60 * 60 * 1000);
+      
+      userCache.set(key, { token, expiry });
+      return token;
+    } catch (error) {
+      console.error(`Failed to get TVDB auth token for user ${userUUID} with key ...${key.slice(-4)}:`, error.message);
+      return null;
+    }
+  }
+
+  // For self-hosted instances (no userUUID), use global cache
   const cached = tokenCache.get(key);
   if (cached && Date.now() < cached.expiry) {
     return cached.token;
@@ -44,7 +80,7 @@ async function getAuthToken(apiKey) {
 }
 
 async function searchSeries(query, config) {
-  const token = await getAuthToken(config.apiKeys?.tvdb);
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return [];
   
   const startTime = Date.now();
@@ -80,7 +116,7 @@ async function searchSeries(query, config) {
 }
 
 async function searchMovies(query, config) {
-  const token = await getAuthToken(config.apiKeys?.tvdb);
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return [];
   
   const startTime = Date.now();
@@ -116,7 +152,7 @@ async function searchMovies(query, config) {
 }
 
 async function searchPeople(query, config) {
-  const token = await getAuthToken(config.apiKeys?.tvdb);
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return [];
   
   const startTime = Date.now();
@@ -153,7 +189,7 @@ async function searchPeople(query, config) {
 
 async function getSeriesExtended(tvdbId, config) {
   return cacheWrapTvdbApi(`series-extended:${tvdbId}`, async () => {
-    const token = await getAuthToken(config.apiKeys?.tvdb);
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
     if (!token) return null;
 
     const url = `${TVDB_API_URL}/series/${tvdbId}/extended?meta=translations`;
@@ -190,7 +226,7 @@ async function getSeriesExtended(tvdbId, config) {
 
 async function getMovieExtended(tvdbId, config) {
   return cacheWrapTvdbApi(`movie-extended:${tvdbId}`, async () => {
-    const token = await getAuthToken(config.apiKeys?.tvdb);
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
     if (!token) return null;
 
     const url = `${TVDB_API_URL}/movies/${tvdbId}/extended?meta=translations`;
@@ -236,7 +272,7 @@ async function getMovieExtended(tvdbId, config) {
  */
 async function getSeasonExtended(seasonId, config) {
   return cacheWrapTvdbApi(`season-extended:${seasonId}`, async () => {
-    const token = await getAuthToken(config.apiKeys?.tvdb);
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
     if (!token) return null;
 
     const url = `${TVDB_API_URL}/seasons/${seasonId}/extended`;
@@ -278,7 +314,7 @@ async function getSeasonExtended(seasonId, config) {
 }
 
 async function getAllGenres(config) {
-  const token = await getAuthToken(config.apiKeys?.tvdb);
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) {
     console.error(`[TVDB] No auth token available for genres request`);
     return [];
@@ -330,7 +366,7 @@ async function getAllGenres(config) {
 }
 
 async function findByImdbId(imdbId, config) {
-  const token = await getAuthToken(config.apiKeys?.tvdb);
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token || !imdbId) return null;
 
   const startTime = Date.now();
@@ -371,7 +407,7 @@ async function findByImdbId(imdbId, config) {
 }
 
 async function findByTmdbId(tmdbId, config) {
-  const token = await getAuthToken(config.apiKeys?.tvdb);
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return null;
   
   const startTime = Date.now();
@@ -405,7 +441,7 @@ async function findByTmdbId(tmdbId, config) {
 }
 
 async function getPersonExtended(personId, config) {
-  const token = await getAuthToken(config.apiKeys?.tvdb);
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return null;
   
   const startTime = Date.now();
@@ -441,7 +477,7 @@ async function getPersonExtended(personId, config) {
 }
 
 async function _fetchEpisodesBySeasonType(tvdbId, seasonType, language, config) {
-  const token = await getAuthToken(config.apiKeys?.tvdb);
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return null;
 
   const langCode3 = await to3LetterCode(language.split('-')[0], config);
@@ -495,7 +531,7 @@ async function getSeriesEpisodes(tvdbId, language = 'en-US', seasonType = 'defau
 }
 
 async function filter(type, params, config) {
-  const token = await getAuthToken(config.apiKeys?.tvdb);
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) {
     console.error(`[TVDB] No auth token available for filter request`);
     return [];
@@ -661,7 +697,7 @@ async function getMovieLogo(tvdbId, config) {
  * Fetch all TVDB collections (lists)
  */
 async function getCollectionsList(config, page = 0) {
-  const token = await getAuthToken(config.apiKeys?.tvdb);
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return [];
   try {
     const url = `${TVDB_API_URL}/lists?page=${page}`;
@@ -680,7 +716,7 @@ async function getCollectionsList(config, page = 0) {
  */
 async function getCollectionDetails(collectionId, config) {
   return cacheWrapTvdbApi(`collection-details:${collectionId}`, async () => {
-    const token = await getAuthToken(config.apiKeys?.tvdb);
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
     if (!token) return null;
     try {
       const url = `${TVDB_API_URL}/lists/${collectionId}/extended`;
@@ -700,7 +736,7 @@ async function getCollectionDetails(collectionId, config) {
  */
 async function getCollectionTranslations(collectionId, language, config) {
   return cacheWrapTvdbApi(`collection-translations:${collectionId}:${language}`, async () => {
-    const token = await getAuthToken(config.apiKeys?.tvdb);
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
     if (!token) return null;
     try {
       const url = `${TVDB_API_URL}/lists/${collectionId}/translations/${language}`;

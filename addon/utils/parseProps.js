@@ -74,9 +74,20 @@ function parseMedia(el, type, genreList = []) {
     imdbRating: el.vote_average ? el.vote_average.toFixed(1) : 'N/A',
     year: type === 'movie' ? (el.release_date?.substring(0, 4) || '') : (el.first_air_date?.substring(0, 4) || ''),
     type: type === 'movie' ? type : 'series',
-    description: el.overview,
+    description: addMetaProviderAttribution(el.overview, 'TMDB', config),
   };
 }
+
+// Helper function to add meta provider attribution to overview
+const addMetaProviderAttribution = (overview, provider, config) => {
+  // Check if meta provider attribution is enabled
+  if (!config?.showMetaProviderAttribution) {
+    return overview;
+  }
+  
+  if (!overview) return `[Meta provided by ${provider}]`;
+  return `${overview}\n\n[Meta provided by ${provider}]`;
+};
 
 
 function parseCast(credits, count, metaProvider = 'tmdb') {
@@ -1211,7 +1222,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
       logo: stremioType === 'movie' ? await tmdb.getTmdbMovieLogo(tmdbId, config) : await tmdb.getTmdbSeriesLogo(tmdbId, config),
       name: anime.title_english || anime.title,
       poster: finalPosterUrl,
-      description: anime.synopsis,
+      description: addMetaProviderAttribution(anime.synopsis, 'MAL', config),
       year: anime.year,
       imdb_id: mapping?.imdb_id,
       releaseInfo: anime.year,
@@ -1970,11 +1981,14 @@ function convertAnilistBannerToBackground(bannerUrl, options = {}) {
 // Helper for language fallback selection from TMDB images
 function selectTmdbImageByLang(images, config, key = 'iso_639_1') {
   if (!Array.isArray(images) || images.length === 0) return undefined;
-  const userLang = config.language?.split('-')[0]?.toLowerCase() || 'en';
+  
+  // If englishArtOnly is enabled, force English language selection
+  const targetLang = config.artProviders?.englishArtOnly ? 'en' : (config.language?.split('-')[0]?.toLowerCase() || 'en');
+  
   // Sort by vote_average descending
   const sorted = images.sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
   return (
-    sorted.find(img => img[key] === userLang) ||
+    sorted.find(img => img[key] === targetLang) ||
     sorted.find(img => img[key] === 'en') ||
     sorted[0]
   );
@@ -2024,5 +2038,6 @@ module.exports = {
   convertAnilistBannerToBackground,
   getTmdbMovieCertificationForCountry,
   getTmdbTvCertificationForCountry,
-  resolveArtProvider
+  resolveArtProvider,
+  addMetaProviderAttribution
 };

@@ -7,6 +7,7 @@ const database = require('./database');
 
 async function resolveAllIds(stremioId, type, config, prefetcheIds, targetProviders = []) {
   console.log(`🔗 [ID Resolver] Resolving ${stremioId} (type: ${type})`);
+  console.log(`🔗 [ID Resolver] Config userUUID: ${config.userUUID || 'NOT SET'}`);
  
   
   const allIds = { tmdbId: null, tvdbId: null, imdbId: null, malId: null, kitsuId: null, tvmazeId: null, anidbId: null, anilistId: null };
@@ -139,11 +140,15 @@ async function resolveAllIds(stremioId, type, config, prefetcheIds, targetProvid
         ? await moviedb.movieInfo({ id: allIds.tmdbId, append_to_response: 'external_ids' }, config)
         : await moviedb.tvInfo({ id: allIds.tmdbId, append_to_response: 'external_ids' }, config);
       
-      allIds.imdbId = allIds.imdbId || details.external_ids?.imdb_id;
-      allIds.tvdbId = allIds.tvdbId || details.external_ids?.tvdb_id || (await tvdb.findByTmdbId(allIds.tmdbId, config))?.id;
+      allIds.imdbId = allIds.imdbId ?? details.external_ids?.imdb_id ?? null;
+      console.log(`🔗 [ID Resolver] TMDB external_ids.tvdb_id: ${details.external_ids?.tvdb_id ?? 'NOT FOUND'}`);
+      const tvdbLookupResult = await tvdb.findByTmdbId(allIds.tmdbId, config);
+      console.log(`🔗 [ID Resolver] TVDB findByTmdbId result: ${tvdbLookupResult ? JSON.stringify(tvdbLookupResult) : 'NULL'}`);
+      allIds.tvdbId = allIds.tvdbId ?? details.external_ids?.tvdb_id ?? tvdbLookupResult?.[0]?.series?.id ?? null;
+      console.log(`🔗 [ID Resolver] Final tvdbId: ${allIds.tvdbId ?? 'NOT SET'}`);
       if(allIds.tvdbId && type === 'series') {
         const tvdbDetails = await tvdb.getSeriesExtended(allIds.tvdbId, config);
-        allIds.tvmazeId = allIds.tvmazeId || tvdbDetails.remoteIds?.find(id => id.sourceName === "TV Maze")?.id;
+        allIds.tvmazeId = allIds.tvmazeId ?? tvdbDetails.remoteIds?.find(id => id.sourceName === "TV Maze")?.id ?? null;
       }
     }
 
@@ -155,9 +160,9 @@ async function resolveAllIds(stremioId, type, config, prefetcheIds, targetProvid
           tvdbDetails = await tvdb.getSeriesExtended(allIds.tvdbId, config);
       }
       
-      allIds.imdbId = allIds.imdbId || tvdbDetails.remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
-      allIds.tmdbId = allIds.tmdbId || tvdbDetails.remoteIds?.find(id => id.sourceName === 'TheMovieDB.com')?.id;
-      allIds.tvmazeId = allIds.tvmazeId || tvdbDetails.remoteIds?.find(id => id.sourceName === "TV Maze")?.id || (await tvmaze.getShowByTvdbId(allIds.tvdbId, config))?.id;
+      allIds.imdbId = allIds.imdbId ?? tvdbDetails.remoteIds?.find(id => id.sourceName === 'IMDB')?.id ?? null;
+      allIds.tmdbId = allIds.tmdbId ?? tvdbDetails.remoteIds?.find(id => id.sourceName === 'TheMovieDB.com')?.id ?? null;
+      allIds.tvmazeId = allIds.tvmazeId ?? tvdbDetails.remoteIds?.find(id => id.sourceName === "TV Maze")?.id ?? (await tvmaze.getShowByTvdbId(allIds.tvdbId, config))?.id ?? null;
     }
 
 
@@ -166,8 +171,8 @@ async function resolveAllIds(stremioId, type, config, prefetcheIds, targetProvid
       const externalIds = await getExternalIdsFromImdb(allIds.imdbId, type);
       //console.log(`🔗 [ID Resolver] External IMDb IDs:`, JSON.stringify(externalIds));
       if (externalIds) {
-        allIds.tmdbId = allIds.tmdbId || externalIds.tmdbId;
-        allIds.tvdbId = allIds.tvdbId || externalIds.tvdbId;
+        allIds.tmdbId = allIds.tmdbId ?? externalIds.tmdbId ?? null;
+        allIds.tvdbId = allIds.tvdbId ?? externalIds.tvdbId ?? null;
       }
       if (!allIds.tmdbId) {
         const findResults = await moviedb.find({ id: allIds.imdbId, external_source: 'imdb_id' }, config);
@@ -196,9 +201,9 @@ async function resolveAllIds(stremioId, type, config, prefetcheIds, targetProvid
     if (allIds.tvmazeId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvdbId)) {
       const tvmazeDetails = await tvmaze.getShowById(allIds.tvmazeId);
       if (tvmazeDetails && tvmazeDetails.externals) {
-        allIds.imdbId = allIds.imdbId || tvmazeDetails.externals.imdb;
-        allIds.tmdbId = allIds.tmdbId || tvmazeDetails.externals.themoviedb;
-        allIds.tvdbId = allIds.tvdbId || tvmazeDetails.externals.thetvdb;
+        allIds.imdbId = allIds.imdbId ?? tvmazeDetails.externals.imdb ?? null;
+        allIds.tmdbId = allIds.tmdbId ?? tvmazeDetails.externals.themoviedb ?? null;
+        allIds.tvdbId = allIds.tvdbId ?? tvmazeDetails.externals.thetvdb ?? null;
       }
     }
 

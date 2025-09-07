@@ -22,6 +22,9 @@ async function warmUserContent(userUUID, contentType) {
     const config = await loadConfigFromDatabase(userUUID);
     if (!config) return;
     
+    // Add userUUID to config for per-user token caching
+    config.userUUID = userUUID;
+    
     // Warm popular content based on user's preferences
     const language = config.language || DEFAULT_LANGUAGE;
     
@@ -494,6 +497,9 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     return res.status(404).send({ error: "User configuration not found" });
   }
   
+  // Add userUUID to config for per-user token caching
+  config.userUUID = userUUID;
+  
   const language = config.language || DEFAULT_LANGUAGE;
   const sessionId = config.sessionId;
 
@@ -677,6 +683,9 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
   if (!config) {
     return res.status(404).send({ error: "User configuration not found" });
   }
+  
+  // Add userUUID to config for per-user token caching
+  config.userUUID = userUUID;
   
   const language = config.language || DEFAULT_LANGUAGE;
   const fullConfig = config; 
@@ -1283,6 +1292,16 @@ addon.get('aapi/cache/invalidation-status/:userUUID', async (req, res) => {
 // --- Dashboard API Routes (Admin only) ---
 const DashboardAPI = require('./lib/dashboardApi');
 
+// Create a singleton instance of DashboardAPI that persists across requests
+let dashboardApiInstance = null;
+
+function getDashboardAPI() {
+  if (!dashboardApiInstance) {
+    dashboardApiInstance = new DashboardAPI(redis, null, {}, database, requestTracker);
+  }
+  return dashboardApiInstance;
+}
+
 addon.get("/api/dashboard/overview", (req, res) => {
   const adminKey = process.env.ADMIN_KEY;
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
@@ -1290,8 +1309,7 @@ addon.get("/api/dashboard/overview", (req, res) => {
   }
   
   try {
-    // Pass redis client as cache, null for idMapper, and empty object for config
-    const dashboardApi = new DashboardAPI(redis, null, {});
+    const dashboardApi = getDashboardAPI();
     dashboardApi.getAllDashboardData()
       .then(data => res.json(data))
       .catch(error => {
@@ -1311,7 +1329,7 @@ addon.get("/api/dashboard/stats", (req, res) => {
   }
   
   try {
-    const dashboardApi = new DashboardAPI(redis, null, {}, database);
+    const dashboardApi = getDashboardAPI();
     Promise.all([
       dashboardApi.getQuickStats(),
       dashboardApi.getCachePerformance(),
@@ -1335,7 +1353,7 @@ addon.get("/api/dashboard/system", (req, res) => {
   }
   
   try {
-    const dashboardApi = new DashboardAPI(redis, null, {}, database);
+    const dashboardApi = getDashboardAPI();
     Promise.all([
       dashboardApi.getSystemConfig(),
       dashboardApi.getResourceUsage(),
@@ -1360,7 +1378,7 @@ addon.get("/api/dashboard/operations", (req, res) => {
   }
   
   try {
-    const dashboardApi = new DashboardAPI(redis, null, {}, database);
+    const dashboardApi = getDashboardAPI();
     Promise.all([
       dashboardApi.getErrorLogs(),
       dashboardApi.getMaintenanceTasks(),
@@ -1389,7 +1407,7 @@ addon.post("/api/dashboard/cache/clear", (req, res) => {
       return res.status(400).json({ error: 'Cache type is required' });
     }
     
-    const dashboardApi = new DashboardAPI(redis, null, {}, database);
+    const dashboardApi = getDashboardAPI();
     dashboardApi.clearCache(type)
       .then(result => res.json(result))
       .catch(error => {
@@ -1516,6 +1534,26 @@ addon.get("/api/dashboard/content", (req, res) => {
   } catch (error) {
     console.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch content data' });
+  }
+});
+
+addon.get("/api/dashboard/users", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const dashboardApi = getDashboardAPI();
+    dashboardApi.getUserStats()
+      .then(data => res.json(data))
+      .catch(error => {
+        console.error('[Dashboard API] Error:', error);
+        res.status(500).json({ error: 'Failed to fetch user data' });
+      });
+  } catch (error) {
+    console.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch user data' });
   }
 });
 

@@ -196,7 +196,7 @@ export function Header() {
               toast.success('Signed out and reset configuration');
               setTimeout(() => {
                 setAuthTransitioning(false);
-                window.location.reload();
+                window.location.href = '/configure';
               }, 300);
             }}
             variant="outline"

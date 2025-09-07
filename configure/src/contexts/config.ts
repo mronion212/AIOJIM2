@@ -46,6 +46,7 @@ export interface AppConfig {
       background: 'meta' | 'mal' | 'anilist' | 'tvdb' | 'fanart' | 'imdb';
       logo: 'meta' | 'mal' | 'anilist' | 'tvdb' | 'fanart' | 'imdb';
     };
+    englishArtOnly: boolean;
   };
   tvdbSeasonType: string;
   mal: {

@@ -244,11 +244,11 @@ class RequestTracker {
           try {
             // Try to get real metadata from cache
             const metadataStr = await redis.get(`content_metadata:${contentKey}`);
-            console.log(`[Request Tracker] Looking for metadata: content_metadata:${contentKey} -> ${metadataStr ? 'FOUND' : 'NOT FOUND'}`);
+            //console.log(`[Request Tracker] Looking for metadata: content_metadata:${contentKey} -> ${metadataStr ? 'FOUND' : 'NOT FOUND'}`);
             
             if (metadataStr) {
               const metadata = JSON.parse(metadataStr);
-              console.log(`[Request Tracker] Using real metadata for ${contentKey}: "${metadata.title}"`);
+              //console.log(`[Request Tracker] Using real metadata for ${contentKey}: "${metadata.title}"`);
               return {
                 id,
                 type: metadata.type || type,
@@ -265,7 +265,7 @@ class RequestTracker {
           }
           
           // Fallback to formatted title
-          console.log(`[Request Tracker] Using fallback title for ${contentKey}: "${this.formatContentTitle(id, type)}"`);
+          //console.log(`[Request Tracker] Using fallback title for ${contentKey}: "${this.formatContentTitle(id, type)}"`);
           return {
             id,
             type,
@@ -364,14 +364,40 @@ class RequestTracker {
       });
 
       // Parse metaId to get the actual ID format
-      const [prefix, id] = metaId.split(':');
+      const metaIdParts = metaId.split(':');
+      const prefix = metaIdParts[0];
+      const id = metaIdParts.length > 1 ? metaIdParts[1] : metaIdParts[0]; // Use full metaId if no colon
       const type = meta.type || metaType || 'unknown';
+      
+      // Determine the provider from the meta object or metaId
+      let provider = prefix;
+      if (metaIdParts.length === 1) {
+        // If metaId is just an ID, try to determine provider from meta object
+        if (meta.imdb_id && metaId.startsWith('tt')) {
+          provider = 'imdb';
+        } else if (metaId.match(/^\d+$/)) {
+          // Numeric ID, could be TMDB or TVDB
+          if (type === 'movie') {
+            provider = 'tmdb';
+          } else if (type === 'series') {
+            provider = 'tvdb';
+          } else {
+            provider = 'tmdb'; // Default
+          }
+        }
+      }
       
       // Create content key in the format that tracking uses
       // Also create URL-encoded version to match how requests are tracked
       const contentKey = `${type}:${id}`;
-      const encodedId = encodeURIComponent(`${prefix}:${id}`) + '.json';
+      const encodedId = encodeURIComponent(metaId) + '.json';
       const encodedContentKey = `${type}:${encodedId}`;
+      
+      // Also create the provider:ID format for better matching
+      const providerId = metaIdParts.length > 1 ? metaId : `${provider}:${id}`;
+      const providerContentKey = `${type}:${providerId}`;
+      const providerEncodedId = encodeURIComponent(providerId) + '.json';
+      const providerEncodedContentKey = `${type}:${providerEncodedId}`;
       
       // Store metadata for later lookup
       const metadataInfo = {
@@ -385,11 +411,13 @@ class RequestTracker {
         cached_at: new Date().toISOString()
       };
 
-      console.log(`[Request Tracker] Storing metadata for ${contentKey} and ${encodedContentKey}: "${metadataInfo.title}" ⭐${metadataInfo.rating}`);
+      console.log(`[Request Tracker] Storing metadata for ${contentKey}, ${encodedContentKey}, ${providerContentKey}, and ${providerEncodedContentKey}: "${metadataInfo.title}" ⭐${metadataInfo.rating}`);
       
-      // Store in Redis with 30 day TTL for both formats
+      // Store in Redis with 30 day TTL for all formats
       redis.set(`content_metadata:${contentKey}`, JSON.stringify(metadataInfo), 'EX', 86400 * 30).catch(() => {});
       redis.set(`content_metadata:${encodedContentKey}`, JSON.stringify(metadataInfo), 'EX', 86400 * 30).catch(() => {});
+      redis.set(`content_metadata:${providerContentKey}`, JSON.stringify(metadataInfo), 'EX', 86400 * 30).catch(() => {});
+      redis.set(`content_metadata:${providerEncodedContentKey}`, JSON.stringify(metadataInfo), 'EX', 86400 * 30).catch(() => {});
       
     } catch (error) {
       console.warn('[Request Tracker] Failed to capture metadata from components:', error.message);

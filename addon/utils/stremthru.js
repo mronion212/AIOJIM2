@@ -189,18 +189,22 @@ async function parseStremThruItems(items, type, genreFilter, language, config) {
         try {
             if(provider === 'tmdb') {
                 if (item.type === 'movie') {
-                   const itemDetails = await moviedb.movieInfo({ id: id, language }, config);
+                   const itemDetails = await moviedb.movieInfo({ id: id, language, append_to_response: "external_ids" }, config);
                    overview = itemDetails?.overview;
                    genres = Utils.parseGenres(itemDetails?.genres);
                    runtime = itemDetails?.runtime;
                    name = itemDetails?.name;
+                   imdbId = imdbId ?? itemDetails.external_ids?.imdb_id;
+                   imdbRating = imdbId ? await getImdbRating(imdbId, 'movie') : null;
                    logo = await moviedb.getTmdbMovieLogo(id, config);
                 } else {
-                    const itemDetails = await moviedb.tvInfo({ id: id, language }, config);
+                    const itemDetails = await moviedb.tvInfo({ id: id, language, append_to_response: "external_ids" }, config);
                     overview = itemDetails?.overview;
                     genres = Utils.parseGenres(itemDetails?.genres);
                     runtime = itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
                     name = itemDetails?.name;
+                    imdbId = imdbId ?? itemDetails.external_ids?.imdb_id;
+                    imdbRating = imdbId ? await getImdbRating(imdbId, 'series') : null;
                     logo = await moviedb.getTmdbSeriesLogo(id, config);
                 }
             } else if(provider === 'tvdb') {
@@ -219,6 +223,8 @@ async function parseStremThruItems(items, type, genreFilter, language, config) {
                     genres = itemDetails?.genres?.map(g => g.name) || [];
                     runtime = itemDetails?.runtime;
                     name = translatedName;
+                    imdbId = imdbId ?? itemDetails.remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
+                    imdbRating = imdbId ? await getImdbRating(imdbId, 'movie') : null;
                     logo = await tvdb.getMovieLogo(id, config);
                 } else {
                     const itemDetails = await tvdb.getSeriesExtended(id, config);
@@ -235,6 +241,8 @@ async function parseStremThruItems(items, type, genreFilter, language, config) {
                     genres = itemDetails?.genres?.map(g => g.name) || [];
                     name = translatedName;
                     runtime = itemDetails?.averageRuntime;
+                    imdbId = imdbId ?? itemDetails.remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
+                    imdbRating = imdbId ? await getImdbRating(imdbId, 'series') : null;
                     logo = await tvdb.getSeriesLogo(id, config);
                 }
             } else if(provider.startsWith('tt')) {
@@ -356,7 +364,7 @@ async function parseStremThruItems(items, type, genreFilter, language, config) {
           name: name || item.name,
           poster: posterProxyUrl,
           logo: logo,
-          description: overview || item.description || '',
+          description: Utils.addMetaProviderAttribution(overview || item.description || '', provider, config),
           imdbRating: imdbRating || item.imdbRating,
           genres: genres || item.genres || [],
           year: year,

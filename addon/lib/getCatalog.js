@@ -242,7 +242,7 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
     const tmdbBackgroundFullUrl = item.backdrop_path
       ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` 
       : undefined;
-    const itemDetails = type === 'movie' ? await moviedb.movieInfo({ id: item.id, append_to_response: "external_ids" }, config) : await moviedb.tvInfo({ id: item.id, append_to_response: "external_ids" }, config);
+    const itemDetails = type === 'movie' ? await moviedb.movieInfo({ id: item.id, language, append_to_response: "external_ids" }, config) : await moviedb.tvInfo({ id: item.id, language, append_to_response: "external_ids" }, config);
     let posterUrl = tmdbPosterFullUrl;
     let backgroundUrl = tmdbBackgroundFullUrl;
     if(allIds) {

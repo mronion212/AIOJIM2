@@ -266,6 +266,16 @@ class Database {
     return rows ? rows.map(row => row.user_uuid) : [];
   }
 
+  // Get users created today
+  async getUsersCreatedToday() {
+    const today = new Date().toISOString().substring(0, 10);
+    const query = this.type === 'sqlite'
+      ? 'SELECT COUNT(*) as count FROM user_configs WHERE DATE(created_at) = ?'
+      : 'SELECT COUNT(*) as count FROM user_configs WHERE DATE(created_at) = $1';
+    const row = await this.getQuery(query, [today]);
+    return row ? parseInt(row.count) : 0;
+  }
+
   // ID Mapping Cache Methods
   async getCachedIdMapping(contentType, tmdbId = null, tvdbId = null, imdbId = null, tvmazeId = null) {
     const conditions = [];

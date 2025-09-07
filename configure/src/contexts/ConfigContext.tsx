@@ -94,7 +94,8 @@ const initialConfig: AppConfig = {
   artProviders: { 
     movie: { poster: 'meta', background: 'meta', logo: 'meta' },
     series: { poster: 'meta', background: 'meta', logo: 'meta' },
-    anime: { poster: 'tvdb', background: 'tvdb', logo: 'tvdb' }
+    anime: { poster: 'tvdb', background: 'tvdb', logo: 'tvdb' },
+    englishArtOnly: false
   },
   tvdbSeasonType: 'default',
   mal: {
@@ -216,6 +217,11 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
               };
             }
           });
+          
+          // Handle englishArtOnly property
+          if (userArtProviders.englishArtOnly !== undefined) {
+            migratedArtProviders.englishArtOnly = userArtProviders.englishArtOnly;
+          }
           
           return migratedArtProviders;
         })(),

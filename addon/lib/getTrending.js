@@ -28,7 +28,7 @@ async function getTrending(type, language, page, genre, config, userUUID) {
     console.log(`[getTrending] TMDB trending fetch took ${tmdbTime.toFixed(2)}ms`);
     const metasStartTime = performance.now();
     const metas = await Promise.all(res.results.map(async item => {
-      const itemDetails = type === 'movie' ? await moviedb.movieInfo({ id: item.id, append_to_response: "external_ids" }, config) : await moviedb.tvInfo({ id: item.id, append_to_response: "external_ids" }, config);
+      const itemDetails = type === 'movie' ? await moviedb.movieInfo({ id: item.id, language, append_to_response: "external_ids" }, config) : await moviedb.tvInfo({ id: item.id, language, append_to_response: "external_ids" }, config);
       const certifications = type === 'movie' ? await moviedb.getMovieCertifications({ id: item.id }, config) : await moviedb.getTvCertifications({ id: item.id }, config);
       const runtime = type === 'movie' ? itemDetails?.runtime || null : itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
       const year = type === 'movie' ? itemDetails?.release_date ? itemDetails.release_date.substring(0, 4) : "" : itemDetails?.first_air_date ? itemDetails.first_air_date.substring(0, 4) : "";

@@ -246,9 +246,12 @@ async function getShowImages(tvdbId, config) {
  */
 function selectFanartImageByLang(images, config, key = 'lang') {
   if (!Array.isArray(images) || images.length === 0) return undefined;
-  const userLang = config.language?.split('-')[0]?.toLowerCase() || 'en';
-  // Filter by user language, then English, then any
-  let filtered = images.filter(img => img[key] === userLang);
+  
+  // If englishArtOnly is enabled, force English language selection
+  const targetLang = config.artProviders?.englishArtOnly ? 'en' : (config.language?.split('-')[0]?.toLowerCase() || 'en');
+  
+  // Filter by target language, then English, then any
+  let filtered = images.filter(img => img[key] === targetLang);
   if (filtered.length === 0) filtered = images.filter(img => img[key] === 'en');
   if (filtered.length === 0) filtered = images;
   //console.log(`[selectFanartImageByLang] Filtered images: ${JSON.stringify(filtered)}`);

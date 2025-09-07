@@ -13,9 +13,10 @@ const TMDB_API_URL = 'https://api.themoviedb.org/3';
 function selectTmdbImageByLang(images, config) {
   if (!Array.isArray(images) || images.length === 0) return undefined;
   
-  const userLang = config.language?.split('-')[0]?.toLowerCase() || 'en';
+  // If englishArtOnly is enabled, force English language selection
+  const targetLang = config.artProviders?.englishArtOnly ? 'en' : (config.language?.split('-')[0]?.toLowerCase() || 'en');
   
-  let filtered = images.filter(img => img.iso_639_1 === userLang);
+  let filtered = images.filter(img => img.iso_639_1 === targetLang);
   if (filtered.length === 0) filtered = images.filter(img => img.iso_639_1 === 'en');
   if (filtered.length === 0) filtered = images;
   

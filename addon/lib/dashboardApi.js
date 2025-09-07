@@ -1,13 +1,13 @@
 const os = require('os');
 const process = require('process');
-const requestTracker = require('./requestTracker');
 
 class DashboardAPI {
-  constructor(cache, idMapper, config, database) {
+  constructor(cache, idMapper, config, database, requestTracker) {
     this.cache = cache || null;
     this.idMapper = idMapper || null;
     this.config = config || {};
     this.database = database || null;
+    this.requestTracker = requestTracker || null;
     this.startTime = Date.now();
     
     // Initialize persistent uptime tracking
@@ -71,6 +71,85 @@ class DashboardAPI {
     }
   }
 
+  // Check system health
+  async checkSystemHealth() {
+    const healthChecks = {
+      redis: false,
+      database: false,
+      memory: false,
+      disk: false
+    };
+    
+    let overallStatus = 'healthy';
+    const issues = [];
+    
+    // Check Redis connection
+    try {
+      if (this.cache) {
+        await this.cache.ping();
+        healthChecks.redis = true;
+      } else {
+        issues.push('Redis not available');
+        overallStatus = 'warning';
+      }
+    } catch (error) {
+      issues.push('Redis connection failed');
+      overallStatus = 'error';
+    }
+    
+    // Check database connection
+    try {
+      if (this.database) {
+        // Simple query to test database
+        await this.database.getQuery('SELECT 1');
+        healthChecks.database = true;
+      } else {
+        issues.push('Database not available');
+        overallStatus = 'warning';
+      }
+    } catch (error) {
+      issues.push('Database connection failed');
+      overallStatus = 'error';
+    }
+    
+    // Check memory usage
+    try {
+      const memUsage = process.memoryUsage();
+      const memUsagePercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
+      if (memUsagePercent > 90) {
+        issues.push('High memory usage');
+        overallStatus = 'warning';
+      } else {
+        healthChecks.memory = true;
+      }
+    } catch (error) {
+      issues.push('Memory check failed');
+      overallStatus = 'error';
+    }
+    
+    // Check disk space (simplified)
+    try {
+      const totalMem = os.totalmem();
+      const freeMem = os.freemem();
+      const memUsagePercent = ((totalMem - freeMem) / totalMem) * 100;
+      if (memUsagePercent > 95) {
+        issues.push('High disk usage');
+        overallStatus = 'warning';
+      } else {
+        healthChecks.disk = true;
+      }
+    } catch (error) {
+      issues.push('Disk check failed');
+      overallStatus = 'error';
+    }
+    
+    return {
+      status: overallStatus,
+      healthChecks,
+      issues
+    };
+  }
+
   // Get system overview data
   async getSystemOverview() {
     // Get persistent uptime (survives restarts)
@@ -86,8 +165,13 @@ class DashboardAPI {
     const systemHours = Math.floor(systemUptime / 3600);
     const systemMinutes = Math.floor((systemUptime % 3600) / 60);
     
+    // Get system health
+    const healthStatus = await this.checkSystemHealth();
+    
     return {
-      status: 'healthy', // TODO: Implement health check
+      status: healthStatus.status,
+      healthChecks: healthStatus.healthChecks,
+      issues: healthStatus.issues,
       uptime: persistentUptime.uptime, // Use persistent uptime
       uptimeSeconds: persistentUptime.uptimeSeconds,
       processUptime: `${processHours}h ${processMinutes}m`, // Show process uptime separately
@@ -107,17 +191,18 @@ class DashboardAPI {
   async getQuickStats() {
     try {
       // Get real request tracking data
-      const requestStats = await requestTracker.getStats();
-      const activeUsers = await requestTracker.getActiveUsers();
+      const requestStats = this.requestTracker ? await this.requestTracker.getStats() : { totalRequests: 0, errorRate: 0 };
+      const activeUsers = this.requestTracker ? await this.requestTracker.getActiveUsers() : 0;
       
       // Get real cache hit rate from request tracker
-      const cacheHitRate = await requestTracker.getCacheHitRate();
+      const cacheHitRate = this.requestTracker ? await this.requestTracker.getCacheHitRate() : 0;
       
       return {
         totalRequests: requestStats.totalRequests,
         cacheHitRate: cacheHitRate,
         activeUsers: activeUsers,
-        errorRate: parseFloat(requestStats.errorRate)
+        errorRate: parseFloat(requestStats.errorRate),
+        successRate: parseFloat(requestStats.successRate)
       };
     } catch (error) {
       console.error('[Dashboard API] Error getting quick stats:', error);
@@ -137,7 +222,7 @@ class DashboardAPI {
         // Get real Redis cache stats
         try {
           const keys = await this.cache.keys('*');
-          const cacheHitRate = await requestTracker.getCacheHitRate();
+          const cacheHitRate = this.requestTracker ? await this.requestTracker.getCacheHitRate() : 0;
           
           // Get real Redis memory usage
           let memoryUsage = 0;
@@ -211,7 +296,7 @@ class DashboardAPI {
   async getProviderPerformance() {
     try {
       // Get real provider performance stats from request tracker
-      const realStats = await requestTracker.getProviderPerformance();
+      const realStats = this.requestTracker ? await this.requestTracker.getProviderPerformance() : [];
       
       // If no real data yet, return empty array to avoid showing fake data
       if (realStats.length === 0) {
@@ -230,7 +315,7 @@ class DashboardAPI {
     try {
       console.log('[Dashboard API] Getting recent activity...');
       
-      const activities = await requestTracker.getRecentActivity(limit);
+      const activities = this.requestTracker ? await this.requestTracker.getRecentActivity(limit) : [];
       console.log(`[Dashboard API] Got ${activities.length} activities from request tracker`);
       
       // Format activities for display
@@ -752,8 +837,7 @@ class DashboardAPI {
   async getErrorLogs() {
     try {
       // Get real error logs from request tracker
-      const requestTracker = require('./requestTracker');
-      const errorLogs = await requestTracker.getErrorLogs(20);
+      const errorLogs = this.requestTracker ? await this.requestTracker.getErrorLogs(20) : [];
       
       // If no real errors, return empty array (no mock data)
       return errorLogs;
@@ -1059,6 +1143,143 @@ class DashboardAPI {
       console.error('[Dashboard API] Error getting all dashboard data:', error);
       throw error;
     }
+  }
+
+  // Get user statistics and activity data
+  async getUserStats() {
+    try {
+      // Get total users from database
+      let totalUsers = 0;
+      let newUsersToday = 0;
+      
+      if (this.database) {
+        const userUUIDs = await this.database.getAllUserUUIDs();
+        totalUsers = userUUIDs.length;
+        
+        newUsersToday = await this.database.getUsersCreatedToday();
+      }
+
+      // Get active users from request tracker
+      const activeUsers = this.requestTracker ? await this.requestTracker.getActiveUsers() : 0;
+      
+      // Get total requests from request tracker
+      const requestStats = this.requestTracker ? await this.requestTracker.getStats() : { totalRequests: 0 };
+      
+      // Get recent user activity (last 24 hours of requests)
+      const userActivity = await this.getRecentUserActivity();
+      
+      // Access control stats (simplified - in a real system you'd track these)
+      const accessControl = {
+        adminUsers: 0, // No admin system implemented yet
+        apiKeyUsers: totalUsers, // All users have API access
+        rateLimitedUsers: 0, // No rate limiting implemented yet
+        blockedUsers: 0 // No blocking system implemented yet
+      };
+
+      return {
+        totalUsers,
+        activeUsers,
+        newUsersToday,
+        totalRequests: requestStats.totalRequests || 0,
+        userActivity,
+        accessControl
+      };
+    } catch (error) {
+      console.error('[Dashboard API] Error getting user stats:', error);
+      return {
+        totalUsers: 0,
+        activeUsers: 0,
+        newUsersToday: 0,
+        totalRequests: 0,
+        userActivity: [],
+        accessControl: {
+          adminUsers: 0,
+          apiKeyUsers: 0,
+          rateLimitedUsers: 0,
+          blockedUsers: 0
+        }
+      };
+    }
+  }
+
+  // Get recent user activity from request tracking
+  async getRecentUserActivity() {
+    try {
+      if (!this.requestTracker) return [];
+      
+      // Get recent requests from the last 24 hours
+      const now = new Date();
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      
+      // Get recent activity from request tracker
+      const recentRequests = this.requestTracker ? await this.requestTracker.getRecentActivity(100) : []; // Get last 100 activities
+      
+      // Group by anonymous user hash and create activity entries
+      const userActivityMap = new Map();
+      
+      recentRequests.forEach(request => {
+        const userHash = request.userHash || 'anonymous';
+        if (!userActivityMap.has(userHash)) {
+          userActivityMap.set(userHash, {
+            id: userHash,
+            username: `User ${userHash.substring(0, 8)}`, // Anonymous display name
+            lastSeen: request.timestamp,
+            requests: 0,
+            status: 'active'
+          });
+        }
+        
+        const user = userActivityMap.get(userHash);
+        user.requests++;
+        
+        // Update last seen to most recent request
+        if (new Date(request.timestamp) > new Date(user.lastSeen)) {
+          user.lastSeen = request.timestamp;
+        }
+      });
+      
+      // Convert to array and sort by last seen (most recent first)
+      const userActivity = Array.from(userActivityMap.values())
+        .sort((a, b) => new Date(b.lastSeen) - new Date(a.lastSeen))
+        .slice(0, 10); // Show top 10 most active users
+      
+      // Format timestamps for display
+      return userActivity.map(user => ({
+        ...user,
+        lastSeen: this.formatTimeAgo(user.lastSeen),
+        status: this.determineUserStatus(user.lastSeen)
+      }));
+      
+    } catch (error) {
+      console.error('[Dashboard API] Error getting recent user activity:', error);
+      return [];
+    }
+  }
+
+  // Format timestamp as "time ago" string
+  formatTimeAgo(timestamp) {
+    const now = new Date();
+    const time = new Date(timestamp);
+    const diffMs = now - time;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  }
+
+  // Determine user status based on last activity
+  determineUserStatus(lastSeen) {
+    const now = new Date();
+    const time = new Date(lastSeen);
+    const diffMins = Math.floor((now - time) / 60000);
+    
+    if (diffMins < 5) return 'active';
+    if (diffMins < 60) return 'idle';
+    return 'offline';
   }
 }
 

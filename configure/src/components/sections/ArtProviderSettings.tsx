@@ -1,6 +1,7 @@
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 import { useConfig } from '@/contexts/ConfigContext';
 import { AlertCircle } from 'lucide-react';
 
@@ -49,6 +50,16 @@ export function ArtProviderSettings() {
     }));
   };
 
+  const handleEnglishArtOnlyChange = (value: boolean) => {
+    setConfig(prev => ({
+      ...prev,
+      artProviders: {
+        ...prev.artProviders,
+        englishArtOnly: value
+      }
+    }));
+  };
+
   const isFanartSelected = () => {
     const artProviders = config.artProviders;
     if (!artProviders) return false;
@@ -93,6 +104,28 @@ export function ArtProviderSettings() {
         <p className="text-muted-foreground mt-1">
           Choose your preferred sources for different types of artwork. You can select different providers for posters, backgrounds, and logos.
         </p>
+        
+        {/* English Art Only Toggle */}
+        <Card className="mt-6">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="english-art-only" className="text-base font-medium">
+                  English Art Only
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Force all artwork to be in English language, regardless of your language setting.
+                </p>
+              </div>
+              <Switch
+                id="english-art-only"
+                checked={config.artProviders?.englishArtOnly || false}
+                onCheckedChange={handleEnglishArtOnlyChange}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
         {isFanartSelected() && !hasFanartKey && (
           <div className="p-4 border border-amber-400/30 bg-amber-900/20 rounded-lg mt-4">
             <div className="flex items-center gap-2 text-amber-400">

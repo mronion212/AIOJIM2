@@ -197,7 +197,7 @@ async function parseMDBListItems(items, type, genreFilter, language, config) {
           name: item.title || item.name,
           poster: posterProxyUrl,
           logo: type === 'movie' ? await moviedb.getTmdbMovieLogo(item.id, config) : await moviedb.getTmdbSeriesLogo(item.id, config),
-          description: batchMediaItem?.description || '',
+          description: Utils.addMetaProviderAttribution(batchMediaItem?.description || '', 'MDBList', config),
           runtime: Utils.parseRunTime(batchMediaItem?.runtime || null),
           imdbRating: String(batchMediaItem?.ratings?.find(rating => rating.source === 'imdb')?.value || 'N/A'),
           genres: item.genre || [],

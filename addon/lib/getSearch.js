@@ -3,10 +3,13 @@ const { MovieDb } = require("moviedb-promise");
 const { getGenreList } = require("./getGenreList");
 const Utils = require("../utils/parseProps");
 const tvdb = require("./tvdb");
+const { getImdbRating } = require("./getImdbRating");
 const { to3LetterCode } = require("./language-map"); 
 const jikan = require('./mal');
 const moviedb = require('./getTmdb');
+const imdb = require('./imdb');
 const tvmaze = require('./tvmaze');
+const { resolveAllIds } = require('./id-resolver');
 const { isAnime } = require("../utils/isAnime");
 const { performGeminiSearch } = require('../utils/gemini-service');
 
@@ -104,14 +107,18 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   } else {
     stremioId = `tvdb:${extendedRecord.id}`; // fallback
   }
+  const logoUrl = type === 'series' ? extendedRecord.artworks?.find(a => a.type === 23)?.image : extendedRecord.artworks?.find(a => a.type === 25)?.image;
   return {
     id: stremioId,
     type: type,
     name: translatedName, 
     poster: config.apiKeys?.rpdb ? posterProxyUrl : posterUrl,
     year: extendedRecord.year,
-    description: overview,
+    description: Utils.addMetaProviderAttribution(overview, 'TVDB', config),
     certification: certification,
+    logo: logoUrl,
+    genres: extendedRecord.genres?.map(g => g.name) || [],
+    imdbRating: imdbId ? await getImdbRating(imdbId, type) : 'N/A',
     //isAnime: isAnime(extendedRecord)
   };
 }
@@ -203,6 +210,9 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
 
         parsed.poster = config.apiKeys?.rpdb ? posterProxyUrl : posterUrl;
         parsed.popularity = media.popularity;
+        if(imdbId) {
+          parsed.imdbRating = await getImdbRating(imdbId, mediaType);
+        }
         
         // Add certification data
         try {
@@ -483,14 +493,14 @@ async function performTvmazeSearch(query, language, config) {
   ]);
   
   const searchResults = new Map();
-  const addResult = (show) => {
-    const parsed = parseTvmazeResult(show, config);
+  const addResult = async (show) => {
+    const parsed = await parseTvmazeResult(show, config);
     if (parsed && show?.id && !searchResults.has(show.id)) {
       searchResults.set(show.id, parsed);
     }
   };
 
-  titleResults.forEach(result => addResult(result.show));
+  await Promise.all(titleResults.map(result => addResult(result.show)));
 
   if (peopleResults.length > 0) {
     const personId = peopleResults[0].person.id;
@@ -533,7 +543,7 @@ function sanitizeTvmazeQuery(query) {
   return query.replace(/[\[\]()]/g, ' ').replace(/[:.-]/g, ' ').trim().replace(/\s\s+/g, ' ');
 }
 
-function parseTvmazeResult(show, config) {
+async function parseTvmazeResult(show, config) {
   if (!show || !show.id || !show.name) return null;
 
   const imdbId = show.externals?.imdb;
@@ -553,16 +563,18 @@ function parseTvmazeResult(show, config) {
   }
   var fallbackImage = show.image?.original === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : show.image.original;
   const posterProxyUrl = imdbId ? `${host}/poster/series/${imdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`: `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`;
+  const logoUrl = imdbId ? await imdb.getSeriesLogo(imdbId, config) : tvdbId ? await tvdb.getSeriesLogo(tvdbId, config) : null;
   return {
     id: stremioId,
     type: 'series',
     name: show.name,
     poster: config.apiKeys?.rpdb ? posterProxyUrl : fallbackImage,
     background: show.image?.original ? `${show.image.original}` : null,
-    description: show.summary ? show.summary.replace(/<[^>]*>?/gm, '') : '',
+    description: Utils.addMetaProviderAttribution(show.summary ? show.summary.replace(/<[^>]*>?/gm, '') : '', 'TVmaze', config),
     genres: show.genres || [],
+    logo: logoUrl,
     year: show.premiered ? show.premiered.substring(0, 4) : '',
-    imdbRating: show.rating?.average ? show.rating.average.toFixed(1) : 'N/A'
+    imdbRating: imdbId ? (await getImdbRating(imdbId, 'series')) : show.rating?.average ? show.rating.average.toFixed(1) : 'N/A'
   };
 }
 

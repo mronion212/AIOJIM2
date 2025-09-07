@@ -143,6 +143,11 @@ class ConfigApi {
               const newValue = config.artProviders[key];
               const oldValue = oldConfig.artProviders?.[key];
               
+              // Handle englishArtOnly boolean property
+              if (key === 'englishArtOnly') {
+                return newValue !== oldValue;
+              }
+              
               // Handle legacy string format
               if (typeof newValue === 'string' && typeof oldValue === 'string') {
                 return newValue !== oldValue;

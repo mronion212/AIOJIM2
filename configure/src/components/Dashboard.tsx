@@ -60,6 +60,16 @@ function DashboardOverview() {
             activeUsers: overviewData.quickStats.activeUsers,
             errorRate: overviewData.quickStats.errorRate
           });
+          
+          // Update system status from systemOverview
+          if (overviewData.systemOverview) {
+            setSystemStatus({
+              status: overviewData.systemOverview.status,
+              uptime: overviewData.systemOverview.uptime,
+              version: overviewData.systemOverview.version,
+              lastUpdate: overviewData.systemOverview.lastUpdate
+            });
+          }
         }
         
         if (systemResponse.ok) {
@@ -239,7 +249,7 @@ function DashboardAnalytics() {
           setProviderHourlyData(analyticsData.providerHourlyData || []);
 
           // Update request metrics
-          const successRate = 100 - overviewData.quickStats.errorRate;
+          const successRate = overviewData.quickStats.successRate || (100 - overviewData.quickStats.errorRate);
           
           // Process hourly data for charts
           const hourlyData = analyticsData.hourlyData || [];
@@ -1226,25 +1236,95 @@ function DashboardOperations() {
 // User Management Component
 function DashboardUsers() {
   const [userStats, setUserStats] = useState({
-    totalUsers: 1247,
-    activeUsers: 89,
-    newUsersToday: 12,
-    premiumUsers: 45
+    totalUsers: 0,
+    activeUsers: 0,
+    newUsersToday: 0,
+    totalRequests: 0
   });
 
-  const [userActivity, setUserActivity] = useState([
-    { id: 1, username: 'user123', lastSeen: '2 minutes ago', requests: 156, status: 'active' },
-    { id: 2, username: 'anime_fan', lastSeen: '15 minutes ago', requests: 89, status: 'active' },
-    { id: 3, username: 'streamer_pro', lastSeen: '1 hour ago', requests: 234, status: 'idle' },
-    { id: 4, username: 'new_user', lastSeen: '2 hours ago', requests: 12, status: 'new' }
-  ]);
-
+  const [userActivity, setUserActivity] = useState([]);
   const [accessControl, setAccessControl] = useState({
-    adminUsers: 3,
-    apiKeyUsers: 23,
-    rateLimitedUsers: 5,
-    blockedUsers: 1
+    adminUsers: 0,
+    apiKeyUsers: 0,
+    rateLimitedUsers: 0,
+    blockedUsers: 0
   });
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const response = await fetch('/api/dashboard/users', {
+          headers: {
+            'Content-Type': 'application/json',
+            // TODO: Add admin key header when implementing authentication
+            // 'x-admin-key': adminKey
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        setUserStats({
+          totalUsers: data.totalUsers || 0,
+          activeUsers: data.activeUsers || 0,
+          newUsersToday: data.newUsersToday || 0,
+          totalRequests: data.totalRequests || 0
+        });
+        setUserActivity(data.userActivity || []);
+        setAccessControl(data.accessControl || {
+          adminUsers: 0,
+          apiKeyUsers: 0,
+          rateLimitedUsers: 0,
+          blockedUsers: 0
+        });
+      } catch (err) {
+        console.error('Failed to fetch user data:', err);
+        setError(err.message);
+        // Keep default values on error
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading user data...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <div className="text-red-500 mb-4">
+              <AlertCircle className="h-12 w-12 mx-auto" />
+            </div>
+            <p className="text-red-600 font-medium">Failed to load user data</p>
+            <p className="text-sm text-muted-foreground mt-2">{error}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -1285,12 +1365,12 @@ function DashboardUsers() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Premium Users</CardTitle>
-            <Shield className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Total Requests</CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{userStats.premiumUsers}</div>
-            <p className="text-xs text-muted-foreground">With premium access</p>
+            <div className="text-2xl font-bold">{userStats.totalRequests?.toLocaleString() || '0'}</div>
+            <p className="text-xs text-muted-foreground">All time requests</p>
           </CardContent>
         </Card>
       </div>
@@ -1302,35 +1382,43 @@ function DashboardUsers() {
           <CardDescription>Latest user interactions and status</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {userActivity.map((user) => (
-              <div key={user.id} className="flex items-center justify-between p-3 border rounded-lg">
-                <div className="flex items-center space-x-3">
-                  <div className={`w-3 h-3 rounded-full ${
-                    user.status === 'active' ? 'bg-green-500' : 
-                    user.status === 'idle' ? 'bg-yellow-500' : 'bg-blue-500'
-                  }`}></div>
-                  <div>
-                    <p className="font-medium">{user.username}</p>
-                    <p className="text-sm text-muted-foreground">
-                      Last seen: {user.lastSeen} • {user.requests} requests
-                    </p>
+          {userActivity.length > 0 ? (
+            <div className="space-y-3">
+              {userActivity.map((user) => (
+                <div key={user.id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className={`w-3 h-3 rounded-full ${
+                      user.status === 'active' ? 'bg-green-500' : 
+                      user.status === 'idle' ? 'bg-yellow-500' : 'bg-blue-500'
+                    }`}></div>
+                    <div>
+                      <p className="font-medium">{user.username}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Last seen: {user.lastSeen} • {user.requests} requests
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Badge variant={
+                      user.status === 'active' ? 'default' : 
+                      user.status === 'idle' ? 'secondary' : 'outline'
+                    }>
+                      {user.status}
+                    </Badge>
+                    <Button size="sm" variant="outline">
+                      View Details
+                    </Button>
                   </div>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Badge variant={
-                    user.status === 'active' ? 'default' : 
-                    user.status === 'idle' ? 'secondary' : 'outline'
-                  }>
-                    {user.status}
-                  </Badge>
-                  <Button size="sm" variant="outline">
-                    View Details
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No recent user activity</p>
+              <p className="text-sm">User activity will appear here as users interact with the addon</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 

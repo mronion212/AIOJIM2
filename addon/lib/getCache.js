@@ -148,8 +148,25 @@ function updateCacheHealth(key, type, success = true) {
   cacheHealth.keyAccessCounts.set(key, (cacheHealth.keyAccessCounts.get(key) || 0) + 1);
   
   if (success) {
-    if (type === 'hit') cacheHealth.hits++;
-    else if (type === 'miss') cacheHealth.misses++;
+    if (type === 'hit') {
+      cacheHealth.hits++;
+      // Also track in requestTracker for dashboard metrics
+      try {
+        const requestTracker = require('./requestTracker');
+        requestTracker.trackCacheHit().catch(() => {}); // Don't let this fail silently
+      } catch (error) {
+        // Ignore if requestTracker is not available
+      }
+    } else if (type === 'miss') {
+      cacheHealth.misses++;
+      // Also track in requestTracker for dashboard metrics
+      try {
+        const requestTracker = require('./requestTracker');
+        requestTracker.trackCacheMiss().catch(() => {}); // Don't let this fail silently
+      } catch (error) {
+        // Ignore if requestTracker is not available
+      }
+    }
   } else {
     cacheHealth.errors++;
   }
