@@ -21,7 +21,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   // Check if admin features are available (ADMIN_KEY is set and working)
   const checkAdminFeaturesAvailable = async (): Promise<boolean> => {
     try {
-      const response = await fetch('/api/dashboard/overview', {
+      // Try to access an admin-only endpoint to see if ADMIN_KEY is set
+      const response = await fetch('/api/dashboard/users', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json'
@@ -80,8 +81,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
   const verifyAdminKey = async (key: string): Promise<boolean> => {
     try {
-      // Try with the provided admin key
-      const responseWithKey = await fetch('/api/dashboard/overview', {
+      // Try with the provided admin key on an admin-only endpoint
+      const responseWithKey = await fetch('/api/dashboard/users', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

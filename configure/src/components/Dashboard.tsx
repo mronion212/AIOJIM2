@@ -947,10 +947,6 @@ function DashboardSystem() {
                       {provider.apiKey ? 'Set' : 'Missing'}
                     </Badge>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm text-muted-foreground">Rate Limit</p>
-                    <p className="font-medium">{provider.rateLimit}</p>
-                  </div>
                   <Badge variant={provider.status === 'healthy' ? 'default' : 'secondary'}>
                     {provider.status}
                   </Badge>
@@ -1297,6 +1293,10 @@ function DashboardUsers() {
         // Add admin key if available
         if (adminKey) {
           headers['x-admin-key'] = adminKey;
+          console.log('[Dashboard Users] Using admin key:', adminKey);
+        } else {
+          console.log('[Dashboard Users] No admin key available');
+          return;
         }
         
         const response = await fetch('/api/dashboard/users', {
@@ -1545,7 +1545,7 @@ function AdminLogin() {
   useEffect(() => {
     const checkAdminFeatures = async () => {
       try {
-        const response = await fetch('/api/dashboard/overview', {
+        const response = await fetch('/api/dashboard/users', {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json'
@@ -1656,7 +1656,7 @@ export function Dashboard() {
   const { isAdmin } = useAdmin();
   
   // Calculate grid columns based on admin status
-  const gridCols = isAdmin ? "grid-cols-6" : "grid-cols-5";
+  const gridCols = isAdmin ? "grid-cols-6" : "grid-cols-4";
   
   return (
     <div className="space-y-6">
@@ -1671,13 +1671,13 @@ export function Dashboard() {
       </div>
 
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className={`grid w-full ${gridCols}`}>
+        <TabsList className="inline-flex h-10 items-center justify-center rounded-md p-1 text-muted-foreground w-full gap-x-2 bg-muted">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
           <TabsTrigger value="content">Content</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
           {isAdmin && <TabsTrigger value="operations">Operations</TabsTrigger>}
-          <TabsTrigger value="users">Users</TabsTrigger>
+          {isAdmin && <TabsTrigger value="users">Users</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="overview" className="mt-6">
@@ -1702,9 +1702,11 @@ export function Dashboard() {
           </TabsContent>
         )}
 
-        <TabsContent value="users" className="mt-6">
-          <DashboardUsers />
-        </TabsContent>
+        {isAdmin && (
+          <TabsContent value="users" className="mt-6">
+            <DashboardUsers />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

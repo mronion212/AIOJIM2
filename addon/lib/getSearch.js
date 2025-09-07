@@ -196,7 +196,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         console.log(`[Search] MediaType: ${media.media_type}`);
         const mediaType = media.media_type === 'movie' ? 'movie' : 'series';
         
-        const parsed = Utils.parseMedia(media, media.media_type, genreList); 
+        const parsed = Utils.parseMedia(media, media.media_type, genreList, config); 
         if (!parsed) return null;
         const imdbId = media.external_ids?.imdb_id;
         const tvdbId = media.external_ids?.thetvdb_id;

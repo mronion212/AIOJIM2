@@ -59,7 +59,7 @@ function sortSearchResults(results, query) {
   return results;
 }
 
-function parseMedia(el, type, genreList = []) {
+function parseMedia(el, type, genreList = [], config = {}) {
   const genres = Array.isArray(el.genre_ids)
     ? el.genre_ids.map(genreId => (genreList.find((g) => g.id === genreId) || {}).name).filter(Boolean)
     : [];
@@ -1141,9 +1141,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
     if (useTvdb && mapping && mapping.thetvdb_id) {
       try {
         // Use the appropriate TVDB function based on media type
-        const tvdbPoster = stremioType === 'movie'
-          ? await tvdb.getMoviePoster(mapping.thetvdb_id, config)
-          : await tvdb.getSeriesPoster(mapping.thetvdb_id, config);
+        const tvdbPoster = await tvdb.getSeriesPoster(mapping.thetvdb_id, config);
         
         if (tvdbPoster) {
           //console.log(`[parseAnimeCatalogMetaBatch] Using TVDB poster for MAL ID: ${malId} (TVDB ID: ${mapping.thetvdb_id}, Type: ${stremioType})`);

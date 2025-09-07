@@ -818,7 +818,7 @@ class DashboardAPI {
       
       return {
         memoryUsage,
-        cpuUsage: Math.round(os.loadavg()[0] * 100), // 1 minute load average
+        cpuUsage: Math.round(os.loadavg()[0] / os.cpus().length * 100), // Load average per core as percentage
         diskUsage: Math.max(0, Math.min(100, diskUsage)), // Ensure 0-100%
         networkIO: Math.max(0, networkIO) // Ensure non-negative
       };
