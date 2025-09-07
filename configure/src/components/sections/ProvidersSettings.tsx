@@ -190,6 +190,9 @@ export function ProvidersSettings() {
             <p className="text-xs text-muted-foreground mt-2">
               "IMDb" can improve compatibility as it is supported by most streaming addons. Kitsu is recommended when using MAL as meta provider.
             </p>
+            <p className="text-xs text-amber-600 mt-1">
+              ⚠️ Using TVDB/IMDb as anime meta provider with Kitsu/MAL anime compatibility ID is considered experimental as they rely on community mappings and could contain inaccurate information.
+            </p>
           </div>
         </CardContent>
       </Card>

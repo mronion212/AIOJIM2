@@ -688,6 +688,60 @@ async function enrichMalEpisodes(videos, kitsuId) {
     video.season === startSeason && video.episode >= startEpisode
   ) || [];
 
+  const otherImdbEntries = getKitsuToImdbMappingsByImdbId(imdbInfo.imdb_id)
+    .filter((entry) => entry.kitsu_id !== kitsuId
+      && entry.fromSeason >= startSeason
+      && entry.fromEpisode >= startEpisode);
+  
+  const nextImdbEntry = otherImdbEntries && otherImdbEntries[0];
+
+  const perSeasonEpisodeCount = imdbMetadata && imdbMetadata.videos && imdbMetadata.videos
+      .filter((video) => (video.season === startSeason && video.episode >= startEpisode) || (video.season > startSeason
+          && (!nextImdbEntry || nextImdbEntry.fromSeason > video.season)))
+      .reduce(
+          (counts, next) => (counts[next.season - startSeason] = counts[next.season - startSeason] + 1 || 1, counts),
+          []);
+
+  const videosMap = perSeasonEpisodeCount && imdbMetadata.videos.reduce((map, next) => (map[next.id] = next, map), {})
+  console.log(`[ID Mapper] Videos map:`, videosMap);
+  let skippedEpisodes = 0;
+
+  console.log(`[ID Mapper] Per season episode count:`, perSeasonEpisodeCount);
+
+
+  if (perSeasonEpisodeCount && perSeasonEpisodeCount.length) {
+    let lastReleased;
+    return videos
+        .map(video => {
+          if (imdbInfo.nonImdbEpisodes && imdbInfo.nonImdbEpisodes.includes(video.episode)) {
+            skippedEpisodes++
+            return video
+          }
+          const seasonIndex = ([...perSeasonEpisodeCount.keys()]
+              .find((i) => perSeasonEpisodeCount.slice(0, i + 1)
+                  .reduce((a, b) => a + b, 0) >= video.episode - skippedEpisodes) + 1 || perSeasonEpisodeCount.length) - 1;
+          const previousSeasonsEpisodeCount = perSeasonEpisodeCount.slice(0, seasonIndex).reduce((a, b) => a + b, 0);
+          const season = startSeason + seasonIndex;
+          const episode = startEpisode - 1 + video.episode - skippedEpisodes - previousSeasonsEpisodeCount;
+          const imdbVideo = videosMap[`${imdbInfo.imdb_id}:${season}:${episode}`];
+          const title = video.title.match(/Episode \d+/) && (imdbVideo?.title || imdbVideo?.name) || video.title;
+          const thumbnail = video.thumbnail || imdbVideo?.thumbnail;
+          const overview = video.overview || imdbVideo?.overview;
+          const released = new Date(imdbVideo?.released || video.released.getTime());
+          lastReleased = lastReleased?.getTime() > released.getTime() ? lastReleased : released;
+          video.id = `${imdbInfo.imdb_id}:${season}:${episode}`;
+          return {
+            ...video,
+            title,
+            thumbnail,
+            overview,
+            released: lastReleased,
+            imdb_id: imdbInfo.imdb_id,
+            imdbSeason: season,
+            imdbEpisode: episode
+          }
+        });
+  }
   
   
   const enrichedVideos = videos.map((video, index) => {

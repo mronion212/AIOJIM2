@@ -72,8 +72,7 @@ class RequestTracker {
       if (normalizedPath.includes('/meta/') || normalizedPath.includes('/catalog/')) {
         const activityDetails = {
           endpoint: normalizedPath,
-          userAgent: req.headers['user-agent'],
-          ip: req.ip,
+          userAgent: this.hashString(req.headers['user-agent'] || 'unknown'),
           method: req.method
         };
         
@@ -131,9 +130,9 @@ class RequestTracker {
   // Normalize endpoint for tracking (remove IDs, etc.)
   normalizeEndpoint(path) {
     return path
+      .replace(/\/[a-f0-9-]{36}/g, '/:uuid') // UUIDs (must come before ObjectId regex)
       .replace(/\/[a-f0-9]{24}/g, '/:id') // MongoDB ObjectIds
       .replace(/\/\d+/g, '/:id') // Numeric IDs
-      .replace(/\/[a-f0-9-]{36}/g, '/:uuid') // UUIDs
       .replace(/\/[a-zA-Z0-9_-]{8,}/g, '/:param') // Long params
       .toLowerCase();
   }
@@ -355,13 +354,13 @@ class RequestTracker {
     try {
       if (!meta || !meta.name) return;
 
-      console.log(`[Request Tracker] Capturing metadata from components for ${metaId}:`, {
+      /*console.log(`[Request Tracker] Capturing metadata from components for ${metaId}:`, {
         name: meta.name,
         type: meta.type || metaType,
         imdbRating: meta.imdbRating,
         year: meta.year,
         imdb_id: meta.imdb_id
-      });
+      });*/
 
       // Parse metaId to get the actual ID format
       const metaIdParts = metaId.split(':');
@@ -779,14 +778,19 @@ class RequestTracker {
       const todayErr = parseInt(todayErrors) || 0;
       const todaySucc = parseInt(todaySuccess) || 0;
       
+      // Ensure success rate doesn't exceed 100% due to tracking inconsistencies
+      const actualTotal = Math.max(todayReq, todaySucc + todayErr);
+      const successRate = actualTotal > 0 ? parseFloat(((todaySucc / actualTotal) * 100).toFixed(1)) : 0;
+      const errorRate = actualTotal > 0 ? parseFloat(((todayErr / actualTotal) * 100).toFixed(1)) : 0;
+      
       return {
         totalRequests: parseInt(totalRequests) || 0,
         todayRequests: todayReq,
         yesterdayRequests: parseInt(yesterdayRequests) || 0,
         totalErrors: parseInt(totalErrors) || 0,
         todayErrors: todayErr,
-        successRate: todayReq > 0 ? parseFloat(((todaySucc / todayReq) * 100).toFixed(1)) : 0,
-        errorRate: todayReq > 0 ? parseFloat(((todayErr / todayReq) * 100).toFixed(1)) : 0
+        successRate: Math.min(successRate, 100), // Cap at 100%
+        errorRate: Math.min(errorRate, 100) // Cap at 100%
       };
     } catch (error) {
       console.error('[Request Tracker] Failed to get stats:', error);

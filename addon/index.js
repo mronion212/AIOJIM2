@@ -1303,10 +1303,6 @@ function getDashboardAPI() {
 }
 
 addon.get("/api/dashboard/overview", (req, res) => {
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
   
   try {
     const dashboardApi = getDashboardAPI();
@@ -1347,10 +1343,6 @@ addon.get("/api/dashboard/stats", (req, res) => {
 });
 
 addon.get("/api/dashboard/system", (req, res) => {
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
   
   try {
     const dashboardApi = getDashboardAPI();
@@ -1421,10 +1413,6 @@ addon.post("/api/dashboard/cache/clear", (req, res) => {
 });
 
 addon.get("/api/dashboard/analytics", async (req, res) => {
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
   
   try {
     const [stats, hourlyStats, topEndpoints, providerHourlyData] = await Promise.all([
@@ -1506,10 +1494,6 @@ addon.post("/api/dashboard/test-errors", (req, res) => {
 });
 
 addon.get("/api/dashboard/content", (req, res) => {
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
   
   try {
     Promise.all([

@@ -109,8 +109,7 @@ async function _makeJikanRequest(url) {
     requestTracker.logError('error', `MAL API request failed: ${error.message}`, {
       url: url,
       responseTime: responseTime,
-      status: error.response?.status,
-      retries: requestTask?.retries || 0
+      status: error.response?.status
     });
     
     throw error;

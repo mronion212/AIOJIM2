@@ -4,6 +4,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useAdmin } from '@/contexts/AdminContext';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { 
   Activity, 
   BarChart3, 
@@ -21,12 +25,16 @@ import {
   LineChart,
   BarChart,
   Zap,
-  RefreshCw
+  RefreshCw,
+  Key,
+  LogOut,
+  AlertCircle
 } from 'lucide-react';
 import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart as RechartsBarChart, Bar, Legend } from 'recharts';
 
 // Dashboard Overview Component
 function DashboardOverview() {
+  
   const [systemStatus, setSystemStatus] = useState({
     status: 'healthy',
     uptime: '0h 0m',
@@ -216,6 +224,7 @@ function DashboardOverview() {
 
 // Analytics & Performance Component
 function DashboardAnalytics() {
+  
   const [requestMetrics, setRequestMetrics] = useState({
     requestsPerHour: [],
     responseTimes: [],
@@ -495,6 +504,7 @@ function DashboardAnalytics() {
 
 // Content Intelligence Component
 function DashboardContent() {
+  
   const [popularContent, setPopularContent] = useState([]);
   const [searchPatterns, setSearchPatterns] = useState([]);
   const [contentQuality, setContentQuality] = useState({
@@ -680,6 +690,7 @@ function DashboardContent() {
 
 // System Management Component
 function DashboardSystem() {
+  
   const [systemConfig, setSystemConfig] = useState({
     language: 'en-US',
     metaProvider: 'tvdb',
@@ -980,6 +991,8 @@ function DashboardSystem() {
 
 // Operational Tools Component
 function DashboardOperations() {
+  const { adminKey } = useAdmin();
+  
   const [cacheStats, setCacheStats] = useState({
     totalKeys: 0,
     memoryUsage: '0 MB',
@@ -995,7 +1008,16 @@ function DashboardOperations() {
     const fetchOperationsData = async () => {
       try {
         setLoading(true);
-        const response = await fetch('/api/dashboard/operations');
+        const headers = {
+          'Content-Type': 'application/json'
+        };
+        
+        // Add admin key if available
+        if (adminKey) {
+          headers['x-admin-key'] = adminKey;
+        }
+        
+        const response = await fetch('/api/dashboard/operations', { headers });
         if (response.ok) {
           const data = await response.json();
           setErrorLogs(data.errorLogs || []);
@@ -1021,17 +1043,24 @@ function DashboardOperations() {
     };
 
     fetchOperationsData();
-  }, []);
+  }, [adminKey]);
 
   const handleClearCache = async (type) => {
     try {
       console.log(`Clearing ${type} cache...`);
       
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      // Add admin key if available
+      if (adminKey) {
+        headers['x-admin-key'] = adminKey;
+      }
+      
       const response = await fetch('/api/dashboard/cache/clear', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({ type })
       });
       
@@ -1040,7 +1069,7 @@ function DashboardOperations() {
         console.log('Cache cleared successfully:', result.message);
         
         // Refresh the cache stats after clearing
-        const operationsResponse = await fetch('/api/dashboard/operations');
+        const operationsResponse = await fetch('/api/dashboard/operations', { headers });
         if (operationsResponse.ok) {
           const data = await operationsResponse.json();
           if (data.cacheStats) {
@@ -1235,6 +1264,8 @@ function DashboardOperations() {
 
 // User Management Component
 function DashboardUsers() {
+  const { adminKey } = useAdmin();
+  
   const [userStats, setUserStats] = useState({
     totalUsers: 0,
     activeUsers: 0,
@@ -1259,12 +1290,17 @@ function DashboardUsers() {
         setLoading(true);
         setError(null);
         
+        const headers = {
+          'Content-Type': 'application/json'
+        };
+        
+        // Add admin key if available
+        if (adminKey) {
+          headers['x-admin-key'] = adminKey;
+        }
+        
         const response = await fetch('/api/dashboard/users', {
-          headers: {
-            'Content-Type': 'application/json',
-            // TODO: Add admin key header when implementing authentication
-            // 'x-admin-key': adminKey
-          }
+          headers
         });
 
         if (!response.ok) {
@@ -1295,7 +1331,7 @@ function DashboardUsers() {
     };
 
     fetchUserData();
-  }, []);
+  }, [adminKey]);
 
   if (loading) {
     return (
@@ -1497,24 +1533,150 @@ function DashboardUsers() {
   );
 }
 
+// Admin Login Component
+function AdminLogin() {
+  const { isAdmin, adminKey: contextAdminKey, login, logout, isLoading } = useAdmin();
+  const [inputAdminKey, setInputAdminKey] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const [error, setError] = useState('');
+  const [adminFeaturesAvailable, setAdminFeaturesAvailable] = useState(true);
+
+  // Check if admin features are available on mount
+  useEffect(() => {
+    const checkAdminFeatures = async () => {
+      try {
+        const response = await fetch('/api/dashboard/overview', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        // If it returns 401, admin features are available but require authentication
+        // If it returns 200, admin features are disabled (no ADMIN_KEY set)
+        setAdminFeaturesAvailable(response.status === 401);
+      } catch (error) {
+        setAdminFeaturesAvailable(false);
+      }
+    };
+
+    checkAdminFeatures();
+  }, []);
+
+  const handleLogin = async () => {
+    if (!inputAdminKey.trim()) {
+      setError('Please enter an admin key');
+      return;
+    }
+
+    const success = await login(inputAdminKey);
+    if (success) {
+      setInputAdminKey('');
+      setError('');
+      setIsOpen(false);
+    } else {
+      setError('Invalid admin key');
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    setIsOpen(false);
+  };
+
+  if (isAdmin) {
+    return (
+      <div className="flex items-center gap-2">
+        <Badge variant="default" className="bg-green-600">
+          <Shield className="h-3 w-3 mr-1" />
+          Admin
+        </Badge>
+        {contextAdminKey && (
+          <Button variant="outline" size="sm" onClick={handleLogout}>
+            <LogOut className="h-4 w-4 mr-1" />
+            Logout
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  // If admin features are not available, don't show anything
+  if (!adminFeaturesAvailable) {
+    return null;
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Key className="h-4 w-4 mr-1" />
+          Admin Login
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Admin Authentication</DialogTitle>
+          <DialogDescription>
+            Enter your admin key to access administrative features.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
+              {error}
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="admin-key">Admin Key</Label>
+            <Input
+              id="admin-key"
+              type="password"
+              value={inputAdminKey}
+              onChange={(e) => setInputAdminKey(e.target.value)}
+              placeholder="Enter admin key"
+              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleLogin} disabled={isLoading}>
+              {isLoading ? 'Authenticating...' : 'Login'}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // Main Dashboard Component
 export function Dashboard() {
+  const { isAdmin } = useAdmin();
+  
+  // Calculate grid columns based on admin status
+  const gridCols = isAdmin ? "grid-cols-6" : "grid-cols-5";
+  
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
-        <p className="text-muted-foreground">
-          Monitor your addon's performance, health, and usage statistics
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+          <p className="text-muted-foreground">
+            Monitor your addon's performance, health, and usage statistics
+          </p>
+        </div>
+        <AdminLogin />
       </div>
 
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className={`grid w-full ${gridCols}`}>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
           <TabsTrigger value="content">Content</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
-          <TabsTrigger value="operations">Operations</TabsTrigger>
+          {isAdmin && <TabsTrigger value="operations">Operations</TabsTrigger>}
           <TabsTrigger value="users">Users</TabsTrigger>
         </TabsList>
 
@@ -1534,9 +1696,11 @@ export function Dashboard() {
           <DashboardSystem />
         </TabsContent>
 
-        <TabsContent value="operations" className="mt-6">
-          <DashboardOperations />
-        </TabsContent>
+        {isAdmin && (
+          <TabsContent value="operations" className="mt-6">
+            <DashboardOperations />
+          </TabsContent>
+        )}
 
         <TabsContent value="users" className="mt-6">
           <DashboardUsers />

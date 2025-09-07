@@ -1598,17 +1598,12 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
     
     // Process episodes while API calls are running
     if (stremioType === 'series' && malData.status !== 'Not yet aired' && episodeData && episodeData.length > 0) {      // Filter episodes once
-      const filteredEpisodes = (episodeData || []).filter(ep => {
-        if (config.mal?.skipFiller && ep.filler) return false;
-        if (config.mal?.skipRecap && ep.recap) return false;
-            return true;
-      });
       
       // Wait for enhancement data
       await Promise.all(enhancementPromises);
       
       // Process episodes with enhancement data        
-      videos = filteredEpisodes.map(ep => {
+      videos = (episodeData || []).map(ep => {
             let episodeId = `${seriesId}:${ep.mal_id}`;
             if (idProvider === 'kitsu' && kitsuId) {
               episodeId = `kitsu:${kitsuId}:${ep.mal_id}`;
@@ -1646,17 +1641,19 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
           thumbnailUrl = posterUrl;
         }
         
-              return {
+        return {
           id: episodeId,
           title: episodeTitle,
-                season: 1,
-                episode: ep.mal_id,
-                released: ep.aired? new Date(ep.aired) : null,
-                thumbnail: config.blurThumbs? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
+          season: 1,
+          episode: ep.mal_id,
+          released: ep.aired? new Date(ep.aired) : null,
+          thumbnail: config.blurThumbs? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
           available: ep.aired ? new Date(ep.aired) < new Date() : false,
-          overview: episodeSynopsis
-              };
-            });
+          overview: episodeSynopsis,
+          isFiller: ep.filler,
+          isRecap: ep.recap,
+        };
+      });
       
       
       // Special processing for IMDB provider with season info
@@ -1676,6 +1673,13 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
         }
       }  
     }
+    console.log(`[getMeta] Videos length:`, videos.length);
+
+    videos = videos.filter(ep => {
+      if (config.mal?.skipFiller && ep.isFiller) return false;
+      if (config.mal?.skipRecap && ep.isRecap) return false;
+      return true;
+    });
 
     // Optimize cast processing with pre-computed replacements
     const cast = (characterData || [])

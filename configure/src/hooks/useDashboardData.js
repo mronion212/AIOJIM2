@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
+import { useAdmin } from '@/contexts/AdminContext';
 
 const API_BASE = process.env.NODE_ENV === 'development' 
   ? 'http://localhost:7000' 
   : window.location.origin;
 
 export function useDashboardData() {
+  const { adminKey, isAdmin } = useAdmin();
   const [data, setData] = useState({
     systemOverview: null,
     quickStats: null,
@@ -24,13 +26,23 @@ export function useDashboardData() {
       setLoading(true);
       setError(null);
 
+      // Only fetch if user is admin
+      if (!isAdmin) {
+        setLoading(false);
+        return;
+      }
+
       // Fetch all dashboard data
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (adminKey) {
+        headers['x-admin-key'] = adminKey;
+      }
+
       const response = await fetch(`${API_BASE}/api/dashboard/overview`, {
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add admin key header when implementing authentication
-          // 'x-admin-key': adminKey
-        }
+        headers
       });
 
       if (!response.ok) {
@@ -49,13 +61,17 @@ export function useDashboardData() {
 
   const clearCache = async (type) => {
     try {
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (adminKey) {
+        headers['x-admin-key'] = adminKey;
+      }
+
       const response = await fetch(`${API_BASE}/api/dashboard/cache/clear`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add admin key header when implementing authentication
-          // 'x-admin-key': adminKey
-        },
+        headers,
         body: JSON.stringify({ type })
       });
 
@@ -79,7 +95,7 @@ export function useDashboardData() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [isAdmin, adminKey]);
 
   return {
     data,
@@ -91,6 +107,7 @@ export function useDashboardData() {
 }
 
 export function useDashboardStats() {
+  const { adminKey, isAdmin } = useAdmin();
   const [stats, setStats] = useState({
     quickStats: null,
     cachePerformance: null,
@@ -105,12 +122,22 @@ export function useDashboardStats() {
       setLoading(true);
       setError(null);
 
+      // Only fetch if user is admin
+      if (!isAdmin) {
+        setLoading(false);
+        return;
+      }
+
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (adminKey) {
+        headers['x-admin-key'] = adminKey;
+      }
+
       const response = await fetch(`${API_BASE}/api/dashboard/stats`, {
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add admin key header when implementing authentication
-          // 'x-admin-key': adminKey
-        }
+        headers
       });
 
       if (!response.ok) {
@@ -134,7 +161,7 @@ export function useDashboardStats() {
     const interval = setInterval(fetchStats, 30000);
     
     return () => clearInterval(interval);
-  }, []);
+  }, [isAdmin, adminKey]);
 
   return {
     stats,
@@ -145,6 +172,7 @@ export function useDashboardStats() {
 }
 
 export function useDashboardSystem() {
+  const { adminKey, isAdmin } = useAdmin();
   const [systemData, setSystemData] = useState({
     systemConfig: null,
     resourceUsage: null
@@ -158,12 +186,22 @@ export function useDashboardSystem() {
       setLoading(true);
       setError(null);
 
+      // Only fetch if user is admin
+      if (!isAdmin) {
+        setLoading(false);
+        return;
+      }
+
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (adminKey) {
+        headers['x-admin-key'] = adminKey;
+      }
+
       const response = await fetch(`${API_BASE}/api/dashboard/system`, {
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add admin key header when implementing authentication
-          // 'x-admin-key': adminKey
-        }
+        headers
       });
 
       if (!response.ok) {
@@ -187,7 +225,7 @@ export function useDashboardSystem() {
     const interval = setInterval(fetchSystemData, 60000);
     
     return () => clearInterval(interval);
-  }, []);
+  }, [isAdmin, adminKey]);
 
   return {
     systemData,
@@ -198,6 +236,7 @@ export function useDashboardSystem() {
 }
 
 export function useDashboardOperations() {
+  const { adminKey, isAdmin } = useAdmin();
   const [operationsData, setOperationsData] = useState({
     errorLogs: null,
     maintenanceTasks: null
@@ -211,12 +250,22 @@ export function useDashboardOperations() {
       setLoading(true);
       setError(null);
 
+      // Only fetch if user is admin
+      if (!isAdmin) {
+        setLoading(false);
+        return;
+      }
+
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (adminKey) {
+        headers['x-admin-key'] = adminKey;
+      }
+
       const response = await fetch(`${API_BASE}/api/dashboard/operations`, {
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add admin key header when implementing authentication
-          // 'x-admin-key': adminKey
-        }
+        headers
       });
 
       if (!response.ok) {
@@ -235,7 +284,7 @@ export function useDashboardOperations() {
 
   useEffect(() => {
     fetchOperationsData();
-  }, []);
+  }, [isAdmin, adminKey]);
 
   return {
     operationsData,
