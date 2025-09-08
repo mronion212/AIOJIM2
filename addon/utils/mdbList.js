@@ -170,23 +170,25 @@ async function parseMDBListItems(items, type, genreFilter, language, config) {
         const tmdbPosterFullUrl = posterPath 
           ? `https://image.tmdb.org/t/p/w500${posterPath}` 
           : `https://artworks.thetvdb.com/banners/images/missing/${type}.jpg`;
-        let posterUrl;
-        if (type === 'movie') {
-          posterUrl = await Utils.getMoviePoster({
-            tmdbId: item.id,
-            tvdbId: allIds.tvdbId,
-            imdbId: allIds.imdbId,
-            metaProvider: preferredProvider,
-            fallbackPosterUrl: tmdbPosterFullUrl
-          }, config);
-        } else {
-          posterUrl = await Utils.getSeriesPoster({
-            tmdbId: allIds.tmdbId,
-            tvdbId: allIds.tvdbId,
-            imdbId: allIds.imdbId,
-            metaProvider: preferredProvider,
-            fallbackPosterUrl: tmdbPosterFullUrl
-          }, config);
+        let posterUrl = tmdbPosterFullUrl;
+        if(allIds) {
+          if (type === 'movie') {
+            posterUrl = await Utils.getMoviePoster({
+              tmdbId: item.id,
+              tvdbId: allIds.tvdbId,
+              imdbId: allIds.imdbId,
+              metaProvider: preferredProvider,
+              fallbackPosterUrl: tmdbPosterFullUrl
+            }, config);
+          } else {
+            posterUrl = await Utils.getSeriesPoster({
+              tmdbId: allIds.tmdbId,
+              tvdbId: allIds.tvdbId,
+              imdbId: allIds.imdbId,
+              metaProvider: preferredProvider,
+                fallbackPosterUrl: tmdbPosterFullUrl
+              }, config);
+          }
         }
         //console.log(`[MDBList] Batch media info: ${JSON.stringify(batchMediaInfo.find(media => media.id === item.id))}`);
         const posterProxyUrl = `${host}/poster/${type}/${stremioId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
@@ -194,6 +196,7 @@ async function parseMDBListItems(items, type, genreFilter, language, config) {
         return {
           id: stremioId,
           type: type,
+          imdb_id: allIds?.imdbId,
           name: item.title || item.name,
           poster: posterProxyUrl,
           logo: type === 'movie' ? await moviedb.getTmdbMovieLogo(item.id, config) : await moviedb.getTmdbSeriesLogo(item.id, config),
@@ -210,7 +213,6 @@ async function parseMDBListItems(items, type, genreFilter, language, config) {
         const posterProxyUrl = `${host}/poster/${type}/tmdb:${item.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
         return {
           id: `tmdb:${item.id}`,
-          imdb_id: imdb_id,
           type: type,
           name: item.title || item.name,
           poster: posterProxyUrl,
