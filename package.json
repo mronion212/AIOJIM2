@@ -1,7 +1,7 @@
 {
-  "name": "aio-metadata",
-  "version": "1.0.0-beta.23.0",
-  "description": "Metadata provider for Stremio",
+  "name": "aiojim2",
+  "version": "1.0.0-beta.24.0",
+  "description": "AIOJIM2 - Enhanced metadata provider for Stremio",
   "main": "server.js",
   "scripts": {
     "dev": "vite",
@@ -15,7 +15,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cedya77/aiometadata"
+    "url": "git+https://github.com/jimmy/AIOJIM2"
   },
   "keywords": [
     "tmdb",
@@ -25,12 +25,12 @@
     "tvdb",
     "MyAnimeList"
   ],
-  "author": "cedya",
+  "author": "jimmy",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/cedya77/aiometadata/issues"
+    "url": "https://github.com/jimmy/AIOJIM2/issues"
   },
-  "homepage": "https://github.com/cedya77/aiometadata#readme",
+  "homepage": "https://github.com/jimmy/AIOJIM2#readme",
   "dependencies": {
     "@cospired/i18n-iso-languages": "^4.2.0",
     "@dnd-kit/core": "^6.3.1",
