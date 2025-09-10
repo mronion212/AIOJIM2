@@ -67,7 +67,7 @@ addon.use(express.urlencoded({ extended: true }));
 addon.use(requestTracker.middleware());
 
 
-const NO_CACHE = process.env.NO_CACHE === 'true';
+const NO_CACHE = process.env.NO_CACHE === 'false';
 
 // Initialize cache warming for public instances (enabled by default)
 const ENABLE_CACHE_WARMING = process.env.ENABLE_CACHE_WARMING !== 'false';
@@ -214,11 +214,14 @@ const respond = function (req, res, data, opts) {
     }
   }
   
-  // Force aggressive cache control for meta routes (final override)
+  // Force aggressive cache control for meta routes (final override) - but allow caching for better performance
   if (req.route && req.route.path && (req.route.path.includes('/meta/') || req.route.path.includes('/catalog/'))) {
-    res.setHeader('Cache-Control', 'no-cache, must-revalidate, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
+    // Allow caching for better performance - 5 minutes for metadata, 1 hour for catalogs
+    if (req.route.path.includes('/meta/')) {
+      res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=600'); // 5 min cache, 10 min stale
+    } else if (req.route.path.includes('/catalog/')) {
+      res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=1800'); // 1 hour cache, 30 min stale
+    }
   }
   
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -692,6 +695,22 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
   
   // Pass config to req for ETag generation
   req.userConfig = config; 
+  
+  // Check if this is an IMDb ID and bypass cache completely
+  if (stremioId.startsWith('tt') || stremioId.startsWith('imdb:')) {
+    console.log(`[Route] Direct IMDb metadata request for ${stremioId} - bypassing all cache`);
+    try {
+      const result = await getMeta(type, language, stremioId, fullConfig, userUUID);
+      if (!result || !result.meta) {
+        return respond(req, res, { meta: null });
+      }
+      return respond(req, res, result);
+    } catch (error) {
+      console.error(`[Route] Error processing direct IMDb metadata for ${stremioId}:`, error);
+      return respond(req, res, { meta: null });
+    }
+  }
+  
   // Enhanced caching options for better error handling
   const cacheOptions = {
     enableErrorCaching: true,
@@ -941,7 +960,7 @@ addon.get("/dashboard", (req, res) => {
     // Inject dashboard-specific meta tags and title
     html = html.replace(
       /<title>.*?<\/title>/,
-      '<title>AIO Metadata Dashboard</title>'
+      '<title>AIOJIM Dashboard</title>'
     );
     
     // Add dashboard-specific script to auto-navigate to dashboard
