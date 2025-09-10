@@ -1,6 +1,6 @@
 {
   "name": "aiojim2",
-  "version": "1.0.0-beta.28.0",
+  "version": "1.0.0-beta.29.0",
   "description": "AIOJIM2 - Enhanced metadata provider for Stremio",
   "main": "server.js",
   "scripts": {
