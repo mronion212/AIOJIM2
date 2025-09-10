@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # AIOJIM2 Addon
+  aiojim2:
+    image: ghcr.io/mronion212/aiojim2:beta
+    container_name: aiojim2
+    restart: unless-stopped
+    ports:
+      - "1337:1337"
+    environment:
+      - HOST_NAME=http://your-domain.com:1337  # Vervang met je eigen domain
+      - PORT=1337
+      - DATABASE_URI=sqlite://data/db.sqlite
+      - ENABLE_CACHE_WARMING=false
+      - NO_CACHE=false
+      - TMDB_API_KEY=YOUR_TMDB_API_KEY         # Vervang met je eigen API key
+      - TVDB_API_KEY=YOUR_TVDB_API_KEY         # Vervang met je eigen API key
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+    networks:
+      - aiojim2-network
+
+  # Redis voor caching
+  redis:
+    image: redis:7-alpine
+    container_name: aiojim2-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - aiojim2-network
+
+  # Nginx reverse proxy (optioneel)
+  nginx:
+    image: nginx:alpine
+    container_name: aiojim2-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro  # Voor SSL certificaten
+    depends_on:
+      - aiojim2
+    networks:
+      - aiojim2-network
+
+volumes:
+  redis-data:
+
+networks:
+  aiojim2-network:
+    driver: bridge
