@@ -7,10 +7,28 @@ class RequestTracker {
     this.hourlyKey = `requests:${new Date().toISOString().substring(0, 13)}`;
     this.errorKey = `errors:${new Date().toISOString().split('T')[0]}`;
     
+    // Check if Redis is available
+    this.isRedisAvailable = redis !== null;
+    
+    if (!this.isRedisAvailable) {
+      console.log('[Request Tracker] Redis disabled (NO_CACHE=true), request tracking disabled');
+      return;
+    }
+    
     // Clean up any corrupted keys on startup
     this.cleanupCorruptedKeys().catch(error => {
       console.warn('[Request Tracker] Failed to cleanup on startup:', error.message);
     });
+  }
+
+  // Safe Redis call wrapper
+  safeRedisCall(callback) {
+    if (!redis || !this.isRedisAvailable) return;
+    try {
+      callback(redis);
+    } catch (error) {
+      // Silently ignore Redis errors
+    }
   }
 
   // Middleware to track all requests
@@ -18,6 +36,11 @@ class RequestTracker {
     const tracker = this; // Capture the tracker instance
     
     return async (req, res, next) => {
+      // Skip tracking if Redis is not available
+      if (!tracker.isRedisAvailable) {
+        return next();
+      }
+      
       const startTime = Date.now();
       const originalSend = res.send;
       
@@ -41,6 +64,8 @@ class RequestTracker {
 
   // Track incoming request
   async trackRequest(req) {
+    if (!this.isRedisAvailable) return;
+    
     try {
       const today = new Date().toISOString().split('T')[0];
       const hour = new Date().toISOString().substring(0, 13);
@@ -54,18 +79,24 @@ class RequestTracker {
       this.trackContentRequest(req);
       
       // Increment counters (don't await to avoid blocking)
-      redis.incr(`requests:total`).catch(() => {});
-      redis.incr(`requests:${today}`).catch(() => {});
-      redis.incr(`requests:${hour}`).catch(() => {});
-      redis.incr(`requests:endpoint:${this.normalizeEndpoint(req.path)}`).catch(() => {});
+      this.safeRedisCall(redis => {
+        redis.incr(`requests:total`).catch(() => {});
+        redis.incr(`requests:${today}`).catch(() => {});
+        redis.incr(`requests:${hour}`).catch(() => {});
+        redis.incr(`requests:endpoint:${this.normalizeEndpoint(req.path)}`).catch(() => {});
+      });
       
       // Track active users (anonymous User-Agent hash only)
-      redis.sadd(`active_users:${hour}`, userIdentifier).catch(() => {});
-      redis.expire(`active_users:${hour}`, 3600).catch(() => {}); // 1 hour expiration
+      this.safeRedisCall(redis => {
+        redis.sadd(`active_users:${hour}`, userIdentifier).catch(() => {});
+        redis.expire(`active_users:${hour}`, 3600).catch(() => {}); // 1 hour expiration
+      });
       
       // Set expiration for time-based keys (don't await)
-      redis.expire(`requests:${today}`, 86400 * 30).catch(() => {}); // 30 days
-      redis.expire(`requests:${hour}`, 86400 * 7).catch(() => {}); // 7 days
+      this.safeRedisCall(redis => {
+        redis.expire(`requests:${today}`, 86400 * 30).catch(() => {}); // 30 days
+        redis.expire(`requests:${hour}`, 86400 * 7).catch(() => {}); // 7 days
+      });
 
       // Track metadata requests for activity feed
       const normalizedPath = this.normalizeEndpoint(req.path);
@@ -90,6 +121,8 @@ class RequestTracker {
 
   // Track response
   async trackResponse(req, res, responseTime) {
+    if (!this.isRedisAvailable) return;
+    
     try {
       const today = new Date().toISOString().split('T')[0];
       const endpoint = this.normalizeEndpoint(req.path);
@@ -150,6 +183,8 @@ class RequestTracker {
 
   // Track content requests (meta, search, catalog)
   async trackContentRequest(req) {
+    if (!this.isRedisAvailable) return;
+    
     try {
       const path = req.path;
       const today = new Date().toISOString().split('T')[0];
@@ -522,6 +557,8 @@ class RequestTracker {
 
   // Track cache hit/miss
   async trackCacheHit() {
+    if (!this.isRedisAvailable) return;
+    
     try {
       const today = new Date().toISOString().split('T')[0];
       redis.incr(`cache:hits:${today}`).catch(() => {});
@@ -532,6 +569,8 @@ class RequestTracker {
   }
 
   async trackCacheMiss() {
+    if (!this.isRedisAvailable) return;
+    
     try {
       const today = new Date().toISOString().split('T')[0];
       redis.incr(`cache:misses:${today}`).catch(() => {});
@@ -543,6 +582,8 @@ class RequestTracker {
 
   // Track provider API calls
   async trackProviderCall(provider, responseTime, success = true, rateLimitHeaders = null) {
+    if (!this.isRedisAvailable) return;
+    
     try {
       const today = new Date().toISOString().split('T')[0];
       const hour = new Date().toISOString().substring(0, 13);
@@ -673,6 +714,8 @@ class RequestTracker {
 
   // Track recent activity
   async trackActivity(type, details) {
+    if (!this.isRedisAvailable) return;
+    
     try {
       console.log(`[Request Tracker] Tracking activity: ${type} for ${details.endpoint}`);
       
