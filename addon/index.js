@@ -106,7 +106,7 @@ const getCacheHeaders = function (opts) {
 const respond = function (req, res, data, opts) {
 
   if (NO_CACHE) {
-    console.log('[Cache] Bypassing browser cache for this request.');
+    // Cache disabled globally
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -696,20 +696,8 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
   // Pass config to req for ETag generation
   req.userConfig = config; 
   
-  // Check if this is an IMDb ID and bypass cache completely
-  if (stremioId.startsWith('tt') || stremioId.startsWith('imdb:')) {
-    console.log(`[Route] Direct IMDb metadata request for ${stremioId} - bypassing all cache`);
-    try {
-      const result = await getMeta(type, language, stremioId, fullConfig, userUUID);
-      if (!result || !result.meta) {
-        return respond(req, res, { meta: null });
-      }
-      return respond(req, res, result);
-    } catch (error) {
-      console.error(`[Route] Error processing direct IMDb metadata for ${stremioId}:`, error);
-      return respond(req, res, { meta: null });
-    }
-  }
+  // Use normal caching for all metadata requests including IMDb IDs
+  // IMDb IDs now go through regular metadata processing with caching enabled
   
   // Enhanced caching options for better error handling
   const cacheOptions = {

@@ -50,16 +50,96 @@ async function getAnimeArtwork(allIds, config, fallbackPosterUrl, fallbackBackgr
 }
 
 
-const host = process.env.HOST_NAME.startsWith('http')
+require('dotenv').config();
+const host = process.env.HOST_NAME 
+  ? (process.env.HOST_NAME.startsWith('http')
+      ? process.env.HOST_NAME
+      : `https://${process.env.HOST_NAME}`)
+  : 'http://localhost:1337'
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
 // --- Main Orchestrator ---
 async function getMeta(type, language, stremioId, config = {}, userUUID) {
   try {
-    // --- TVDB Collections Meta Handler ---
+    // --- IMDb ID Handler ---
     console.log(`[Meta] Starting process for ${stremioId} (type: ${type}, language: ${language})`);
+    
+    // Handle direct IMDb IDs (tt1234567)
+    if (stremioId.startsWith('tt')) {
+      console.log(`[Meta] Handling direct IMDb ID: ${stremioId}`);
+      // Convert IMDb ID to appropriate provider ID based on config
+      const allIds = await resolveAllIds(`imdb:${stremioId}`, type, config);
+      
+      let providerStremioId;
+      if (type === 'movie') {
+        const preferredProvider = config.providers?.movie || 'tmdb';
+        if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
+          providerStremioId = `tmdb:${allIds.tmdbId}`;
+        } else if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
+          providerStremioId = `tvdb:${allIds.tvdbId}`;
+        } else if (allIds?.tmdbId) {
+          providerStremioId = `tmdb:${allIds.tmdbId}`;
+        } else if (allIds?.tvdbId) {
+          providerStremioId = `tvdb:${allIds.tvdbId}`;
+        } else {
+          providerStremioId = `imdb:${stremioId}`;
+        }
+      } else { // series or anime
+        const preferredProvider = config.providers?.series || 'tvdb';
+        const isAnime = await isAnimeFunc(stremioId, type, config);
+        
+        if (isAnime && config.providers?.anime === 'mal' && allIds?.malId) {
+          providerStremioId = `mal:${allIds.malId}`;
+        } else if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
+          providerStremioId = `tvdb:${allIds.tvdbId}`;
+        } else if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
+          providerStremioId = `tmdb:${allIds.tmdbId}`;
+        } else if (allIds?.tvdbId) {
+          providerStremioId = `tvdb:${allIds.tvdbId}`;
+        } else if (allIds?.tmdbId) {
+          providerStremioId = `tmdb:${allIds.tmdbId}`;
+        } else if (allIds?.malId) {
+          providerStremioId = `mal:${allIds.malId}`;
+        } else {
+          providerStremioId = `imdb:${stremioId}`;
+        }
+      }
+      
+      console.log(`[Meta] Converted IMDb ID ${stremioId} to provider ID ${providerStremioId}`);
+      
+      // If no provider ID was found, try direct IMDb metadata
+      if (providerStremioId === `imdb:${stremioId}`) {
+        console.log(`[Meta] No provider ID found for ${stremioId}, trying direct IMDb metadata`);
+        const result = await getImdbMeta(stremioId, type, language, config, userUUID);
+        if (result && result.meta) {
+          console.log(`[Meta] Returning direct IMDb metadata: ${result.meta.name}`);
+        }
+        return result;
+      }
+      
+      // Recursively call getMeta with the converted ID but preserve original IMDb ID
+      const result = await getMeta(type, language, providerStremioId, config, userUUID);
+      if (result && result.meta) {
+        // Preserve the original IMDb ID for Stremio core functions
+        result.meta.id = stremioId;
+        result.meta.imdb_id = stremioId;
+        console.log(`[Meta] Preserving IMDb ID ${stremioId} in metadata response while using ${providerStremioId} data`);
+      }
+      return result;
+    }
+    
     const [prefix, sourceId] = stremioId.split(':');
+    if (prefix === 'imdb') {
+      // Handle direct IMDb IDs that couldn't be converted to provider IDs
+      console.log(`[Meta] Handling direct IMDb metadata for ${sourceId}`);
+      // Use direct IMDb metadata for fallback cases
+      const result = await getImdbMeta(sourceId, type, language, config, userUUID);
+      if (result && result.meta) {
+        console.log(`[Meta] Returning IMDb metadata directly: ${result.meta.name}`);
+      }
+      return result;
+    }
     if (prefix === 'tvdbc') {
       const collectionId = sourceId;
       return await cacheWrapMeta(
@@ -1767,4 +1847,241 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
   }
 }
 
-module.exports = { getMeta };
+// Direct IMDb metadata handler for when no provider IDs are available
+async function getImdbMeta(imdbId, type, language, config, userUUID) {
+  try {
+    console.log(`[ImdbMeta] Processing direct IMDb metadata for ${imdbId} (type: ${type})`);
+    
+    // Respect user's provider preferences instead of forcing TMDB
+    let providerData = null;
+    const preferredProvider = type === 'movie' ? (config.providers?.movie || 'tmdb') : (config.providers?.series || 'tvdb');
+    
+    try {
+      if (preferredProvider === 'tmdb' && config.apiKeys?.tmdb) {
+        console.log(`[ImdbMeta] Attempting TMDB lookup for IMDb ${imdbId} (user preference: ${preferredProvider})`);
+        const findData = await moviedb.find({ id: imdbId, external_source: 'imdb_id' }, config);
+        
+        if (type === 'movie' && findData.movie_results?.length > 0) {
+          const movie = findData.movie_results[0];
+          providerData = await moviedb.movieInfo({ id: movie.id, append_to_response: "videos,credits,external_ids" }, config);
+          console.log(`[ImdbMeta] Found TMDB movie data for ${imdbId}: ${providerData?.title}`);
+        } else if (type === 'series' && findData.tv_results?.length > 0) {
+          const tv = findData.tv_results[0];
+          providerData = await moviedb.tvInfo({ id: tv.id, append_to_response: "videos,credits,external_ids,seasons" }, config);
+          console.log(`[ImdbMeta] Found TMDB series data for ${imdbId}: ${providerData?.name}`);
+        }
+      } else if (preferredProvider === 'tvdb' && config.apiKeys?.tvdb) {
+        console.log(`[ImdbMeta] Attempting TVDB lookup for IMDb ${imdbId} (user preference: ${preferredProvider})`);
+        try {
+          // For TVDB, we need to find the TVDB ID first using IMDb ID
+          const tvdbData = await tvdb.findByImdbId(imdbId, config);
+          if (tvdbData && tvdbData.length > 0) {
+            const tvdbId = tvdbData[0].tvdb_id;
+            providerData = await tvdb.getSeriesExtended(tvdbId, config);
+            console.log(`[ImdbMeta] Found TVDB ${type} data for ${imdbId}: ${providerData?.name}`);
+          } else {
+            // No TVDB data found, force fallback to TMDB
+            throw new Error('No TVDB data found for IMDb ID');
+          }
+        } catch (error) {
+          console.log(`[ImdbMeta] TVDB lookup failed for ${imdbId}, falling back to TMDB: ${error.message}`);
+          // Fallback to TMDB if TVDB fails
+          if (config.apiKeys?.tmdb) {
+            try {
+              const findData = await moviedb.find({ id: imdbId, external_source: 'imdb_id' }, config);
+              if (type === 'series' && findData.tv_results?.length > 0) {
+                const tv = findData.tv_results[0];
+                providerData = await moviedb.tvInfo({ id: tv.id, append_to_response: "videos,credits,external_ids,seasons" }, config);
+                console.log(`[ImdbMeta] Found TMDB fallback series data for ${imdbId}: ${providerData?.name}`);
+                // Override preferred provider for metadata structure
+                preferredProvider = 'tmdb';
+              } else if (type === 'movie' && findData.movie_results?.length > 0) {
+                const movie = findData.movie_results[0];
+                providerData = await moviedb.movieInfo({ id: movie.id, append_to_response: "videos,credits,external_ids" }, config);
+                console.log(`[ImdbMeta] Found TMDB fallback movie data for ${imdbId}: ${providerData?.title}`);
+                // Override preferred provider for metadata structure
+                preferredProvider = 'tmdb';
+              }
+            } catch (tmdbError) {
+              console.log(`[ImdbMeta] TMDB fallback also failed for ${imdbId}: ${tmdbError.message}`);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.log(`[ImdbMeta] ${preferredProvider.toUpperCase()} lookup failed for ${imdbId}:`, error.message);
+    }
+    
+    // Build metadata based on available provider data
+    let meta;
+    
+    if (preferredProvider === 'tmdb' && providerData) {
+      // TMDB metadata structure with seasons and episodes
+      let videos = [];
+      let seasonPosters = [];
+      
+      if (type === 'series' && providerData.seasons) {
+        // Get episodes for each season
+        try {
+          const seasonPromises = providerData.seasons
+            .filter(season => season.episode_count > 0)
+            .map(season => moviedb.seasonInfo({ id: providerData.id, season_number: season.season_number, language }, config));
+          
+          const seasonDetails = await Promise.all(seasonPromises);
+          
+          videos = seasonDetails.flatMap(season => 
+            (season.episodes || []).map(ep => ({
+              id: `${imdbId}:${ep.season_number}:${ep.episode_number}`,
+              title: ep.name || `Episode ${ep.episode_number}`,
+              season: ep.season_number,
+              episode: ep.episode_number,
+              released: ep.air_date ? new Date(ep.air_date).toISOString() : null,
+              overview: ep.overview,
+              thumbnail: ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : null,
+            }))
+          );
+          
+          // Get season posters
+          seasonPosters = providerData.seasons
+            .filter(season => season.season_number > 0 && season.poster_path)
+            .map(season => `https://image.tmdb.org/t/p/w600_and_h900_bestv2${season.poster_path}`)
+            .filter(Boolean);
+        } catch (error) {
+          console.log(`[ImdbMeta] Failed to get TMDB episodes for ${imdbId}:`, error.message);
+        }
+      }
+      
+      meta = {
+        id: imdbId,
+        type: type,
+        name: providerData?.title || providerData?.name || `IMDb ${imdbId}`,
+        description: providerData?.overview || `Metadata for ${imdbId} from IMDb`,
+        imdb_id: imdbId,
+        year: providerData?.release_date?.substring(0, 4) || providerData?.first_air_date?.substring(0, 4) || null,
+        poster: providerData?.poster_path ? `https://image.tmdb.org/t/p/w500${providerData.poster_path}` : null,
+        background: providerData?.backdrop_path ? `https://image.tmdb.org/t/p/original${providerData.backdrop_path}` : null,
+        logo: null,
+        genres: providerData?.genres?.map(g => g.name) || [],
+        cast: providerData?.credits?.cast?.slice(0, 10).map(c => c.name) || [],
+        director: providerData?.credits?.crew?.filter(c => c.job === 'Director').map(c => c.name) || [],
+        writer: providerData?.credits?.crew?.filter(c => c.job === 'Writer').slice(0, 5).map(c => c.name) || [],
+        runtime: providerData?.runtime || null,
+        imdbRating: null,
+        releaseInfo: providerData?.release_date?.substring(0, 4) || providerData?.first_air_date?.substring(0, 4) || null,
+        videos: videos,
+        trailers: providerData?.videos?.results?.map(v => ({
+          name: v.name,
+          url: `https://www.youtube.com/watch?v=${v.key}`,
+          thumbnail: `https://img.youtube.com/vi/${v.key}/hqdefault.jpg`
+        })) || [],
+        links: [
+          {
+            name: "IMDb",
+            category: "official",
+            url: `https://www.imdb.com/title/${imdbId}/`
+          }
+        ],
+        app_extras: {
+          seasonPosters: seasonPosters
+        }
+      };
+    } else if (preferredProvider === 'tvdb' && providerData) {
+      // TVDB metadata structure with seasons and episodes
+      let videos = [];
+      let seasonPosters = [];
+      
+      if (type === 'series' && providerData.seasons) {
+        // Get episodes for each season
+        try {
+          const episodes = await tvdb.getSeriesEpisodes(providerData.id, language, config.tvdbSeasonType || 'default', config);
+          videos = episodes.map(ep => ({
+            id: `${imdbId}:${ep.seasonNumber}:${ep.number}`,
+            title: ep.name || `Episode ${ep.number}`,
+            season: ep.seasonNumber,
+            episode: ep.number,
+            released: ep.aired ? new Date(ep.aired).toISOString() : null,
+            overview: ep.overview,
+            thumbnail: ep.image ? `https://artworks.thetvdb.com/banners/${ep.image}` : null,
+          }));
+          
+          // Get season posters
+          seasonPosters = providerData.seasons
+            .filter(s => s.type?.type === 'official' && s.number > 0)
+            .map(s => s.image ? `https://artworks.thetvdb.com/banners/${s.image}` : null)
+            .filter(Boolean);
+        } catch (error) {
+          console.log(`[ImdbMeta] Failed to get TVDB episodes for ${imdbId}:`, error.message);
+        }
+      }
+      
+      meta = {
+        id: imdbId,
+        type: type,
+        name: providerData?.seriesName || providerData?.name || `IMDb ${imdbId}`,
+        description: providerData?.overview || `Metadata for ${imdbId} from IMDb`,
+        imdb_id: imdbId,
+        year: providerData?.firstAired?.substring(0, 4) || null,
+        poster: providerData?.poster ? `https://artworks.thetvdb.com/banners/${providerData.poster}` : null,
+        background: providerData?.fanart ? `https://artworks.thetvdb.com/banners/${providerData.fanart}` : null,
+        logo: providerData?.banner ? `https://artworks.thetvdb.com/banners/${providerData.banner}` : null,
+        genres: providerData?.genre || [],
+        cast: providerData?.actors?.split('|').filter(Boolean).slice(0, 10) || [],
+        director: [],
+        writer: [],
+        runtime: providerData?.runtime || null,
+        imdbRating: null,
+        releaseInfo: providerData?.firstAired?.substring(0, 4) || null,
+        videos: videos,
+        trailers: [],
+        links: [
+          {
+            name: "IMDb",
+            category: "official",
+            url: `https://www.imdb.com/title/${imdbId}/`
+          }
+        ],
+        app_extras: {
+          seasonPosters: seasonPosters
+        }
+      };
+    } else {
+      // Fallback metadata when no provider data is available
+      meta = {
+        id: imdbId,
+        type: type,
+        name: `IMDb ${imdbId}`,
+        description: `Metadata for ${imdbId} from IMDb`,
+        imdb_id: imdbId,
+        year: null,
+        poster: null,
+        background: null,
+        logo: null,
+        genres: [],
+        cast: [],
+        director: [],
+        writer: [],
+        runtime: null,
+        imdbRating: null,
+        releaseInfo: null,
+        videos: [],
+        trailers: [],
+        links: [
+          {
+            name: "IMDb",
+            category: "official",
+            url: `https://www.imdb.com/title/${imdbId}/`
+          }
+        ]
+      };
+    }
+    
+    console.log(`[ImdbMeta] Returning metadata for ${imdbId}: ${meta.name}`);
+    return { meta };
+    
+  } catch (error) {
+    console.error(`[ImdbMeta] Error processing ${imdbId}:`, error.message);
+    return { meta: null };
+  }
+}
+
+module.exports = { getMeta, getImdbMeta };
