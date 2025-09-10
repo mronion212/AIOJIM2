@@ -172,12 +172,12 @@ export function Header() {
       <div className="flex items-center space-x-4">
         <img 
           src="/logo.png"
-          alt="AIO-Metadata Addon Logo" 
+          alt="AIOJIM Addon Logo" 
           className="h-12 w-12 sm:h-16 sm:w-16"
         />
         <div className="text-left">
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-            AIOMetadata <span className="text-sm text-muted-foreground">v{addonVersion}</span>
+            AIOJIM <span className="text-sm text-muted-foreground">v{addonVersion}</span>
           </h1>
           <p className="text-md text-muted-foreground mt-1">
             Your one-stop-shop for Stremio metadata.

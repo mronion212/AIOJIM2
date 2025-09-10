@@ -25,6 +25,7 @@ async function resolveAllIds(stremioId, type, config, prefetcheIds, targetProvid
   if (prefix === 'kitsu') allIds.kitsuId = sourceId;
   if (prefix === 'tvmaze') allIds.tvmazeId = sourceId;
   if (stremioId.startsWith('tt')) allIds.imdbId = stremioId;
+  if (prefix === 'imdb') allIds.imdbId = sourceId; // Handle imdb:tt1234567 format
   if (prefix === 'anidb') allIds.anidbId = sourceId;
   if (prefix === 'anilist') allIds.anilistId = sourceId;
   // Handle anime ID mapping first

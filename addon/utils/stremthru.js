@@ -7,7 +7,12 @@ const idMapper = require("../lib/id-mapper");
 const { to3LetterCode } = require("../lib/language-map");
 const { getImdbRating } = require("../lib/getImdbRating");
 
-const host = process.env.HOST_NAME.startsWith('http')
+require('dotenv').config();
+const host = process.env.HOST_NAME 
+  ? (process.env.HOST_NAME.startsWith('http')
+      ? process.env.HOST_NAME
+      : `https://${process.env.HOST_NAME}`)
+  : 'http://localhost:1337'
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
@@ -33,7 +38,7 @@ async function fetchStremThruCatalog(catalogUrl) {
     const response = await axios.get(url.toString(), {
       timeout: 30000,
       headers: {
-        'User-Agent': 'aiometadata-addon/1.0'
+        'User-Agent': 'aiojim-addon/1.0'
       }
     });
     
@@ -61,7 +66,7 @@ async function fetchStremThruManifest(manifestUrl) {
     const response = await axios.get(manifestUrl, {
       timeout: 30000,
       headers: {
-        'User-Agent': 'aiometadata-addon/1.0'
+        'User-Agent': 'aiojim-addon/1.0'
       }
     });
     
@@ -144,6 +149,24 @@ async function parseStremThruItems(items, type, genreFilter, language, config) {
           return null;
         }
         
+        // Resolve IMDb ID from various providers
+        let resolvedImdbId = null;
+        if(provider === 'mal') {
+          const mapping = idMapper.getMappingByMalId(id);
+          resolvedImdbId = mapping?.imdb_id;
+        } else if(provider === 'kitsu') {
+          const mapping = idMapper.getMappingByKitsuId(id);
+          resolvedImdbId = mapping?.imdb_id;
+        } else if(provider === 'anidb') {
+          const mapping = idMapper.getMappingByAnidbId(id);
+          resolvedImdbId = mapping?.imdb_id;
+        } else if(provider === 'anilist') {
+          const mapping = idMapper.getMappingByAnilistId(id);
+          resolvedImdbId = mapping?.imdb_id;
+        } else if(provider === 'imdb' || provider.startsWith('tt')) {
+          resolvedImdbId = id;
+        }
+
         let rpdbItemId = null;
         if(provider === 'mal') {
           const mapping = idMapper.getMappingByMalId(id);
@@ -358,13 +381,17 @@ async function parseStremThruItems(items, type, genreFilter, language, config) {
           releaseInfo = item.releaseInfo;
         }
         
+        if (!resolvedImdbId) {
+          return null; // Filter out items without IMDb ID
+        }
         const meta = {
-          id: item.id,
+          id: resolvedImdbId, // Use ONLY IMDb ID as primary ID
           type: item.type,
           name: name || item.name,
           poster: posterProxyUrl,
           logo: logo,
           description: Utils.addMetaProviderAttribution(overview || item.description || '', provider, config),
+          imdb_id: resolvedImdbId,
           imdbRating: imdbRating || item.imdbRating,
           genres: genres || item.genres || [],
           year: year,
@@ -382,19 +409,8 @@ async function parseStremThruItems(items, type, genreFilter, language, config) {
         const fallbackPosterUrl = item.poster || `https://artworks.thetvdb.com/banners/images/missing/${type}.jpg`;
         const posterProxyUrl = `${host}/poster/${type}/${item.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
         
-        return {
-          id: item.id,
-          type: item.type,
-          name: item.name,
-          poster: posterProxyUrl,
-          description: item.description || '',
-          genres: item.genres || [],
-          year: item.releaseInfo || null,
-          releaseInfo: item.releaseInfo || null,
-          background: item.background || null,
-          imdbRating: item.imdbRating || null,
-          trailers: item.trailers || []
-        };
+        // No fallback - items without IMDb ID are filtered out
+        return null;
       }
     }));
   

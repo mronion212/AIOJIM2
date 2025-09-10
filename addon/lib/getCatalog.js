@@ -15,7 +15,12 @@ const { cacheWrapTvdbApi } = require('./getCache');
 const { getTVDBContentRatingId } = require('../utils/tvdbContentRating');
 const { getImdbRating } = require('./getImdbRating');
 
-const host = process.env.HOST_NAME.startsWith('http')
+require('dotenv').config();
+const host = process.env.HOST_NAME 
+  ? (process.env.HOST_NAME.startsWith('http')
+      ? process.env.HOST_NAME
+      : `https://${process.env.HOST_NAME}`)
+  : 'http://localhost:1337'
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
@@ -40,6 +45,11 @@ async function getCatalog(type, language, page, id, genre, config, userUUID) {
       console.log(`[getCatalog] Routing to StremThru catalog handler for id: ${id}`);
       const stremthruResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID);
       return { metas: stremthruResults };
+    }
+    else if (id.startsWith('imdb.')) {
+      console.log(`[getCatalog] Routing to IMDb catalog handler for id: ${id}`);
+      const imdbResults = await getImdbCatalog(type, id, genre, page, language, config, userUUID);
+      return { metas: imdbResults };
     }
 
     else {
@@ -119,16 +129,19 @@ async function getTvdbCatalog(type, catalogId, genreName, page, language, config
   
   console.log(`[getCatalog] Pagination: page ${page}, showing items ${startIndex + 1}-${Math.min(endIndex, sortedResults.length)} of ${sortedResults.length} total results`);
 
-  const metas = await Promise.all(paginatedResults.map(async item => {
+  const allMetas = await Promise.all(paginatedResults.map(async item => {
     const tvdbId = item.id;
     const allIds = await resolveAllIds(`tvdb:${tvdbId}`, type, config);
     if (!tvdbId) return null;
     const fallbackPosterUrl = item.image ? (item.image.startsWith('http') ? item.image : `${TVDB_IMAGE_BASE}${item.image}`) : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
     const posterUrl = type === 'movie' ? await Utils.getMoviePoster({ tmdbId: allIds?.tmdbId, tvdbId: tvdbId, imdbId: null, metaProvider: 'tvdb', fallbackPosterUrl: fallbackPosterUrl }, config) : await Utils.getSeriesPoster({ tmdbId: null, tvdbId: tvdbId, imdbId: null, metaProvider: 'tvdb', fallbackPosterUrl: fallbackPosterUrl }, config);
     const posterProxyUrl = `${host}/poster/${type}/${type === 'movie' && allIds?.tmdbId ? `tmdb:${allIds?.tmdbId}` : `tvdb:${tvdbId}`}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+    if (!allIds?.imdbId) {
+      return null; // Filter out items without IMDb ID
+    }
     return {
-      id: `tvdb:${tvdbId}`,
-      imdb_id: allIds?.imdbId,
+      id: allIds.imdbId, // Use ONLY IMDb ID as primary ID
+      imdb_id: allIds.imdbId,
       type: type,
       name: item.name,
       description: item.overview,
@@ -138,8 +151,9 @@ async function getTvdbCatalog(type, catalogId, genreName, page, language, config
       runtime: Utils.parseRunTime(item.runtime),
       releaseInfo: item.year || null,
     };
-  }).filter(Boolean));
+  }));
 
+  const metas = allMetas.filter(Boolean); // Filter out null values (items without IMDb ID)
   return metas;
 }
 
@@ -195,7 +209,7 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
     : () => moviedb.discoverTv(parameters, config);
 
   const res = await fetchFunction();
-  const metas = await Promise.all(res.results.map(async item => {
+  const allMetas = await Promise.all(res.results.map(async item => {
     // Resolve IDs for each individual item
     // Check all three art types and collect non-meta providers
     const posterProvider = Utils.resolveArtProvider(type, 'poster', config);
@@ -281,10 +295,14 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
     const runtime = type === 'movie' ? itemDetails?.runtime || null : itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
     const posterProxyUrl = `${host}/poster/${type}/${`tmdb:${item.id}`}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
     const imdbRating = await getImdbRating(itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId, type) || item.vote_average?.toFixed(1) || "N/A";
+    const finalImdbId = itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId;
+    if (!finalImdbId) {
+      return null; // Filter out items without IMDb ID
+    }
     return {
-      id: stremioId,
+      id: finalImdbId, // Use ONLY IMDb ID as primary ID
       type: type,
-      imdb_id: itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId,
+      imdb_id: finalImdbId,
       logo: tmdbLogoUrl,
       releaseInfo: (item.release_date || item.first_air_date || '').substring(0, 4),
       name: item.title || item.name,
@@ -298,6 +316,7 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
     };
   }));
 
+  const metas = allMetas.filter(Boolean); // Filter out null values (items without IMDb ID)
   return metas;
 }
 
@@ -439,6 +458,33 @@ async function getStremThruCatalog(type, catalogId, genre, page, language, confi
     
   } catch (error) {
     console.error(`[StremThru] Error processing catalog ${catalogId}:`, error.message);
+    return [];
+  }
+}
+
+/**
+ * Handles IMDb catalog requests
+ * @param {string} type - Content type ('movie' or 'series')
+ * @param {string} catalogId - The IMDb catalog ID
+ * @param {string} genre - Optional genre filter  
+ * @param {number} page - Page number
+ * @param {string} language - Language code
+ * @param {Object} config - Addon configuration
+ * @param {string} userUUID - User UUID
+ * @returns {Promise<Array>} Array of meta items
+ */
+async function getImdbCatalog(type, catalogId, genre, page, language, config, userUUID) {
+  try {
+    console.log(`[IMDb] Processing catalog request: ${catalogId}, type: ${type}, genre: ${genre || 'none'}, page: ${page}`);
+    
+    const [provider, catalogType] = catalogId.split('.');
+    
+    // For now, return empty array until we implement IMDb list fetching
+    console.log(`[IMDb] IMDb catalog functionality not yet implemented for ${catalogType}`);
+    return [];
+    
+  } catch (error) {
+    console.error(`[IMDb] Error processing catalog ${catalogId}:`, error.message);
     return [];
   }
 }

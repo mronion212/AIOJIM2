@@ -49,7 +49,12 @@ function sanitizeQuery(query) {
   return query.replace(/[\[\]()!?]/g, ' ').replace(/[:.-]/g, ' ').trim().replace(/\s\s+/g, ' ');
 }
 
-const host = process.env.HOST_NAME.startsWith('http')
+require('dotenv').config();
+const host = process.env.HOST_NAME 
+  ? (process.env.HOST_NAME.startsWith('http')
+      ? process.env.HOST_NAME
+      : `https://${process.env.HOST_NAME}`)
+  : 'http://localhost:1337'
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 

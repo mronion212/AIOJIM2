@@ -10,9 +10,11 @@ const jikan = require('./mal');
 const DEFAULT_LANGUAGE = "en-US";
 const { cacheWrapJikanApi, cacheWrapGlobal } = require('./getCache');
 
-const host = process.env.HOST_NAME.startsWith('http')
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+const host = process.env.HOST_NAME 
+  ? (process.env.HOST_NAME.startsWith('http')
+      ? process.env.HOST_NAME
+      : `https://${process.env.HOST_NAME}`)
+  : 'http://localhost:1337';
 
 // Manifest cache TTL (5 minutes)
 const MANIFEST_CACHE_TTL = 5 * 60;
@@ -100,7 +102,7 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
   return {
     id,
     type,
-    name: `${showPrefix ? "AIOMetadata - " : ""}${translatedCatalogs[catalogDef.nameKey]}`,
+    name: `${showPrefix ? "AIOJIM - " : ""}${translatedCatalogs[catalogDef.nameKey]}`,
     pageSize: pageSize,
     extra,
     showInHome: showInHome 
@@ -455,7 +457,7 @@ async function getManifest(config) {
   const seriesSearchProviderName = searchProviders.series.split('.')[0].toUpperCase();
 
   if (isSearchEnabled) {
-    const prefix = showPrefix ? "AIOMetadata - " : "";
+    const prefix = showPrefix ? "AIOJIM - " : "";
     // Movie Search
     if (engineEnabled[searchProviders.movie] !== false) {
       catalogs.push({ id: 'search', type: 'movie', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
@@ -548,8 +550,8 @@ async function getManifest(config) {
     favicon: `${host}/favicon.png`,
     logo: `${host}/logo.png`,
     background: `${host}/background.png`,
-    name: "AIOMetadata",
-    description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source. Also includes an optional AI search powered by Gemini.",
+    name: "AIOJIM2",
+    description: "AIOJIM2 - Enhanced metadata addon for power users. Uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source. Also includes an optional AI search powered by Gemini.",
     resources: ["catalog", "meta"],
     types: ["movie", "series", "anime.movie", "anime.series", "anime", "Trakt"],
     idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:", "tvdbc:"],
@@ -572,6 +574,7 @@ function getDefaultCatalogs() {
   const defaultTmdbCatalogs = Object.keys(CATALOG_TYPES.default);
   const defaultTvdbCatalogs = Object.keys(CATALOG_TYPES.tvdb);
   const defaultMalCatalogs = Object.keys(CATALOG_TYPES.mal);
+  const defaultImdbCatalogs = Object.keys(CATALOG_TYPES.imdb);
   const defaultStreamingCatalogs = Object.keys(CATALOG_TYPES.streaming);
 
   const tmdbCatalogs = defaultTmdbCatalogs.flatMap(id =>
@@ -599,6 +602,15 @@ function getDefaultCatalogs() {
     enabled: true 
   }));
 
+  const imdbCatalogs = defaultImdbCatalogs.flatMap(id =>
+    defaultTypes.map(type => ({
+      id: `imdb.${id}`,
+      type,
+      showInHome: true,
+      enabled: true 
+    }))
+  );
+
   const streamingCatalogs = defaultStreamingCatalogs.flatMap(id =>
     defaultTypes.map(type => ({
     id: `streaming.${id}`,
@@ -608,7 +620,7 @@ function getDefaultCatalogs() {
   }))
   );
 
-  return [...tmdbCatalogs, ...tvdbCatalogs, ...malCatalogs, ...streamingCatalogs];
+  return [...tmdbCatalogs, ...tvdbCatalogs, ...malCatalogs, ...imdbCatalogs, ...streamingCatalogs];
 }
 
 module.exports = { getManifest, DEFAULT_LANGUAGE };

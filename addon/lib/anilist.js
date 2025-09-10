@@ -1,9 +1,12 @@
+require("dotenv").config();
 const axios = require('axios');
 const { cacheWrapGlobal } = require('./getCache');
 
-const host = process.env.HOST_NAME.startsWith('http') 
-  ? process.env.HOST_NAME 
-  : `https://${process.env.HOST_NAME}`;
+const host = process.env.HOST_NAME 
+  ? (process.env.HOST_NAME.startsWith('http') 
+      ? process.env.HOST_NAME 
+      : `https://${process.env.HOST_NAME}`)
+  : 'http://localhost:1337';
 
 class AniListAPI {
   constructor() {

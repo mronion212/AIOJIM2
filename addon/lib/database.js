@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { Pool } = require('pg');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
@@ -517,7 +518,7 @@ class Database {
       params = [limit, offset];
     }
     
-    return await this.getQuery(query, params);
+    return await this.allQuery(query, params);
   }
 
   async close() {

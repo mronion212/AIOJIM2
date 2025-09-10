@@ -34,7 +34,7 @@ ANIME_LIST_UPDATE_INTERVAL_HOURS=6
 
 ```yaml
 services:
-  aiometadata:
+  aiojim:
     environment:
       - ANIME_LIST_UPDATE_INTERVAL_HOURS=12  # Update every 12 hours
 ```

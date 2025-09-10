@@ -60,6 +60,24 @@
     "most_popular": { "nameKey": "most_popular", "extraSupported": ["genre", "skip"] },
     "top_anime": { "nameKey": "top_anime", "extraSupported": ["genre", "skip"] }
   },
+  "imdb": {
+    "top250": {
+      "nameKey": "imdb_top250",
+      "extraSupported": ["genre", "skip"]
+    },
+    "popular": {
+      "nameKey": "imdb_popular",
+      "extraSupported": ["genre", "skip"]
+    },
+    "bottom100": {
+      "nameKey": "imdb_bottom100",
+      "extraSupported": ["genre", "skip"]
+    },
+    "top_english": {
+      "nameKey": "imdb_top_english",
+      "extraSupported": ["genre", "skip"]
+    }
+  },
   "auth": {
     "favorites": {
       "nameKey": "favorites",

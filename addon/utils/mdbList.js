@@ -4,7 +4,12 @@ const { resolveAllIds } = require("../lib/id-resolver");
 const Utils = require("./parseProps");
 const moviedb = require("../lib/getTmdb");
 
-const host = process.env.HOST_NAME.startsWith('http')
+require('dotenv').config();
+const host = process.env.HOST_NAME 
+  ? (process.env.HOST_NAME.startsWith('http')
+      ? process.env.HOST_NAME
+      : `https://${process.env.HOST_NAME}`)
+  : 'http://localhost:1337'
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
@@ -193,10 +198,13 @@ async function parseMDBListItems(items, type, genreFilter, language, config) {
         //console.log(`[MDBList] Batch media info: ${JSON.stringify(batchMediaInfo.find(media => media.id === item.id))}`);
         const posterProxyUrl = `${host}/poster/${type}/${stremioId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
         //console.log (`[MDBList] ${JSON.stringify(item)}`);
+        if (!allIds?.imdbId) {
+          return null; // Filter out items without IMDb ID
+        }
         return {
-          id: stremioId,
+          id: allIds.imdbId, // Use ONLY IMDb ID as primary ID
           type: type,
-          imdb_id: allIds?.imdbId,
+          imdb_id: allIds.imdbId,
           name: item.title || item.name,
           poster: posterProxyUrl,
           logo: type === 'movie' ? await moviedb.getTmdbMovieLogo(item.id, config) : await moviedb.getTmdbSeriesLogo(item.id, config),
@@ -211,14 +219,8 @@ async function parseMDBListItems(items, type, genreFilter, language, config) {
         console.error(`[MDBList] Error resolving IDs for item ${item.id}:`, error.message);
         const fallbackPosterUrl = item.poster ? `https://image.tmdb.org/t/p/w500${item.poster}` : `https://artworks.thetvdb.com/banners/images/missing/${type}.jpg`;
         const posterProxyUrl = `${host}/poster/${type}/tmdb:${item.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-        return {
-          id: `tmdb:${item.id}`,
-          type: type,
-          name: item.title || item.name,
-          poster: posterProxyUrl,
-          year: item.release_year || null,
-          releaseInfo: item.release_year || null,
-        };
+        // No fallback - items without IMDb ID are filtered out
+        return null;
       }
     }));
 

@@ -1,3 +1,4 @@
+require("dotenv").config();
 const { decompressFromEncodedURIComponent } = require('lz-string');
 const axios = require('axios');
 const fanart = require('./fanart');
@@ -10,9 +11,11 @@ const idMapper = require('../lib/id-mapper');
 const { selectFanartImageByLang } = require('./fanart');
 const { getImdbRating } = require('../lib/getImdbRating');
 
-const host = process.env.HOST_NAME.startsWith('http')
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+const host = process.env.HOST_NAME 
+  ? (process.env.HOST_NAME.startsWith('http')
+      ? process.env.HOST_NAME
+      : `https://${process.env.HOST_NAME}`)
+  : 'http://localhost:1337';
 
 function normalize(str) {
   return str
@@ -177,9 +180,11 @@ function parseShareLink(title, imdb_id, type) {
 function parseAnimeGenreLink(genres, type, userUUID) {
   if (!Array.isArray(genres) || !process.env.HOST_NAME) return [];
   
-  const host = process.env.HOST_NAME.startsWith('http')
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+  const host = process.env.HOST_NAME 
+  ? (process.env.HOST_NAME.startsWith('http')
+      ? process.env.HOST_NAME
+      : `https://${process.env.HOST_NAME}`)
+  : 'http://localhost:1337';
     
   const manifestPath = userUUID ? `stremio/${userUUID}/manifest.json` : 'manifest.json';
   const manifestUrl = `${host}/${manifestPath}`;  
@@ -211,9 +216,11 @@ function parseAnimeGenreLink(genres, type, userUUID) {
 function parseGenreLink(genres, type, userUUID, isTvdb = false) {
   if (!Array.isArray(genres) || !process.env.HOST_NAME) return [];
   
-  const host = process.env.HOST_NAME.startsWith('http')
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+  const host = process.env.HOST_NAME 
+  ? (process.env.HOST_NAME.startsWith('http')
+      ? process.env.HOST_NAME
+      : `https://${process.env.HOST_NAME}`)
+  : 'http://localhost:1337';
     
   const manifestPath = userUUID ? `stremio/${userUUID}/manifest.json` : 'manifest.json';
   const manifestUrl = `${host}/${manifestPath}`;
@@ -302,9 +309,11 @@ function parseYear(status, first_air_date, last_air_date) {
 function parseAnimeCreditsLink(characterData, userUUID, castCount) {
   if (!characterData || !characterData.length === 0) return [];
 
-  const host = process.env.HOST_NAME.startsWith('http')
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+  const host = process.env.HOST_NAME 
+  ? (process.env.HOST_NAME.startsWith('http')
+      ? process.env.HOST_NAME
+      : `https://${process.env.HOST_NAME}`)
+  : 'http://localhost:1337';
     
   const manifestPath = userUUID ? `stremio/${userUUID}/manifest.json` : 'manifest.json';
   const manifestUrl = `${host}/${manifestPath}`;
@@ -529,7 +538,7 @@ async function checkIfExists(url) {
     const response = await axios.head(url, {
       maxRedirects: 0,
       validateStatus: () => true,
-      headers: { 'User-Agent': 'AIOMetadataAddon/1.0' }
+      headers: { 'User-Agent': 'AIOJIMAddon/1.0' }
     });
     return response.status === 200;
   } catch (error) {
@@ -1013,8 +1022,11 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
       name: anime.title_english || anime.title
     });
   }
+  if (!mapping?.imdb_id) {
+    return null; // Filter out items without IMDb ID
+  }
   return {
-    id:  `mal:${malId}`,
+    id: mapping.imdb_id, // Use ONLY IMDb ID as primary ID
     type: stremioType,
     logo: stremioType === 'movie' ? await tmdb.getTmdbMovieLogo(tmdbId, config) : await tmdb.getTmdbSeriesLogo(tmdbId, config),
     name: anime.title_english || anime.title,
@@ -1220,8 +1232,11 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
       });
     }
 
+    if (!mapping?.imdb_id) {
+      return null; // Filter out items without IMDb ID
+    }
     return {
-      id:  `mal:${malId}`,
+      id: mapping.imdb_id, // Use ONLY IMDb ID as primary ID
       type: stremioType,
       logo: stremioType === 'movie' ? await tmdb.getTmdbMovieLogo(tmdbId, config) : await tmdb.getTmdbSeriesLogo(tmdbId, config),
       name: anime.title_english || anime.title,
@@ -1896,9 +1911,11 @@ function convertBannerToBackgroundUrl(bannerUrl, options = {}) {
     gradientOpacity = 0.6
   } = options;
 
-  const host = process.env.HOST_NAME.startsWith('http')
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+  const host = process.env.HOST_NAME 
+  ? (process.env.HOST_NAME.startsWith('http')
+      ? process.env.HOST_NAME
+      : `https://${process.env.HOST_NAME}`)
+  : 'http://localhost:1337';
 
   // Build the query parameters
   const params = new URLSearchParams({
