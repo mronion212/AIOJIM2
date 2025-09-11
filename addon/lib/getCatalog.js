@@ -206,7 +206,11 @@ async function getTvdbCollectionsCatalog(type, id, page, language, config) {
 
 async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID) {
   // Define host locally to ensure it's available in all scopes
-  const localHost = 'http://localhost:1337';
+  const localHost = process.env.HOST_NAME 
+    ? (process.env.HOST_NAME.startsWith('http')
+        ? process.env.HOST_NAME
+        : `https://${process.env.HOST_NAME}`)
+    : 'http://localhost:1337';
   if (id.startsWith("mdblist.")) {
     console.log(`[getCatalog] Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
     const listId = id.split(".")[1];
