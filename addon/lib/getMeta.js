@@ -55,9 +55,7 @@ const host = process.env.HOST_NAME
   ? (process.env.HOST_NAME.startsWith('http')
       ? process.env.HOST_NAME
       : `https://${process.env.HOST_NAME}`)
-  : 'http://localhost:1337'
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+  : 'http://localhost:1337';
 
 // --- Main Orchestrator ---
 async function getMeta(type, language, stremioId, config = {}, userUUID) {

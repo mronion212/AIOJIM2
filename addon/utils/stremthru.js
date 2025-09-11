@@ -12,9 +12,7 @@ const host = process.env.HOST_NAME
   ? (process.env.HOST_NAME.startsWith('http')
       ? process.env.HOST_NAME
       : `https://${process.env.HOST_NAME}`)
-  : 'http://localhost:1337'
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+  : 'http://localhost:1337';
 
 /**
  * Fetches StremThru catalog items from a catalog URL
@@ -381,11 +379,10 @@ async function parseStremThruItems(items, type, genreFilter, language, config) {
           releaseInfo = item.releaseInfo;
         }
         
-        if (!resolvedImdbId) {
-          return null; // Filter out items without IMDb ID
-        }
+        // Always use IMDb ID as primary, generate fallback if no IMDb ID available
+        const primaryId = resolvedImdbId || `ttstrm${item.id}`.replace(/[^a-zA-Z0-9]/g, '').substring(0, 7);
         const meta = {
-          id: resolvedImdbId, // Use ONLY IMDb ID as primary ID
+          id: primaryId, // Use IMDb ID as primary, fallback to generated tt ID
           type: item.type,
           name: name || item.name,
           poster: posterProxyUrl,

@@ -54,9 +54,7 @@ const host = process.env.HOST_NAME
   ? (process.env.HOST_NAME.startsWith('http')
       ? process.env.HOST_NAME
       : `https://${process.env.HOST_NAME}`)
-  : 'http://localhost:1337'
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+  : 'http://localhost:1337';
 
 async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   if (!extendedRecord || !extendedRecord.id || !extendedRecord.name) return null;
@@ -80,7 +78,12 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   console.log(JSON.stringify({tmdbId, imdbId, tvmazeId, tvdbId}));
   var fallbackImage = extendedRecord.image === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : extendedRecord.image;
   const posterUrl = type === 'movie' ? await Utils.getMoviePoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: fallbackImage }, config) : await Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: fallbackImage }, config);
-  const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  const localHost = process.env.HOST_NAME 
+    ? (process.env.HOST_NAME.startsWith('http')
+        ? process.env.HOST_NAME
+        : `https://${process.env.HOST_NAME}`)
+    : 'http://localhost:1337';
+  const posterProxyUrl = `${localHost}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   
   let certification = null;
   try {
@@ -101,16 +104,14 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   } else {
     preferredProvider = config.providers?.series || 'tvdb';
   }
+  // Always use IMDb ID as primary, generate fallback if no IMDb ID available
   let stremioId;
-  if (preferredProvider === 'tvmaze' && tvmazeId) {
-    stremioId = `tvmaze:${tvmazeId}`;
-  }
-   else if (preferredProvider === 'tmdb' && tmdbId) {
-    stremioId = `tmdb:${tmdbId}`;
-  } else if (preferredProvider === 'imdb' && imdbId) {
-    stremioId = imdbId;
+  if (imdbId) {
+    stremioId = imdbId; // Use real IMDb ID if available
   } else {
-    stremioId = `tvdb:${extendedRecord.id}`; // fallback
+    // Generate fallback tt ID based on TVDB ID
+    const fallbackId = `tttvdb${extendedRecord.id}`.replace(/[^a-zA-Z0-9]/g, '').substring(0, 7);
+    stremioId = fallbackId;
   }
   const logoUrl = type === 'series' ? extendedRecord.artworks?.find(a => a.type === 23)?.image : extendedRecord.artworks?.find(a => a.type === 25)?.image;
   return {
@@ -211,7 +212,12 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
             : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`; 
         const posterUrl = await Utils.getSeriesPoster({ tmdbId: media.id, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterFullUrl }, config);
 
-        const posterProxyUrl = `${host}/poster/${mediaType}/tmdb:${media.id}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+        const localHost = process.env.HOST_NAME 
+          ? (process.env.HOST_NAME.startsWith('http')
+              ? process.env.HOST_NAME
+              : `https://${process.env.HOST_NAME}`)
+          : 'http://localhost:1337';
+        const posterProxyUrl = `${localHost}/poster/${mediaType}/tmdb:${media.id}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
 
         parsed.poster = config.apiKeys?.rpdb ? posterProxyUrl : posterUrl;
         parsed.popularity = media.popularity;
@@ -239,24 +245,14 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         } else {
           preferredProvider = config.providers?.series || 'tvdb';
         }        
+        // Always use IMDb ID as primary, generate fallback if no IMDb ID available
         let stremioId;
-        if (preferredProvider === 'tvdb' && tvdbId) {
-          stremioId = `tvdb:${tvdbId}`;
-        } else if (preferredProvider === 'tvmaze') {
-          if(tvdbId) {
-            const allIds = await resolveAllIds(`tvdb:${tvdbId}`, type, config);
-            if(allIds.tvmazeId) {
-              stremioId = `tvmaze:${allIds.tvmazeId}`;
-            }
-          } else {
-            stremioId = `tmdb:${media.id}`;
-          }
-        } else if (preferredProvider === 'tmdb' && media.id) {
-          stremioId = `tmdb:${media.id}`;
-        } else if (preferredProvider === 'imdb' && imdbId) {
-          stremioId = imdbId;
+        if (imdbId) {
+          stremioId = imdbId; // Use real IMDb ID if available
         } else {
-          stremioId = `tmdb:${media.id}`; 
+          // Generate fallback tt ID based on TMDB ID
+          const fallbackId = `tttmdb${media.id}`.replace(/[^a-zA-Z0-9]/g, '').substring(0, 7);
+          stremioId = fallbackId;
         }
         parsed.id = stremioId;
         const logoUrl = type === 'movie' ? await moviedb.getTmdbMovieLogo(media.id, config) : await moviedb.getTmdbSeriesLogo(media.id, config);
@@ -556,18 +552,22 @@ async function parseTvmazeResult(show, config) {
   const tmdbId = show.externals?.themoviedb;
   // use preferred provider id as id. tvmaze are type series only.
   const preferredProvider = config.providers?.series || 'tvdb';
+  // Always use IMDb ID as primary, generate fallback if no IMDb ID available
   let stremioId;
-  if (preferredProvider === 'tvdb' && tvdbId) {
-    stremioId = `tvdb:${tvdbId}`;
-  } else if (preferredProvider === 'tmdb' && tmdbId) {
-    stremioId = `tmdb:${tmdbId}`;
-  } else if (preferredProvider === 'imdb' && imdbId) {
-    stremioId = imdbId;
+  if (imdbId) {
+    stremioId = imdbId; // Use real IMDb ID if available
   } else {
-    stremioId = `tvmaze:${show.id}`;
+    // Generate fallback tt ID based on TVMaze ID
+    const fallbackId = `tttvmz${show.id}`.replace(/[^a-zA-Z0-9]/g, '').substring(0, 7);
+    stremioId = fallbackId;
   }
   var fallbackImage = show.image?.original === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : show.image.original;
-  const posterProxyUrl = imdbId ? `${host}/poster/series/${imdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`: `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`;
+  const localHost = process.env.HOST_NAME 
+    ? (process.env.HOST_NAME.startsWith('http')
+        ? process.env.HOST_NAME
+        : `https://${process.env.HOST_NAME}`)
+    : 'http://localhost:1337';
+  const posterProxyUrl = imdbId ? `${localHost}/poster/series/${imdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`: `${localHost}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`;
   const logoUrl = imdbId ? imdb.getLogoFromImdb(imdbId) : tvdbId ? await tvdb.getSeriesLogo(tvdbId, config) : null;
   return {
     id: stremioId,

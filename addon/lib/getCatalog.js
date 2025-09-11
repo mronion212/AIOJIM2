@@ -15,14 +15,26 @@ const { cacheWrapTvdbApi } = require('./getCache');
 const { getTVDBContentRatingId } = require('../utils/tvdbContentRating');
 const { getImdbRating } = require('./getImdbRating');
 
+/**
+ * Generates a fallback IMDb-style ID for items without IMDb ID
+ * @param {string} provider - The provider (tmdb, tvdb, etc.)
+ * @param {string} id - The original ID
+ * @returns {string} A fallback ID with tt prefix
+ */
+function generateFallbackImdbId(provider, id) {
+  // Create a deterministic fallback ID based on provider and original ID
+  const cleanId = String(id).replace(/[^a-zA-Z0-9]/g, '');
+  const fallbackId = `tt${provider}${cleanId}`;
+  return fallbackId.length > 7 ? fallbackId.substring(0, 7) : fallbackId.padStart(7, '0');
+}
+
 require('dotenv').config();
 const host = process.env.HOST_NAME 
   ? (process.env.HOST_NAME.startsWith('http')
       ? process.env.HOST_NAME
       : `https://${process.env.HOST_NAME}`)
-  : 'http://localhost:1337'
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+  : 'http://localhost:1337';
+
 
 async function getCatalog(type, language, page, id, genre, config, userUUID) {
   try {
@@ -136,12 +148,11 @@ async function getTvdbCatalog(type, catalogId, genreName, page, language, config
     const fallbackPosterUrl = item.image ? (item.image.startsWith('http') ? item.image : `${TVDB_IMAGE_BASE}${item.image}`) : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
     const posterUrl = type === 'movie' ? await Utils.getMoviePoster({ tmdbId: allIds?.tmdbId, tvdbId: tvdbId, imdbId: null, metaProvider: 'tvdb', fallbackPosterUrl: fallbackPosterUrl }, config) : await Utils.getSeriesPoster({ tmdbId: null, tvdbId: tvdbId, imdbId: null, metaProvider: 'tvdb', fallbackPosterUrl: fallbackPosterUrl }, config);
     const posterProxyUrl = `${host}/poster/${type}/${type === 'movie' && allIds?.tmdbId ? `tmdb:${allIds?.tmdbId}` : `tvdb:${tvdbId}`}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-    if (!allIds?.imdbId) {
-      return null; // Filter out items without IMDb ID
-    }
+    // Always use IMDb ID as primary, generate fallback if no IMDb ID available
+    const primaryId = allIds?.imdbId || generateFallbackImdbId('tvdb', tvdbId);
     return {
-      id: allIds.imdbId, // Use ONLY IMDb ID as primary ID
-      imdb_id: allIds.imdbId,
+      id: primaryId, // Use IMDb ID as primary, fallback to generated tt ID
+      imdb_id: allIds?.imdbId || null,
       type: type,
       name: item.name,
       description: item.overview,
@@ -194,6 +205,12 @@ async function getTvdbCollectionsCatalog(type, id, page, language, config) {
 }
 
 async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID) {
+  // Define host locally to ensure it's available in all scopes
+  const localHost = process.env.HOST_NAME 
+    ? (process.env.HOST_NAME.startsWith('http')
+        ? process.env.HOST_NAME
+        : `https://${process.env.HOST_NAME}`)
+    : 'http://localhost:1337';
   if (id.startsWith("mdblist.")) {
     console.log(`[getCatalog] Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
     const listId = id.split(".")[1];
@@ -239,13 +256,14 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
     }
     const tmdbLogoUrl = type === 'movie' ? await moviedb.getTmdbMovieLogo(item.id, config) : await moviedb.getTmdbSeriesLogo(item.id, config);
 
-    let stremioId = `tmdb:${item.id}`;
-    if(preferredProvider === 'tvdb' && allIds?.tvdbId) {
-      stremioId = `tvdb:${allIds.tvdbId}`;
-    } else if(preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
-      stremioId = `tvmaze:${allIds.tvmazeId}`;
-    } else if(preferredProvider === 'imdb' && allIds?.imdbId) {
-      stremioId = allIds.imdbId;
+    // Always use IMDb ID as primary, generate fallback if no IMDb ID available
+    let stremioId;
+    const tmdbImdbId = itemDetails?.imdb_id || itemDetails?.external_ids?.imdb_id || allIds?.imdbId;
+    if (tmdbImdbId) {
+      stremioId = tmdbImdbId; // Use real IMDb ID if available
+    } else {
+      // Generate fallback tt ID based on TMDB ID
+      stremioId = generateFallbackImdbId('tmdb', item.id);
     }
 
 
@@ -293,16 +311,15 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
       }
     }
     const runtime = type === 'movie' ? itemDetails?.runtime || null : itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
-    const posterProxyUrl = `${host}/poster/${type}/${`tmdb:${item.id}`}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+    const posterProxyUrl = `${localHost}/poster/${type}/${primaryId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
     const imdbRating = await getImdbRating(itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId, type) || item.vote_average?.toFixed(1) || "N/A";
-    const finalImdbId = itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId;
-    if (!finalImdbId) {
-      return null; // Filter out items without IMDb ID
-    }
+    const catalogImdbId = itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId;
+    // Always use IMDb ID as primary, generate fallback if no IMDb ID available
+    const primaryId = catalogImdbId || generateFallbackImdbId('tmdb', item.id);
     return {
-      id: finalImdbId, // Use ONLY IMDb ID as primary ID
+      id: primaryId, // Use IMDb ID as primary, fallback to generated tt ID
       type: type,
-      imdb_id: finalImdbId,
+      imdb_id: catalogImdbId,
       logo: tmdbLogoUrl,
       releaseInfo: (item.release_date || item.first_air_date || '').substring(0, 4),
       name: item.title || item.name,
@@ -479,9 +496,183 @@ async function getImdbCatalog(type, catalogId, genre, page, language, config, us
     
     const [provider, catalogType] = catalogId.split('.');
     
-    // For now, return empty array until we implement IMDb list fetching
-    console.log(`[IMDb] IMDb catalog functionality not yet implemented for ${catalogType}`);
-    return [];
+    // IMDb catalog types from catalog-types.json
+    const validCatalogTypes = ['top250', 'popular', 'bottom100', 'top_english'];
+    
+    if (!validCatalogTypes.includes(catalogType)) {
+      console.warn(`[IMDb] Unknown catalog type: ${catalogType}. Valid types: ${validCatalogTypes.join(', ')}`);
+      return [];
+    }
+    
+    console.log(`[IMDb] Fetching IMDb ${catalogType} catalog for ${type}`);
+    
+    // Use TMDB as the source for IMDb-style catalogs since IMDb doesn't have a public API
+    // We'll filter and transform the results to use IMDb IDs as primary identifiers
+    const genreList = await getGenreList('tmdb', language, type, config);
+    
+    // Map IMDb catalog types to TMDB equivalents
+    let tmdbCatalogType = catalogType;
+    if (catalogType === 'top250') {
+      tmdbCatalogType = 'top_rated';
+    } else if (catalogType === 'bottom100') {
+      tmdbCatalogType = 'popular'; // We'll sort by vote_average asc later
+    } else if (catalogType === 'top_english') {
+      tmdbCatalogType = 'popular'; // We'll filter by language later
+    }
+    
+    const parameters = await buildParameters(type, language, page, `tmdb.${tmdbCatalogType}`, genre, genreList, config);
+    
+    const fetchFunction = type === "movie" 
+      ? () => moviedb.discoverMovie(parameters, config) 
+      : () => moviedb.discoverTv(parameters, config);
+    
+    const res = await fetchFunction();
+    console.log(`[IMDb] Retrieved ${res.results.length} items from TMDB for IMDb catalog`);
+    
+    const allMetas = await Promise.all(res.results.map(async item => {
+      try {
+        // Get detailed info including external IDs
+        const itemDetails = type === 'movie' 
+          ? await moviedb.movieInfo({ id: item.id, language, append_to_response: "external_ids" }, config) 
+          : await moviedb.tvInfo({ id: item.id, language, append_to_response: "external_ids" }, config);
+        
+        // Check if we have an IMDb ID
+        if (!itemDetails.imdb_id) {
+          console.log(`[IMDb] No IMDb ID found for TMDB ${type} ${item.id}, skipping`);
+          return null;
+        }
+        
+        // Resolve all IDs to get comprehensive metadata
+        const allIds = await resolveAllIds(`imdb:${itemDetails.imdb_id}`, type, config);
+        
+        if (!allIds) {
+          console.log(`[IMDb] Could not resolve IDs for IMDb ${itemDetails.imdb_id}, skipping`);
+          return null;
+        }
+        
+        // Use IMDb ID as the primary stremioId (with tt prefix)
+        const stremioId = itemDetails.imdb_id;
+        
+        // Determine preferred meta provider
+        let preferredProvider;
+        if (type === 'movie') {
+          preferredProvider = config.providers?.movie || 'tmdb';
+        } else {
+          preferredProvider = config.providers?.series || 'tvdb';
+        }
+        
+        // Get artwork
+        let posterUrl, backgroundUrl;
+        if (type === 'movie') {
+          posterUrl = await Utils.getMoviePoster({
+            tmdbId: allIds.tmdbId,
+            tvdbId: allIds.tvdbId,
+            imdbId: allIds.imdbId,
+            metaProvider: preferredProvider,
+            fallbackPosterUrl: item.poster_path 
+              ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${item.poster_path}`
+              : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`
+          }, config);
+          backgroundUrl = await Utils.getMovieBackground({
+            tmdbId: allIds.tmdbId,
+            tvdbId: allIds.tvdbId,
+            imdbId: allIds.imdbId,
+            metaProvider: preferredProvider,
+            fallbackBackgroundUrl: item.backdrop_path 
+              ? `https://image.tmdb.org/t/p/original${item.backdrop_path}`
+              : undefined
+          }, config);
+        } else {
+          posterUrl = await Utils.getSeriesPoster({
+            tmdbId: allIds.tmdbId,
+            tvdbId: allIds.tvdbId,
+            imdbId: allIds.imdbId,
+            metaProvider: preferredProvider,
+            fallbackPosterUrl: item.poster_path 
+              ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${item.poster_path}`
+              : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`
+          }, config);
+          backgroundUrl = await Utils.getSeriesBackground({
+            tmdbId: allIds.tmdbId,
+            tvdbId: allIds.tvdbId,
+            imdbId: allIds.imdbId,
+            metaProvider: preferredProvider,
+            fallbackBackgroundUrl: item.backdrop_path 
+              ? `https://image.tmdb.org/t/p/original${item.backdrop_path}`
+              : undefined
+          }, config);
+        }
+        
+        // Build the meta object
+        const meta = {
+          id: stremioId,
+          type: type,
+          name: item.title || item.name,
+          genres: item.genre_ids ? item.genre_ids.map(id => {
+            const genre = genreList.find(g => g.id === id);
+            return genre ? genre.name : 'Unknown';
+          }).filter(Boolean) : [],
+          poster: posterUrl,
+          background: backgroundUrl,
+          logo: type === 'movie' 
+            ? await moviedb.getTmdbMovieLogo(item.id, config)
+            : await moviedb.getTmdbSeriesLogo(item.id, config),
+          imdb_id: itemDetails.imdb_id,
+          imdbRating: await getImdbRating(itemDetails.imdb_id, type),
+          year: type === 'movie' 
+            ? new Date(item.release_date).getFullYear()
+            : new Date(item.first_air_date).getFullYear(),
+          description: item.overview || '',
+          runtime: type === 'movie' ? itemDetails.runtime : undefined,
+          status: type === 'series' ? itemDetails.status : undefined,
+          network: type === 'series' && itemDetails.networks ? itemDetails.networks.map(n => n.name).join(', ') : undefined,
+          country: itemDetails.production_countries ? itemDetails.production_countries.map(c => c.name).join(', ') : undefined,
+          language: itemDetails.original_language || language.split('-')[0],
+          popularity: item.popularity,
+          vote_average: item.vote_average,
+          vote_count: item.vote_count
+        };
+        
+        console.log(`[IMDb] Created meta for ${stremioId}: ${meta.name}`);
+        return meta;
+        
+      } catch (error) {
+        console.error(`[IMDb] Error processing item ${item.id}:`, error.message);
+        return null;
+      }
+    }));
+    
+    // Filter out null results
+    let validMetas = allMetas.filter(meta => meta !== null);
+    
+    // Apply IMDb-specific filtering and sorting
+    if (catalogType === 'bottom100') {
+      // Sort by vote_average ascending (worst rated first)
+      validMetas = validMetas
+        .filter(meta => meta.vote_average > 0) // Only include items with ratings
+        .sort((a, b) => a.vote_average - b.vote_average)
+        .slice(0, 100); // Limit to bottom 100
+    } else if (catalogType === 'top250') {
+      // Sort by vote_average descending (best rated first)
+      validMetas = validMetas
+        .filter(meta => meta.vote_average > 0) // Only include items with ratings
+        .sort((a, b) => b.vote_average - a.vote_average)
+        .slice(0, 250); // Limit to top 250
+    } else if (catalogType === 'top_english') {
+      // Filter by English language
+      validMetas = validMetas.filter(meta => 
+        meta.language === 'en' || 
+        meta.language === 'english' ||
+        meta.country?.toLowerCase().includes('united states') ||
+        meta.country?.toLowerCase().includes('united kingdom') ||
+        meta.country?.toLowerCase().includes('canada') ||
+        meta.country?.toLowerCase().includes('australia')
+      );
+    }
+    
+    console.log(`[IMDb] Successfully processed ${validMetas.length} items for IMDb ${catalogType} catalog`);
+    
+    return validMetas;
     
   } catch (error) {
     console.error(`[IMDb] Error processing catalog ${catalogId}:`, error.message);

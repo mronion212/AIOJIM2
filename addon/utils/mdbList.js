@@ -9,9 +9,7 @@ const host = process.env.HOST_NAME
   ? (process.env.HOST_NAME.startsWith('http')
       ? process.env.HOST_NAME
       : `https://${process.env.HOST_NAME}`)
-  : 'http://localhost:1337'
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+  : 'http://localhost:1337';
 
 async function fetchMDBListItems(listId, apiKey, language, page) {
     const offset = (page * 20) - 20;
@@ -198,11 +196,10 @@ async function parseMDBListItems(items, type, genreFilter, language, config) {
         //console.log(`[MDBList] Batch media info: ${JSON.stringify(batchMediaInfo.find(media => media.id === item.id))}`);
         const posterProxyUrl = `${host}/poster/${type}/${stremioId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
         //console.log (`[MDBList] ${JSON.stringify(item)}`);
-        if (!allIds?.imdbId) {
-          return null; // Filter out items without IMDb ID
-        }
+        // Always use IMDb ID as primary, generate fallback if no IMDb ID available
+        const primaryId = allIds?.imdbId || `ttmdbl${item.id}`.replace(/[^a-zA-Z0-9]/g, '').substring(0, 7);
         return {
-          id: allIds.imdbId, // Use ONLY IMDb ID as primary ID
+          id: primaryId, // Use IMDb ID as primary, fallback to generated tt ID
           type: type,
           imdb_id: allIds.imdbId,
           name: item.title || item.name,

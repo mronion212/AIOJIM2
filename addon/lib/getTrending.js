@@ -13,9 +13,7 @@ const host = process.env.HOST_NAME
   ? (process.env.HOST_NAME.startsWith('http')
       ? process.env.HOST_NAME
       : `https://${process.env.HOST_NAME}`)
-  : 'http://localhost:1337'
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+  : 'http://localhost:1337';
 
 async function getTrending(type, language, page, genre, config, userUUID) {
   const startTime = performance.now();
@@ -59,17 +57,20 @@ async function getTrending(type, language, page, genre, config, userUUID) {
       if ((posterProvider === 'fanart' || backgroundProvider === 'fanart' || logoProvider === 'fanart') && type === 'series') targetProviders.add('tvdb');
 
       let allIds;
-      let stremioId = `tmdb:${item.id}`;
       if (targetProviders.size > 0) {
         const targetProviderArray = Array.from(targetProviders);
         allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, targetProviderArray);
       }
-      if(preferredProvider === 'tvdb' && allIds?.tvdbId) {
-        stremioId = `tvdb:${allIds.tvdbId}`;
-      } else if(preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
-        stremioId = `tvmaze:${allIds.tvmazeId}`;
-      } else if(preferredProvider === 'imdb' && allIds?.imdbId) {
-        stremioId = allIds.imdbId;
+      
+      // Always use IMDb ID as primary, generate fallback if no IMDb ID available
+      let stremioId;
+      const imdbId = itemDetails?.imdb_id || itemDetails?.external_ids?.imdb_id || allIds?.imdbId;
+      if (imdbId) {
+        stremioId = imdbId; // Use real IMDb ID if available
+      } else {
+        // Generate fallback tt ID based on TMDB ID
+        const fallbackId = `tttmdb${item.id}`.replace(/[^a-zA-Z0-9]/g, '').substring(0, 7);
+        stremioId = fallbackId;
       }
 
       const tmdbLogoUrl = type === 'movie' ? await moviedb.getTmdbMovieLogo(item.id, config) : await moviedb.getTmdbSeriesLogo(item.id, config);
@@ -97,7 +98,12 @@ async function getTrending(type, language, page, genre, config, userUUID) {
         }
       }
       const imdbRating = await getImdbRating(itemDetails?.imdb_id || itemDetails?.external_ids?.imdb_id || null, type);
-      const posterProxyUrl = `${host}/poster/${type}/${`tmdb:${item.id}`}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+      const localHost = process.env.HOST_NAME 
+        ? (process.env.HOST_NAME.startsWith('http')
+            ? process.env.HOST_NAME
+            : `https://${process.env.HOST_NAME}`)
+        : 'http://localhost:1337';
+      const posterProxyUrl = `${localHost}/poster/${type}/${stremioId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
       return {
         id: stremioId,
         imdbId: itemDetails?.imdb_id || itemDetails?.external_ids?.imdb_id || null,
