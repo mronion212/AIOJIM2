@@ -178,8 +178,9 @@ function parseShareLink(title, imdb_id, type) {
 }
 
 function parseAnimeGenreLink(genres, type, userUUID) {
-  if (!Array.isArray(genres) || !process.env.HOST_NAME) return [];
+  if (!Array.isArray(genres)) return [];
   
+  // Use localhost for development, or HOST_NAME if available
   const host = process.env.HOST_NAME 
   ? (process.env.HOST_NAME.startsWith('http')
       ? process.env.HOST_NAME
@@ -190,14 +191,16 @@ function parseAnimeGenreLink(genres, type, userUUID) {
   const manifestUrl = `${host}/${manifestPath}`;  
 
   return genres.map((genre) => {
-    if (!genre || !genre.name) return null;
+    // Handle both string and object formats
+    const genreName = typeof genre === 'string' ? genre : (genre?.name || genre?.genre);
+    if (!genreName) return null;
 
     let searchUrl;
-    const genreId = genre.mal_id;
+    const genreId = genre?.mal_id;
     if (!genreId) return null;
     let url = `stremio:///discover/${encodeURIComponent(
       manifestUrl
-    )}/anime/mal.genres?genre=${genre.name}`;
+    )}/anime/mal.genres?genre=${genreName}`;
     if (type === 'movie') {
       url += `&type_filter=movie`;
     } else if (type === 'series') {
@@ -206,7 +209,7 @@ function parseAnimeGenreLink(genres, type, userUUID) {
     searchUrl = url;
 
     return {
-      name: genre.name,
+      name: genreName,
       category: "Genres",
       url: searchUrl,
     };
@@ -214,8 +217,9 @@ function parseAnimeGenreLink(genres, type, userUUID) {
 }
 
 function parseGenreLink(genres, type, userUUID, isTvdb = false) {
-  if (!Array.isArray(genres) || !process.env.HOST_NAME) return [];
+  if (!Array.isArray(genres)) return [];
   
+  // Use localhost for development, or HOST_NAME if available
   const host = process.env.HOST_NAME 
   ? (process.env.HOST_NAME.startsWith('http')
       ? process.env.HOST_NAME
@@ -226,25 +230,27 @@ function parseGenreLink(genres, type, userUUID, isTvdb = false) {
   const manifestUrl = `${host}/${manifestPath}`;
 
   return genres.map((genre) => {
-    if (!genre || !genre.name) return null;
+    // Handle both string and object formats
+    const genreName = typeof genre === 'string' ? genre : (genre?.name || genre?.genre);
+    if (!genreName) return null;
 
     let searchUrl;
     if (isTvdb) {
       searchUrl = `stremio:///discover/${encodeURIComponent(
         manifestUrl
       )}/${type}/tvdb.genres?genre=${encodeURIComponent(
-        genre.name
+        genreName
       )}`;
     } else {
       searchUrl = `stremio:///discover/${encodeURIComponent(
         manifestUrl
       )}/${type}/tmdb.top?genre=${encodeURIComponent(
-        genre.name
+        genreName
       )}`;
     }
 
     return {
-      name: genre.name,
+      name: genreName,
       category: "Genres",
       url: searchUrl,
     };
@@ -276,6 +282,7 @@ function buildLinks(imdbRating, imdbId, title, type, genres, credits, language, 
   }
 
   const genreLinks = parseGenreLink(genres, type, userUUID, isTvdb);
+  
   if (genreLinks.length > 0) {
     links.push(...genreLinks);
   }
