@@ -68,9 +68,23 @@ async function getTrending(type, language, page, genre, config, userUUID) {
       if (imdbId) {
         stremioId = imdbId; // Use real IMDb ID if available
       } else {
-        // Generate fallback tt ID based on TMDB ID
-        const fallbackId = `tttmdb${item.id}`.replace(/[^a-zA-Z0-9]/g, '').substring(0, 7);
-        stremioId = fallbackId;
+        // Try to resolve IDs using ID resolver to get real IMDb ID
+        try {
+          const { resolveAllIds } = require('./id-resolver');
+          const resolvedIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, ['imdb']);
+          if (resolvedIds?.imdbId) {
+            stremioId = resolvedIds.imdbId;
+          } else {
+            // Generate fallback tt ID based on TMDB ID
+            const fallbackId = `tttmdb${item.id}`.replace(/[^a-zA-Z0-9]/g, '').substring(0, 7);
+            stremioId = fallbackId;
+          }
+        } catch (error) {
+          console.warn(`[Trending] Failed to resolve IMDb ID for TMDB ${item.id}:`, error.message);
+          // Generate fallback tt ID based on TMDB ID
+          const fallbackId = `tttmdb${item.id}`.replace(/[^a-zA-Z0-9]/g, '').substring(0, 7);
+          stremioId = fallbackId;
+        }
       }
 
       const tmdbLogoUrl = type === 'movie' ? await moviedb.getTmdbMovieLogo(item.id, config) : await moviedb.getTmdbSeriesLogo(item.id, config);

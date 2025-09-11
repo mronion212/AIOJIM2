@@ -268,8 +268,21 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
         if (tmdbImdbId) {
           stremioId = tmdbImdbId; // Use real IMDb ID if available
         } else {
-          // Generate fallback tt ID based on TMDB ID
-          stremioId = generateFallbackImdbId('tmdb', item.id);
+          // Try to resolve IDs using ID resolver to get real IMDb ID
+          try {
+            const { resolveAllIds } = require('./id-resolver');
+            const resolvedIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, ['imdb']);
+            if (resolvedIds?.imdbId) {
+              stremioId = resolvedIds.imdbId;
+            } else {
+              // Generate fallback tt ID based on TMDB ID
+              stremioId = generateFallbackImdbId('tmdb', item.id);
+            }
+          } catch (error) {
+            console.warn(`[Catalog] Failed to resolve IMDb ID for TMDB ${item.id}:`, error.message);
+            // Generate fallback tt ID based on TMDB ID
+            stremioId = generateFallbackImdbId('tmdb', item.id);
+          }
         }
 
         // Poster and background with art provider logic

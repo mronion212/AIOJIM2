@@ -109,9 +109,23 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   if (imdbId) {
     stremioId = imdbId; // Use real IMDb ID if available
   } else {
-    // Generate fallback tt ID based on TVDB ID
-    const fallbackId = `tttvdb${extendedRecord.id}`.replace(/[^a-zA-Z0-9]/g, '').substring(0, 7);
-    stremioId = fallbackId;
+    // Try to resolve IDs using ID resolver to get real IMDb ID
+    try {
+      const { resolveAllIds } = require('./id-resolver');
+      const resolvedIds = await resolveAllIds(`tvdb:${extendedRecord.id}`, type, config, null, ['imdb']);
+      if (resolvedIds?.imdbId) {
+        stremioId = resolvedIds.imdbId;
+      } else {
+        // Generate fallback tt ID based on TVDB ID
+        const fallbackId = `tttvdb${extendedRecord.id}`.replace(/[^a-zA-Z0-9]/g, '').substring(0, 7);
+        stremioId = fallbackId;
+      }
+    } catch (error) {
+      console.warn(`[Search] Failed to resolve IMDb ID for TVDB ${extendedRecord.id}:`, error.message);
+      // Generate fallback tt ID based on TVDB ID
+      const fallbackId = `tttvdb${extendedRecord.id}`.replace(/[^a-zA-Z0-9]/g, '').substring(0, 7);
+      stremioId = fallbackId;
+    }
   }
   const logoUrl = type === 'series' ? extendedRecord.artworks?.find(a => a.type === 23)?.image : extendedRecord.artworks?.find(a => a.type === 25)?.image;
   return {
@@ -250,9 +264,23 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         if (imdbId) {
           stremioId = imdbId; // Use real IMDb ID if available
         } else {
-          // Generate fallback tt ID based on TMDB ID
-          const fallbackId = `tttmdb${media.id}`.replace(/[^a-zA-Z0-9]/g, '').substring(0, 7);
-          stremioId = fallbackId;
+          // Try to resolve IDs using ID resolver to get real IMDb ID
+          try {
+            const { resolveAllIds } = require('./id-resolver');
+            const resolvedIds = await resolveAllIds(`tmdb:${media.id}`, type, config, null, ['imdb']);
+            if (resolvedIds?.imdbId) {
+              stremioId = resolvedIds.imdbId;
+            } else {
+              // Generate fallback tt ID based on TMDB ID
+              const fallbackId = `tttmdb${media.id}`.replace(/[^a-zA-Z0-9]/g, '').substring(0, 7);
+              stremioId = fallbackId;
+            }
+          } catch (error) {
+            console.warn(`[Search] Failed to resolve IMDb ID for TMDB ${media.id}:`, error.message);
+            // Generate fallback tt ID based on TMDB ID
+            const fallbackId = `tttmdb${media.id}`.replace(/[^a-zA-Z0-9]/g, '').substring(0, 7);
+            stremioId = fallbackId;
+          }
         }
         parsed.id = stremioId;
         const logoUrl = type === 'movie' ? await moviedb.getTmdbMovieLogo(media.id, config) : await moviedb.getTmdbSeriesLogo(media.id, config);
