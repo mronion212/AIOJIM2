@@ -226,119 +226,129 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
     : () => moviedb.discoverTv(parameters, config);
 
   const res = await fetchFunction();
-  const allMetas = await Promise.all(res.results.map(async item => {
-    
-    // Resolve IDs for each individual item
-    // Check all three art types and collect non-meta providers
-    const posterProvider = Utils.resolveArtProvider(type, 'poster', config);
-    const backgroundProvider = Utils.resolveArtProvider(type, 'background', config);
-    const logoProvider = Utils.resolveArtProvider(type, 'logo', config);
+  
+  // Pre-calculate common values to avoid repeated calculations
+  const posterProvider = Utils.resolveArtProvider(type, 'poster', config);
+  const backgroundProvider = Utils.resolveArtProvider(type, 'background', config);
+  const logoProvider = Utils.resolveArtProvider(type, 'logo', config);
+  const preferredProvider = type === 'movie' ? (config.providers?.movie || 'tmdb') : (config.providers?.series || 'tvdb');
+  
+  // Collect all unique non-meta providers
+  const targetProviders = new Set();
+  if (posterProvider !== preferredProvider && posterProvider !== 'tmdb' && posterProvider !== 'fanart') targetProviders.add(posterProvider);
+  if (backgroundProvider !== preferredProvider && backgroundProvider !== 'tmdb' && backgroundProvider !== 'fanart') targetProviders.add(backgroundProvider);
+  if (logoProvider !== preferredProvider && logoProvider !== 'tmdb' && logoProvider !== 'fanart') targetProviders.add(logoProvider);
+  if (preferredProvider !== 'tmdb') targetProviders.add(preferredProvider);
+  if ((posterProvider === 'fanart' || backgroundProvider === 'fanart' || logoProvider === 'fanart') && type === 'series') targetProviders.add('tvdb');
+  
+  // Batch process items for better performance
+  const batchSize = 5; // Process 5 items at a time to avoid overwhelming APIs
+  const allMetas = [];
+  
+  for (let i = 0; i < res.results.length; i += batchSize) {
+    const batch = res.results.slice(i, i + batchSize);
+    const batchPromises = batch.map(async item => {
+      try {
+        // Resolve IDs for each individual item
+        let allIds;
+        if (targetProviders.size > 0) {
+          const targetProviderArray = Array.from(targetProviders);
+          allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, targetProviderArray);
+        }
+        
+        // Get logo and item details in parallel
+        const [tmdbLogoUrl, itemDetails] = await Promise.all([
+          type === 'movie' ? moviedb.getTmdbMovieLogo(item.id, config) : moviedb.getTmdbSeriesLogo(item.id, config),
+          type === 'movie' ? moviedb.movieInfo({ id: item.id, language, append_to_response: "external_ids" }, config) : moviedb.tvInfo({ id: item.id, language, append_to_response: "external_ids" }, config)
+        ]);
 
-    // Determine preferred meta provider
-    let preferredProvider;
-    if (type === 'movie') {
-      preferredProvider = config.providers?.movie || 'tmdb';
-    } else {
-      preferredProvider = config.providers?.series || 'tvdb';
-    }
+        // Always use IMDb ID as primary, generate fallback if no IMDb ID available
+        let stremioId;
+        const tmdbImdbId = itemDetails?.imdb_id || itemDetails?.external_ids?.imdb_id || allIds?.imdbId;
+        if (tmdbImdbId) {
+          stremioId = tmdbImdbId; // Use real IMDb ID if available
+        } else {
+          // Generate fallback tt ID based on TMDB ID
+          stremioId = generateFallbackImdbId('tmdb', item.id);
+        }
 
-    // Collect all unique non-meta providers
-    const targetProviders = new Set();
-    if (posterProvider !== preferredProvider && posterProvider !== 'tmdb' && posterProvider !== 'fanart') targetProviders.add(posterProvider);
-    if (backgroundProvider !== preferredProvider && backgroundProvider !== 'tmdb' && backgroundProvider !== 'fanart') targetProviders.add(backgroundProvider);
-    if (logoProvider !== preferredProvider && logoProvider !== 'tmdb' && logoProvider !== 'fanart') targetProviders.add(logoProvider);
-    if (preferredProvider !== 'tmdb') targetProviders.add(preferredProvider);
-    if ((posterProvider === 'fanart' || backgroundProvider === 'fanart' || logoProvider === 'fanart') && type === 'series') targetProviders.add('tvdb');
-
-    let allIds;
-    if (targetProviders.size > 0) {
-      const targetProviderArray = Array.from(targetProviders);
-      allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, targetProviderArray);
-    }
-    const tmdbLogoUrl = type === 'movie' ? await moviedb.getTmdbMovieLogo(item.id, config) : await moviedb.getTmdbSeriesLogo(item.id, config);
-
-    // Get item details first
-    const itemDetails = type === 'movie' ? await moviedb.movieInfo({ id: item.id, language, append_to_response: "external_ids" }, config) : await moviedb.tvInfo({ id: item.id, language, append_to_response: "external_ids" }, config);
-
-    // Always use IMDb ID as primary, generate fallback if no IMDb ID available
-    let stremioId;
-    const tmdbImdbId = itemDetails?.imdb_id || itemDetails?.external_ids?.imdb_id || allIds?.imdbId;
-    if (tmdbImdbId) {
-      stremioId = tmdbImdbId; // Use real IMDb ID if available
-    } else {
-      // Generate fallback tt ID based on TMDB ID
-      stremioId = generateFallbackImdbId('tmdb', item.id);
-    }
-
-    // Poster and background with art provider logic
-    const tmdbPosterFullUrl = item.poster_path
-      ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${item.poster_path}`
-      : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
-    const tmdbBackgroundFullUrl = item.backdrop_path
-      ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` 
-      : undefined;
-    let posterUrl = tmdbPosterFullUrl;
-    let backgroundUrl = tmdbBackgroundFullUrl;
-    if(allIds) {
-      if (type === 'movie') {
-        posterUrl = await Utils.getMoviePoster({
-          tmdbId: allIds.tmdbId,
-          tvdbId: allIds.tvdbId,
-          imdbId: allIds.imdbId,
-          metaProvider: preferredProvider,
-          fallbackPosterUrl: tmdbPosterFullUrl
-        }, config);
-        backgroundUrl = await Utils.getMovieBackground({
-          tmdbId: allIds.tmdbId,
-          tvdbId: allIds.tvdbId,
-          imdbId: allIds.imdbId,
-          metaProvider: preferredProvider,
-          fallbackBackgroundUrl: tmdbBackgroundFullUrl
-        }, config);
-      } else {
-        posterUrl = await Utils.getSeriesPoster({
-          tmdbId: allIds.tmdbId,
-          tvdbId: allIds.tvdbId,
-          imdbId: allIds.imdbId,
-          metaProvider: preferredProvider,
-          fallbackPosterUrl: tmdbPosterFullUrl
-        }, config);
-        backgroundUrl = await Utils.getSeriesBackground({
-          tmdbId: allIds.tmdbId,
-          tvdbId: allIds.tvdbId,
-          imdbId: allIds.imdbId,
-          metaProvider: preferredProvider,
-            fallbackBackgroundUrl: tmdbBackgroundFullUrl
-          }, config);
+        // Poster and background with art provider logic
+        const tmdbPosterFullUrl = item.poster_path
+          ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${item.poster_path}`
+          : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
+        const tmdbBackgroundFullUrl = item.backdrop_path
+          ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` 
+          : undefined;
+        let posterUrl = tmdbPosterFullUrl;
+        let backgroundUrl = tmdbBackgroundFullUrl;
+        if(allIds) {
+          if (type === 'movie') {
+            posterUrl = await Utils.getMoviePoster({
+              tmdbId: allIds.tmdbId,
+              tvdbId: allIds.tvdbId,
+              imdbId: allIds.imdbId,
+              metaProvider: preferredProvider,
+              fallbackPosterUrl: tmdbPosterFullUrl
+            }, config);
+            backgroundUrl = await Utils.getMovieBackground({
+              tmdbId: allIds.tmdbId,
+              tvdbId: allIds.tvdbId,
+              imdbId: allIds.imdbId,
+              metaProvider: preferredProvider,
+              fallbackBackgroundUrl: tmdbBackgroundFullUrl
+            }, config);
+          } else {
+            posterUrl = await Utils.getSeriesPoster({
+              tmdbId: allIds.tmdbId,
+              tvdbId: allIds.tvdbId,
+              imdbId: allIds.imdbId,
+              metaProvider: preferredProvider,
+              fallbackPosterUrl: tmdbPosterFullUrl
+            }, config);
+            backgroundUrl = await Utils.getSeriesBackground({
+              tmdbId: allIds.tmdbId,
+              tvdbId: allIds.tvdbId,
+              imdbId: allIds.imdbId,
+              metaProvider: preferredProvider,
+                fallbackBackgroundUrl: tmdbBackgroundFullUrl
+              }, config);
+          }
+        }
+        
+        // Now we can safely use itemDetails
+        const runtime = type === 'movie' ? itemDetails?.runtime || null : itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
+        const catalogImdbId = itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId;
+        // Always use IMDb ID as primary, generate fallback if no IMDb ID available
+        const primaryId = catalogImdbId || generateFallbackImdbId('tmdb', item.id);
+        const posterProxyUrl = `${localHost}/poster/${type}/${primaryId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+        // Use TMDB rating as fallback to avoid additional API calls
+        const imdbRating = item.vote_average?.toFixed(1) || "N/A";
+        return {
+          id: primaryId, // Use IMDb ID as primary, fallback to generated tt ID
+          type: type,
+          imdb_id: catalogImdbId,
+          logo: tmdbLogoUrl,
+          releaseInfo: (item.release_date || item.first_air_date || '').substring(0, 4),
+          name: item.title || item.name,
+          poster: posterProxyUrl,
+          year: (item.release_date || item.first_air_date || '').substring(0, 4),
+          background: backgroundUrl,
+          description: item.overview,
+          runtime: Utils.parseRunTime(runtime),
+          genres: item.genre_ids.map(g => genreList.find(genre => genre.id === g)?.name),
+          imdbRating: imdbRating,
+        };
+      } catch (error) {
+        console.warn(`[getCatalog] Error processing item ${item.id}:`, error.message);
+        return null; // Return null for failed items
       }
-    }
+    });
     
-    // Now we can safely use itemDetails
-    const runtime = type === 'movie' ? itemDetails?.runtime || null : itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
-    const catalogImdbId = itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId;
-    // Always use IMDb ID as primary, generate fallback if no IMDb ID available
-    const primaryId = catalogImdbId || generateFallbackImdbId('tmdb', item.id);
-    const posterProxyUrl = `${localHost}/poster/${type}/${primaryId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-    const imdbRating = await getImdbRating(itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId, type) || item.vote_average?.toFixed(1) || "N/A";
-    return {
-      id: primaryId, // Use IMDb ID as primary, fallback to generated tt ID
-      type: type,
-      imdb_id: catalogImdbId,
-      logo: tmdbLogoUrl,
-      releaseInfo: (item.release_date || item.first_air_date || '').substring(0, 4),
-      name: item.title || item.name,
-      poster: posterProxyUrl,
-      year: (item.release_date || item.first_air_date || '').substring(0, 4),
-      background: backgroundUrl,
-      description: item.overview,
-      runtime: Utils.parseRunTime(runtime),
-      genres: item.genre_ids.map(g => genreList.find(genre => genre.id === g)?.name),
-      imdbRating: imdbRating,
-    };
-  }));
+    const batchResults = await Promise.all(batchPromises);
+    allMetas.push(...batchResults.filter(Boolean)); // Filter out null values
+  }
 
-  const metas = allMetas.filter(Boolean); // Filter out null values (items without IMDb ID)
-  return metas;
+  return allMetas;
 }
 
 async function buildParameters(type, language, page, id, genre, genreList, config) {

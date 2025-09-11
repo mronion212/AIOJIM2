@@ -11,11 +11,11 @@ const ADDON_VERSION = packageJson.version;
 
 // --- Time To Live (TTL) constants in seconds ---
 const META_TTL = parseInt(process.env.META_TTL || 7 * 24 * 60 * 60, 10);
-const CATALOG_TTL = parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10);
+const CATALOG_TTL = parseInt(process.env.CATALOG_TTL || 6 * 60 * 60, 10); // 6 hours instead of 24
 const JIKAN_API_TTL = 7 * 24 * 60 * 60;
 const STATIC_CATALOG_TTL = 30 * 24 * 60 * 60;
-const TVDB_API_TTL = 12 * 60 * 60;
-const TVMAZE_API_TTL = 12 * 60 * 60;
+const TVDB_API_TTL = 24 * 60 * 60; // 24 hours instead of 12
+const TVMAZE_API_TTL = 24 * 60 * 60; // 24 hours instead of 12
 
 // Enhanced error caching strategy with self-healing
 const ERROR_TTL_STRATEGIES = {
@@ -657,7 +657,7 @@ async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
       console.log(`📦 [Cache] Search cache key: ${key.substring(0, 120)}...`);
   
   // Shorter TTL for search results since they're more dynamic
-  const SEARCH_TTL = 10 * 60; // 10 minutes (vs 1 hour for catalogs)
+  const SEARCH_TTL = 30 * 60; // 30 minutes (increased from 10 minutes)
   
   return cacheWrap(key, method, SEARCH_TTL, options);
 }
