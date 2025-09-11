@@ -206,11 +206,7 @@ async function getTvdbCollectionsCatalog(type, id, page, language, config) {
 
 async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID) {
   // Define host locally to ensure it's available in all scopes
-  const localHost = process.env.HOST_NAME 
-    ? (process.env.HOST_NAME.startsWith('http')
-        ? process.env.HOST_NAME
-        : `https://${process.env.HOST_NAME}`)
-    : 'http://localhost:1337';
+  const localHost = 'http://localhost:1337';
   if (id.startsWith("mdblist.")) {
     console.log(`[getCatalog] Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
     const listId = id.split(".")[1];
@@ -227,6 +223,7 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
 
   const res = await fetchFunction();
   const allMetas = await Promise.all(res.results.map(async item => {
+    
     // Resolve IDs for each individual item
     // Check all three art types and collect non-meta providers
     const posterProvider = Utils.resolveArtProvider(type, 'poster', config);
@@ -256,6 +253,9 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
     }
     const tmdbLogoUrl = type === 'movie' ? await moviedb.getTmdbMovieLogo(item.id, config) : await moviedb.getTmdbSeriesLogo(item.id, config);
 
+    // Get item details first
+    const itemDetails = type === 'movie' ? await moviedb.movieInfo({ id: item.id, language, append_to_response: "external_ids" }, config) : await moviedb.tvInfo({ id: item.id, language, append_to_response: "external_ids" }, config);
+
     // Always use IMDb ID as primary, generate fallback if no IMDb ID available
     let stremioId;
     const tmdbImdbId = itemDetails?.imdb_id || itemDetails?.external_ids?.imdb_id || allIds?.imdbId;
@@ -266,7 +266,6 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
       stremioId = generateFallbackImdbId('tmdb', item.id);
     }
 
-
     // Poster and background with art provider logic
     const tmdbPosterFullUrl = item.poster_path
       ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${item.poster_path}`
@@ -274,7 +273,6 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
     const tmdbBackgroundFullUrl = item.backdrop_path
       ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` 
       : undefined;
-    const itemDetails = type === 'movie' ? await moviedb.movieInfo({ id: item.id, language, append_to_response: "external_ids" }, config) : await moviedb.tvInfo({ id: item.id, language, append_to_response: "external_ids" }, config);
     let posterUrl = tmdbPosterFullUrl;
     let backgroundUrl = tmdbBackgroundFullUrl;
     if(allIds) {
@@ -310,12 +308,14 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
           }, config);
       }
     }
+    
+    // Now we can safely use itemDetails
     const runtime = type === 'movie' ? itemDetails?.runtime || null : itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
-    const posterProxyUrl = `${localHost}/poster/${type}/${primaryId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-    const imdbRating = await getImdbRating(itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId, type) || item.vote_average?.toFixed(1) || "N/A";
     const catalogImdbId = itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId;
     // Always use IMDb ID as primary, generate fallback if no IMDb ID available
     const primaryId = catalogImdbId || generateFallbackImdbId('tmdb', item.id);
+    const posterProxyUrl = `${localHost}/poster/${type}/${primaryId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+    const imdbRating = await getImdbRating(itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId, type) || item.vote_average?.toFixed(1) || "N/A";
     return {
       id: primaryId, // Use IMDb ID as primary, fallback to generated tt ID
       type: type,
