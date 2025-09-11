@@ -293,7 +293,19 @@ function parseCoutry(production_countries) {
 }
 
 function parseGenres(genres) {
-  return genres?.map((el) => el.name) || [];
+  if (!genres || !Array.isArray(genres)) return [];
+  
+  return genres.map((el) => {
+    // Handle different genre formats
+    if (typeof el === 'string') {
+      return el; // Already a string
+    } else if (el && typeof el === 'object' && el.name) {
+      return el.name; // Object with name property
+    } else if (el && typeof el === 'object' && el.genre) {
+      return el.genre; // Object with genre property
+    }
+    return null;
+  }).filter(Boolean); // Remove null/undefined values
 }
 
 function parseYear(status, first_air_date, last_air_date) {
